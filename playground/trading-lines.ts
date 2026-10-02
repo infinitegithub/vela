@@ -45,7 +45,7 @@ export function registerTradingLinesLayer() {
                         const entryY = Math.round(coords.priceToY(pos.entryPrice, scale, bounds)) + 0.5;
 
                         // ── 1. Render Active Position Entry Line ───────────────────────
-                        ctx.strokeStyle = isLong ? '#26a69a' : '#ef5350';
+                        ctx.strokeStyle = isLong ? '#a7be94' : '#af6870';
                         ctx.lineWidth = 1.5;
                         ctx.setLineDash([]);
                         ctx.beginPath();
@@ -65,15 +65,15 @@ export function registerTradingLinesLayer() {
                         const badgeX = endX - badgeW - 10;
                         const badgeY = entryY - badgeH / 2;
 
-                        ctx.fillStyle = isLong ? 'rgba(14, 58, 53, 0.95)' : 'rgba(69, 27, 30, 0.95)';
-                        ctx.strokeStyle = isLong ? '#26a69a' : '#ef5350';
+                        ctx.fillStyle = isLong ? 'rgba(54, 58, 56, 0.95)' : 'rgba(61, 47, 52, 0.95)';
+                        ctx.strokeStyle = isLong ? '#a7be94' : '#af6870';
                         ctx.lineWidth = 1;
                         ctx.beginPath();
                         ctx.roundRect(badgeX, badgeY, badgeW, badgeH, 4);
                         ctx.fill();
                         ctx.stroke();
 
-                        ctx.fillStyle = isLong ? '#26a69a' : '#ef5350';
+                        ctx.fillStyle = isLong ? '#a7be94' : '#af6870';
                         ctx.textAlign = 'left';
                         ctx.fillText(badgeText, badgeX + 8, badgeY + 15);
                     }
@@ -82,7 +82,7 @@ export function registerTradingLinesLayer() {
                     const tpPrice = parseFloat(state.takeProfit || '0');
                     if (tpPrice >= scale.min && tpPrice <= scale.max) {
                         const tpY = Math.round(coords.priceToY(tpPrice, scale, bounds)) + 0.5;
-                        ctx.strokeStyle = '#26a69a';
+                        ctx.strokeStyle = '#a7be94';
                         ctx.lineWidth = 1.5;
                         ctx.setLineDash([6, 4]);
                         ctx.beginPath();
@@ -98,15 +98,15 @@ export function registerTradingLinesLayer() {
                         const badgeX = endX - badgeW - 10;
                         const badgeY = tpY - badgeH / 2;
 
-                        ctx.fillStyle = 'rgba(14, 58, 53, 0.92)';
-                        ctx.strokeStyle = '#26a69a';
+                        ctx.fillStyle = 'rgba(54, 58, 56, 0.92)';
+                        ctx.strokeStyle = '#a7be94';
                         ctx.lineWidth = 1;
                         ctx.beginPath();
                         ctx.roundRect(badgeX, badgeY, badgeW, badgeH, 3);
                         ctx.fill();
                         ctx.stroke();
 
-                        ctx.fillStyle = '#26a69a';
+                        ctx.fillStyle = '#a7be94';
                         ctx.textAlign = 'left';
                         ctx.fillText(label, badgeX + 7, badgeY + 13);
                     }
@@ -115,7 +115,7 @@ export function registerTradingLinesLayer() {
                     const slPrice = parseFloat(state.stopLoss || '0');
                     if (slPrice >= scale.min && slPrice <= scale.max) {
                         const slY = Math.round(coords.priceToY(slPrice, scale, bounds)) + 0.5;
-                        ctx.strokeStyle = '#ef5350';
+                        ctx.strokeStyle = '#af6870';
                         ctx.lineWidth = 1.5;
                         ctx.setLineDash([6, 4]);
                         ctx.beginPath();
@@ -131,15 +131,15 @@ export function registerTradingLinesLayer() {
                         const badgeX = endX - badgeW - 10;
                         const badgeY = slY - badgeH / 2;
 
-                        ctx.fillStyle = 'rgba(69, 27, 30, 0.92)';
-                        ctx.strokeStyle = '#ef5350';
+                        ctx.fillStyle = 'rgba(61, 47, 52, 0.92)';
+                        ctx.strokeStyle = '#af6870';
                         ctx.lineWidth = 1;
                         ctx.beginPath();
                         ctx.roundRect(badgeX, badgeY, badgeW, badgeH, 3);
                         ctx.fill();
                         ctx.stroke();
 
-                        ctx.fillStyle = '#ef5350';
+                        ctx.fillStyle = '#af6870';
                         ctx.textAlign = 'left';
                         ctx.fillText(label, badgeX + 7, badgeY + 13);
                     }
@@ -150,7 +150,7 @@ export function registerTradingLinesLayer() {
                         if (price < scale.min || price > scale.max) continue;
 
                         const ordY = Math.round(coords.priceToY(price, scale, bounds)) + 0.5;
-                        ctx.strokeStyle = '#f0b90b';
+                        ctx.strokeStyle = '#fde047';
                         ctx.lineWidth = 1.2;
                         ctx.setLineDash([4, 4]);
                         ctx.beginPath();
@@ -166,15 +166,15 @@ export function registerTradingLinesLayer() {
                         const badgeX = endX - badgeW - 10;
                         const badgeY = ordY - badgeH / 2;
 
-                        ctx.fillStyle = 'rgba(42, 38, 20, 0.95)';
-                        ctx.strokeStyle = '#f0b90b';
+                        ctx.fillStyle = 'rgba(41, 38, 26, 0.95)';
+                        ctx.strokeStyle = '#fde047';
                         ctx.lineWidth = 1;
                         ctx.beginPath();
                         ctx.roundRect(badgeX, badgeY, badgeW, badgeH, 3);
                         ctx.fill();
                         ctx.stroke();
 
-                        ctx.fillStyle = '#f0b90b';
+                        ctx.fillStyle = '#fde047';
                         ctx.textAlign = 'left';
                         ctx.fillText(label, badgeX + 6, badgeY + 13);
                     }

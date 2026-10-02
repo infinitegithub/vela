@@ -51,8 +51,9 @@ const CSS = `
     gap: 2px;
     height: 38px;
     padding: 0 8px;
-    border-top: 1px solid var(--vela-border);
-    color: var(--vela-fg-muted);
+    border-top: 1px solid var(--vela-border, #262629);
+    background: var(--vela-bg-bar, #191a1e);
+    color: var(--vela-text-secondary, #757882);
     font-size: 12px;
     flex: none;
 }

@@ -43,54 +43,56 @@ export function themeTokens(t: VelaTheme): Record<string, string> {
     return {
         '--vela-font': t.fontFamily,
         '--vela-bg': t.background,
-        // Chrome text is slightly brighter than the chart's own axis text, which is
-        // deliberately recessive; the chart keeps using `t.textColor` directly.
-        '--vela-fg': dark ? '#d1d4dc' : t.textColor,
-        '--vela-fg-muted': dark ? '#868a96' : withAlpha(t.textColor, 0.62),
-        '--vela-fg-faint': withAlpha(t.textColor, 0.35),
-        '--vela-fg-bright': dark ? '#f0f3fa' : '#000000',
-        '--vela-surface': t.background,
-        // Panels and menus float ABOVE the chart, so their surface is the wash flattened onto
-        // the chart background — opaque, or candles read through the panel.
-        '--vela-surface-elev': elevated,
-        '--vela-surface-overlay': elevated,
-        // Recessed fields (inputs, selects) read as cut INTO their panel, so they fall back
-        // to the chart surface and are separated from the panel by their border alone.
-        '--vela-surface-sunken': t.background,
-        '--vela-border': t.borderColor,
-        '--vela-border-strong': dark ? '#34353b' : withAlpha(t.textColor, 0.28),
-        '--vela-border-soft': t.borderColor,
-        // Barely-there rules INSIDE a panel (row separators), where a full border would
-        // chop the list into boxes.
-        '--vela-border-faint': withAlpha(t.textColor, 0.08),
-        '--vela-hover': wash(0.06),
-        '--vela-active': wash(0.1),
-        // A deliberately stronger hover for rows inside an already-tinted surface (menu
-        // items in an active flyout), where the normal wash would not separate from it.
-        '--vela-hover-strong': wash(0.16),
-        '--vela-focus': withAlpha(t.textColor, 0.5),
-        '--vela-focus-soft': withAlpha(t.textColor, 0.12),
-        // Separator hover — the SAME wash the chart's pane separators paint on hover
-        // (soft full-thickness band + solid 2px center line), so DOM-drawn dividers
-        // (the workspace grid) and canvas-drawn ones read as one family.
-        '--vela-separator-hover-band': withAlpha(t.textColor, 0.1),
-        '--vela-separator-hover-line': withAlpha(t.textColor, 0.55),
-        '--vela-scroll': withAlpha(t.textColor, 0.3),
-        '--vela-accent': ACCENT,
-        '--vela-accent-bright': ACCENT_BRIGHT,
-        '--vela-highlight': HIGHLIGHT,
-        // The inverse chip: a filled selected state (active tab, ticked checkbox). Its ink
-        // must contrast the fill, so the pair flips together with the theme.
-        '--vela-selected-bg': dark ? '#f0f3fa' : t.textColor,
-        '--vela-selected-fg': dark ? t.background : '#ffffff',
-        // Fixed ink for saturated fills (accent buttons, categorical avatars) — those fills
-        // are theme-independent, so their ink is too.
-        '--vela-fg-on-fill': '#ffffff',
+        // Reference design palette variables
+        '--vela-bg-main': dark ? '#202126' : t.background,
+        '--vela-bg-panel': dark ? '#121215' : '#f8f9fa',
+        '--vela-bg-card': dark ? '#232429' : '#ffffff',
+        '--vela-bg-bar': dark ? '#191a1e' : '#f1f3f5',
+        '--vela-bg-chip': dark ? '#292a2f' : '#e9ecef',
+        '--vela-bg-chip-hover': dark ? '#30323a' : '#dee2e6',
+        '--vela-bg-hover': dark ? '#2b2d34' : wash(0.06),
+        '--vela-border': dark ? '#262629' : t.borderColor,
+        '--vela-border-strong': dark ? '#262629' : withAlpha(t.textColor, 0.28),
+        '--vela-border-soft': dark ? '#262629' : t.borderColor,
+        '--vela-border-faint': dark ? '#262629' : withAlpha(t.textColor, 0.08),
         '--vela-up': t.upColor,
         '--vela-down': t.downColor,
         '--vela-danger': t.downColor,
+        '--vela-up-selected-bg': dark ? '#363a38' : 'rgba(167, 190, 148, 0.25)',
+        '--vela-volume-up': dark ? '#3a403c' : '#3a403c',
+        '--vela-volume-down': dark ? '#3d2f34' : '#3d2f34',
+        '--vela-text-primary': dark ? '#eeeef1' : '#000000',
+        '--vela-text-secondary': dark ? '#757882' : t.textColor,
+        '--vela-text-muted': dark ? '#46474b' : withAlpha(t.textColor, 0.5),
+        '--vela-warning': '#fde047',
+        '--vela-warning-bg': '#29261a',
+        '--vela-button-light-bg': '#eeeef1',
+        '--vela-button-light-text': '#121215',
+        // Native Vela chrome bindings
+        '--vela-fg': dark ? '#eeeef1' : t.textColor,
+        '--vela-fg-muted': dark ? '#757882' : withAlpha(t.textColor, 0.62),
+        '--vela-fg-faint': dark ? '#46474b' : withAlpha(t.textColor, 0.35),
+        '--vela-fg-bright': dark ? '#eeeef1' : '#000000',
+        '--vela-surface': dark ? '#202126' : t.background,
+        '--vela-surface-elev': dark ? '#232429' : elevated,
+        '--vela-surface-overlay': dark ? '#232429' : elevated,
+        '--vela-surface-sunken': dark ? '#121215' : t.background,
+        '--vela-hover': dark ? '#2b2d34' : wash(0.06),
+        '--vela-active': dark ? '#363a38' : wash(0.1),
+        '--vela-hover-strong': dark ? '#30323a' : wash(0.16),
+        '--vela-focus': withAlpha(t.textColor, 0.5),
+        '--vela-focus-soft': withAlpha(t.textColor, 0.12),
+        '--vela-separator-hover-band': dark ? 'rgba(255,255,255,0.06)' : withAlpha(t.textColor, 0.1),
+        '--vela-separator-hover-line': dark ? '#757882' : withAlpha(t.textColor, 0.55),
+        '--vela-scroll': dark ? '#30323a' : withAlpha(t.textColor, 0.3),
+        '--vela-accent': ACCENT,
+        '--vela-accent-bright': ACCENT_BRIGHT,
+        '--vela-highlight': HIGHLIGHT,
+        '--vela-selected-bg': dark ? '#eeeef1' : t.textColor,
+        '--vela-selected-fg': dark ? '#121215' : '#ffffff',
+        '--vela-fg-on-fill': '#ffffff',
         '--vela-shadow': '0 8px 30px rgba(0,0,0,0.5)',
         '--vela-shadow-dialog': '0 20px 60px rgba(0,0,0,0.5)',
-        '--vela-backdrop': 'rgba(0,0,0,0.45)',
+        '--vela-backdrop': 'rgba(0,0,0,0.6)',
     };
 }

@@ -51,7 +51,7 @@ export function registerFootprintChartType() {
                         const isUp = bar.close >= bar.open;
 
                         // 1. Draw candle central wick
-                        ctx.strokeStyle = isUp ? '#089981' : '#f23645';
+                        ctx.strokeStyle = isUp ? '#a7be94' : '#af6870';
                         ctx.lineWidth = 1;
                         ctx.beginPath();
                         ctx.moveTo(x, highY);
@@ -70,7 +70,7 @@ export function registerFootprintChartType() {
                         // Candle body outline
                         const bodyTop = Math.min(openY, closeY);
                         const bodyH = Math.max(1, Math.abs(closeY - openY));
-                        ctx.strokeStyle = isUp ? 'rgba(8,153,129,0.7)' : 'rgba(242,54,69,0.7)';
+                        ctx.strokeStyle = isUp ? 'rgba(167, 190, 148, 0.7)' : 'rgba(175, 104, 112, 0.7)';
                         ctx.lineWidth = 1;
                         ctx.strokeRect(x - barWidth / 2, bodyTop, barWidth, bodyH);
 
@@ -86,15 +86,15 @@ export function registerFootprintChartType() {
                             const delta = buyVol - sellVol;
 
                             // Left side: Bid / Selling volume
-                            ctx.fillStyle = delta < 0 ? 'rgba(242,54,69,0.35)' : 'rgba(30,34,45,0.7)';
+                            ctx.fillStyle = delta < 0 ? 'rgba(175, 104, 112, 0.35)' : 'rgba(32, 33, 38, 0.7)';
                             ctx.fillRect(x - barWidth / 2, cellY, barWidth / 2, tickHeight - 0.5);
 
                             // Right side: Ask / Buying volume
-                            ctx.fillStyle = delta > 0 ? 'rgba(8,153,129,0.35)' : 'rgba(30,34,45,0.7)';
+                            ctx.fillStyle = delta > 0 ? 'rgba(167, 190, 148, 0.35)' : 'rgba(32, 33, 38, 0.7)';
                             ctx.fillRect(x, cellY, barWidth / 2, tickHeight - 0.5);
 
                             // Cell inner border
-                            ctx.strokeStyle = 'rgba(42,46,57,0.4)';
+                            ctx.strokeStyle = 'rgba(38, 38, 41, 0.5)';
                             ctx.strokeRect(x - barWidth / 2, cellY, barWidth, tickHeight - 0.5);
 
                             // Render numerical text if bar width and tick height allow
@@ -104,13 +104,13 @@ export function registerFootprintChartType() {
 
                                 // Sell volume (left)
                                 ctx.textAlign = 'right';
-                                ctx.fillStyle = delta < 0 ? '#ef5350' : '#868a96';
+                                ctx.fillStyle = delta < 0 ? '#af6870' : '#757882';
                                 const sText = sellVol > 999 ? `${(sellVol / 1000).toFixed(1)}k` : `${sellVol}`;
                                 ctx.fillText(sText, x - 2, cellY + tickHeight - 2);
 
                                 // Buy volume (right)
                                 ctx.textAlign = 'left';
-                                ctx.fillStyle = delta > 0 ? '#26a69a' : '#868a96';
+                                ctx.fillStyle = delta > 0 ? '#a7be94' : '#757882';
                                 const bText = buyVol > 999 ? `${(buyVol / 1000).toFixed(1)}k` : `${buyVol}`;
                                 ctx.fillText(bText, x + 2, cellY + tickHeight - 2);
                             }

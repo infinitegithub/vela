@@ -55,12 +55,12 @@ function showToast(message: string, isError: boolean = false) {
         bottom: 24px;
         left: 50%;
         transform: translateX(-50%);
-        background: ${isError ? '#ef5350' : '#26a69a'};
-        color: #fff;
+        background: ${isError ? 'var(--vela-down, #af6870)' : 'var(--vela-up, #a7be94)'};
+        color: ${isError ? 'var(--vela-text-primary, #eeeef1)' : 'var(--vela-bg-panel, #121215)'};
         padding: 8px 16px;
         border-radius: 6px;
         font-size: 13px;
-        font-weight: 600;
+        font-weight: 700;
         box-shadow: 0 8px 24px rgba(0,0,0,0.5);
         z-index: 999999;
         display: flex;
@@ -172,8 +172,8 @@ export function openTemplateModal() {
 
     const dialog = document.createElement('div');
     dialog.style.cssText = `
-        background: #181a20;
-        border: 1px solid #2b313a;
+        background: var(--vela-bg-card, #232429);
+        border: 1px solid var(--vela-border, #262629);
         border-radius: 8px;
         width: 680px;
         max-width: 90vw;
@@ -182,7 +182,7 @@ export function openTemplateModal() {
         flex-direction: column;
         box-shadow: 0 16px 40px rgba(0, 0, 0, 0.6);
         overflow: hidden;
-        color: #f0f3fa;
+        color: var(--vela-text-primary, #eeeef1);
     `;
 
     // ── Header ───────────────────────────────────────────────────────────────
@@ -192,25 +192,25 @@ export function openTemplateModal() {
         align-items: center;
         justify-content: space-between;
         padding: 16px 20px;
-        border-bottom: 1px solid #2a2e39;
-        background: #14151a;
+        border-bottom: 1px solid var(--vela-border, #262629);
+        background: var(--vela-bg-panel, #121215);
     `;
     header.innerHTML = `
         <div style="display: flex; align-items: center; gap: 10px;">
-            <div style="color: #2962ff; display: flex; align-items: center;">
+            <div style="color: var(--vela-text-primary, #eeeef1); display: flex; align-items: center;">
                 <svg viewBox="0 0 16 16" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="2" y="2" width="12" height="12" rx="2"/><path d="M2 6h12M6 6v8"/></svg>
             </div>
             <div>
                 <div style="font-weight: 700; font-size: 15px;">Workspace Templates & Synchronization</div>
-                <div style="font-size: 11px; color: #868a96;">Multi-device layout, indicators, watchlists, drawings & sync settings</div>
+                <div style="font-size: 11px; color: var(--vela-text-secondary, #757882);">Multi-device layout, indicators, watchlists, drawings & sync settings</div>
             </div>
         </div>
         <div style="display: flex; align-items: center; gap: 12px;">
-            <div style="display: flex; align-items: center; gap: 6px; font-size: 11px; color: #26a69a; background: rgba(38, 166, 154, 0.1); padding: 3px 8px; border-radius: 12px; font-weight: 600;">
-                <span style="display: inline-block; width: 6px; height: 6px; border-radius: 50%; background: #26a69a;"></span>
+            <div style="display: flex; align-items: center; gap: 6px; font-size: 11px; color: var(--vela-up, #a7be94); background: rgba(167, 190, 148, 0.12); padding: 3px 8px; border-radius: 12px; font-weight: 600;">
+                <span style="display: inline-block; width: 6px; height: 6px; border-radius: 50%; background: var(--vela-up, #a7be94);"></span>
                 <span>LXC 115 Synced</span>
             </div>
-            <button id="modal-close-btn" style="background: transparent; border: none; color: #868a96; cursor: pointer; font-size: 18px; padding: 4px; line-height: 1;">✕</button>
+            <button id="modal-close-btn" style="background: transparent; border: none; color: var(--vela-text-secondary, #757882); cursor: pointer; font-size: 18px; padding: 4px; line-height: 1;">✕</button>
         </div>
     `;
 
@@ -230,18 +230,18 @@ export function openTemplateModal() {
         display: flex;
         align-items: center;
         justify-content: space-between;
-        background: #1e222d;
-        border: 1px solid #2a2e39;
+        background: var(--vela-bg-main, #202126);
+        border: 1px solid var(--vela-border, #262629);
         border-radius: 6px;
         padding: 12px 16px;
     `;
     activeBar.innerHTML = `
         <div>
-            <div style="font-size: 11px; color: #868a96; text-transform: uppercase; font-weight: 700; letter-spacing: 0.5px;">Active Template</div>
-            <div id="tpl-active-title" style="font-weight: 700; font-size: 14px; color: #f0f3fa; margin-top: 2px;">${activeTemplateName}</div>
+            <div style="font-size: 11px; color: var(--vela-text-secondary, #757882); text-transform: uppercase; font-weight: 700; letter-spacing: 0.5px;">Active Template</div>
+            <div id="tpl-active-title" style="font-weight: 700; font-size: 14px; color: var(--vela-text-primary, #eeeef1); margin-top: 2px;">${activeTemplateName}</div>
         </div>
         <div style="display: flex; gap: 8px;">
-            <button id="tpl-quick-save-btn" style="background: #2962ff; border: none; color: #fff; padding: 6px 14px; border-radius: 4px; font-size: 12px; font-weight: 600; cursor: pointer; display: flex; align-items: center; gap: 6px;">
+            <button id="tpl-quick-save-btn" style="background: var(--vela-bg-chip, #292a2f); border: 1px solid var(--vela-border, #262629); color: var(--vela-text-primary, #eeeef1); padding: 6px 14px; border-radius: 4px; font-size: 12px; font-weight: 600; cursor: pointer; display: flex; align-items: center; gap: 6px;">
                 <span>💾</span>
                 <span>Update Active</span>
             </button>
@@ -251,8 +251,8 @@ export function openTemplateModal() {
     // 2. Save As New Template Form
     const saveNewBox = document.createElement('div');
     saveNewBox.style.cssText = `
-        background: #16181f;
-        border: 1px dashed #363c4e;
+        background: var(--vela-bg-main, #202126);
+        border: 1px dashed var(--vela-border, #262629);
         border-radius: 6px;
         padding: 14px 16px;
         display: flex;
@@ -260,10 +260,10 @@ export function openTemplateModal() {
         gap: 10px;
     `;
     saveNewBox.innerHTML = `
-        <div style="font-size: 12px; font-weight: 700; color: #f0f3fa;">Save Current Workspace as New Template</div>
+        <div style="font-size: 12px; font-weight: 700; color: var(--vela-text-primary, #eeeef1);">Save Current Workspace as New Template</div>
         <div style="display: flex; gap: 8px;">
-            <input id="tpl-new-name-input" placeholder="Template name (e.g. Scalping 1m/5m, BTC+Alts 4-Grid)..." style="flex: 1; background: #131722; border: 1px solid #363c4e; color: #fff; padding: 8px 12px; font-size: 12px; border-radius: 4px; outline: none;" />
-            <button id="tpl-save-new-btn" style="background: #26a69a; border: none; color: #fff; padding: 8px 16px; border-radius: 4px; font-size: 12px; font-weight: 700; cursor: pointer; white-space: nowrap;">Save Template</button>
+            <input id="tpl-new-name-input" placeholder="Template name (e.g. Scalping 1m/5m, BTC+Alts 4-Grid)..." style="flex: 1; background: var(--vela-bg-card, #232429); border: 1px solid var(--vela-border, #262629); color: var(--vela-text-primary, #eeeef1); padding: 8px 12px; font-size: 12px; border-radius: 4px; outline: none;" />
+            <button id="tpl-save-new-btn" style="background: var(--vela-up, #a7be94); border: none; color: var(--vela-bg-panel, #121215); padding: 8px 16px; border-radius: 4px; font-size: 12px; font-weight: 700; cursor: pointer; white-space: nowrap;">Save Template</button>
         </div>
     `;
 
@@ -272,8 +272,8 @@ export function openTemplateModal() {
     listSection.style.cssText = `display: flex; flex-direction: column; gap: 10px;`;
     listSection.innerHTML = `
         <div style="display: flex; align-items: center; justify-content: space-between;">
-            <div style="font-size: 12px; font-weight: 700; text-transform: uppercase; color: #868a96; letter-spacing: 0.5px;">Saved Templates on Server</div>
-            <div id="tpl-count-badge" style="font-size: 11px; color: #868a96;">Loading...</div>
+            <div style="font-size: 12px; font-weight: 700; text-transform: uppercase; color: var(--vela-text-secondary, #757882); letter-spacing: 0.5px;">Saved Templates on Server</div>
+            <div id="tpl-count-badge" style="font-size: 11px; color: var(--vela-text-secondary, #757882);">Loading...</div>
         </div>
         <div id="tpl-cards-container" style="display: flex; flex-direction: column; gap: 8px; max-height: 280px; overflow-y: auto; padding-right: 4px;"></div>
     `;
@@ -285,14 +285,14 @@ export function openTemplateModal() {
         align-items: center;
         justify-content: space-between;
         padding-top: 10px;
-        border-top: 1px solid #2a2e39;
+        border-top: 1px solid var(--vela-border, #262629);
         font-size: 12px;
     `;
     footerTools.innerHTML = `
-        <div style="color: #868a96; font-size: 11px;">State includes layouts, indicators, drawings, watchlists & sync links.</div>
+        <div style="color: var(--vela-text-secondary, #757882); font-size: 11px;">State includes layouts, indicators, drawings, watchlists & sync links.</div>
         <div style="display: flex; gap: 8px;">
-            <button id="tpl-export-json-btn" style="background: #2a2e39; border: 1px solid #363c4e; color: #f0f3fa; padding: 6px 12px; border-radius: 4px; font-size: 11px; font-weight: 600; cursor: pointer;">Export JSON</button>
-            <button id="tpl-import-json-btn" style="background: #2a2e39; border: 1px solid #363c4e; color: #f0f3fa; padding: 6px 12px; border-radius: 4px; font-size: 11px; font-weight: 600; cursor: pointer;">Import JSON</button>
+            <button id="tpl-export-json-btn" style="background: var(--vela-bg-main, #202126); border: 1px solid var(--vela-border, #262629); color: var(--vela-text-primary, #eeeef1); padding: 6px 12px; border-radius: 4px; font-size: 11px; font-weight: 600; cursor: pointer;">Export JSON</button>
+            <button id="tpl-import-json-btn" style="background: var(--vela-bg-main, #202126); border: 1px solid var(--vela-border, #262629); color: var(--vela-text-primary, #eeeef1); padding: 6px 12px; border-radius: 4px; font-size: 11px; font-weight: 600; cursor: pointer;">Import JSON</button>
             <input type="file" id="tpl-file-input" accept=".json" style="display: none;" />
         </div>
     `;
@@ -318,13 +318,13 @@ export function openTemplateModal() {
     const countBadge = body.querySelector('#tpl-count-badge') as HTMLElement;
 
     const renderTemplatesList = async () => {
-        cardsContainer.innerHTML = '<div style="color: #868a96; font-size: 12px; padding: 12px;">Loading templates...</div>';
+        cardsContainer.innerHTML = '<div style="color: var(--vela-text-secondary, #757882); font-size: 12px; padding: 12px;">Loading templates...</div>';
         const templates = await fetchTemplatesList();
         cardsContainer.innerHTML = '';
         countBadge.textContent = `${templates.length} templates`;
 
         if (templates.length === 0) {
-            cardsContainer.innerHTML = '<div style="color: #868a96; font-size: 12px; padding: 12px;">No templates found on server. Save one above!</div>';
+            cardsContainer.innerHTML = '<div style="color: var(--vela-text-secondary, #757882); font-size: 12px; padding: 12px;">No templates found on server. Save one above!</div>';
             return;
         }
 
@@ -332,8 +332,8 @@ export function openTemplateModal() {
             const isCurrent = tpl.id === activeTemplateId;
             const card = document.createElement('div');
             card.style.cssText = `
-                background: ${isCurrent ? '#1e2433' : '#1e222d'};
-                border: 1px solid ${isCurrent ? '#2962ff' : '#2a2e39'};
+                background: ${isCurrent ? 'var(--vela-bg-chip, #292a2f)' : 'var(--vela-bg-main, #202126)'};
+                border: 1px solid ${isCurrent ? 'var(--vela-border-strong, #3a3b40)' : 'var(--vela-border, #262629)'};
                 border-radius: 6px;
                 padding: 12px 14px;
                 display: flex;
@@ -350,20 +350,20 @@ export function openTemplateModal() {
             card.innerHTML = `
                 <div style="flex: 1; min-width: 0;">
                     <div style="display: flex; align-items: center; gap: 8px; flex-wrap: wrap;">
-                        <span style="font-weight: 700; font-size: 13px; color: #f0f3fa;">${tpl.name}</span>
-                        <span style="background: #2a2e39; color: #2962ff; font-size: 10px; font-weight: 700; padding: 2px 6px; border-radius: 4px;">${layoutLabel}</span>
-                        ${tpl.isDefault ? '<span style="background: rgba(38,166,154,0.15); color: #26a69a; font-size: 10px; font-weight: 700; padding: 2px 6px; border-radius: 4px;">Default</span>' : ''}
-                        ${isCurrent ? '<span style="background: #2962ff; color: #fff; font-size: 9px; font-weight: 700; padding: 1px 5px; border-radius: 4px;">ACTIVE</span>' : ''}
+                        <span style="font-weight: 700; font-size: 13px; color: var(--vela-text-primary, #eeeef1);">${tpl.name}</span>
+                        <span style="background: var(--vela-bg-card, #232429); color: var(--vela-text-secondary, #757882); font-size: 10px; font-weight: 700; padding: 2px 6px; border-radius: 4px;">${layoutLabel}</span>
+                        ${tpl.isDefault ? '<span style="background: rgba(167,190,148,0.15); color: var(--vela-up, #a7be94); font-size: 10px; font-weight: 700; padding: 2px 6px; border-radius: 4px;">Default</span>' : ''}
+                        ${isCurrent ? '<span style="background: var(--vela-up-selected-bg, #363a38); color: var(--vela-up, #a7be94); font-size: 9px; font-weight: 700; padding: 1px 5px; border-radius: 4px;">ACTIVE</span>' : ''}
                     </div>
-                    <div style="font-size: 11px; color: #868a96; margin-top: 4px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">
+                    <div style="font-size: 11px; color: var(--vela-text-secondary, #757882); margin-top: 4px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">
                         ${symbolsSummary} · Updated ${updatedTime}
                     </div>
                 </div>
                 <div style="display: flex; align-items: center; gap: 6px; flex-shrink: 0;">
-                    <button class="tpl-load-btn" style="background: ${isCurrent ? '#2a2e39' : '#2962ff'}; border: none; color: #fff; padding: 6px 12px; border-radius: 4px; font-size: 11px; font-weight: 700; cursor: pointer;">
+                    <button class="tpl-load-btn" style="background: ${isCurrent ? 'var(--vela-bg-card, #232429)' : 'var(--vela-button-light-bg, #eeeef1)'}; border: 1px solid var(--vela-border, #262629); color: ${isCurrent ? 'var(--vela-text-secondary, #757882)' : 'var(--vela-button-light-text, #121215)'}; padding: 6px 12px; border-radius: 4px; font-size: 11px; font-weight: 700; cursor: pointer;">
                         ${isCurrent ? 'Reload' : 'Load'}
                     </button>
-                    ${!tpl.isDefault ? `<button class="tpl-del-btn" title="Delete template" style="background: transparent; border: none; color: #868a96; cursor: pointer; padding: 4px 6px; border-radius: 4px; font-size: 12px;">🗑️</button>` : ''}
+                    ${!tpl.isDefault ? `<button class="tpl-del-btn" title="Delete template" style="background: transparent; border: none; color: var(--vela-text-secondary, #757882); cursor: pointer; padding: 4px 6px; border-radius: 4px; font-size: 12px;">🗑️</button>` : ''}
                 </div>
             `;
 

@@ -4,8 +4,8 @@ import type { NativeIndicator, NativeIndicatorContext, NativeIndicatorDescriptor
 import { registerNativeIndicator } from '../NativeIndicator';
 import { BEARISH, BULLISH } from '../../palette';
 
-const DEFAULT_UP = BULLISH;
-const DEFAULT_DOWN = BEARISH;
+const DEFAULT_UP = '#3a403c';    // volume-up: quiet muted surface
+const DEFAULT_DOWN = '#3d2f34';  // volume-down: quiet muted surface
 const DEFAULT_HEIGHT_PCT = 20;
 
 function num(v: InputValue | undefined, fallback: number): number {

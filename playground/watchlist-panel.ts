@@ -281,7 +281,7 @@ export function registerWatchlistSidePanel() {
             // Replace header title so tab buttons claim the entire header surface
             header.setTitle('');
             body.style.padding = '0';
-            body.style.background = '#131722';
+            body.style.background = 'var(--vela-bg-panel, #121215)';
             body.style.fontFamily = "-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif";
 
             // ── 1. Create Top Header Tabs: [Watchlist] [Order Book] [Alerts] [Tables] ──
@@ -308,8 +308,8 @@ export function registerWatchlistSidePanel() {
                 btn.className = `vela-wpt-tab ${t.id === activeTab ? 'active' : ''}`;
                 btn.dataset.tab = t.id;
                 btn.style.cssText = `
-                    background: ${t.id === activeTab ? '#2a2e39' : 'transparent'};
-                    color: ${t.id === activeTab ? '#f0f3fa' : '#868a96'};
+                    background: ${t.id === activeTab ? 'var(--vela-bg-chip, #292a2f)' : 'transparent'};
+                    color: ${t.id === activeTab ? 'var(--vela-text-primary, #eeeef1)' : 'var(--vela-text-secondary, #757882)'};
                     border: none;
                     border-radius: 4px;
                     padding: 4px 8px;
@@ -323,7 +323,7 @@ export function registerWatchlistSidePanel() {
                     white-space: nowrap;
                 `;
                 if (t.id === 'alerts') {
-                    btn.innerHTML = `<svg viewBox="0 0 16 16" width="12" height="12" fill="none" stroke="currentColor" stroke-width="1.5" style="vertical-align: -1px;"><path d="M8 2a4 4 0 0 0-4 4v2.5L2.5 11v1h11v-1L12 8.5V6a4 4 0 0 0-4-4z"/><path d="M6.5 13.5a1.5 1.5 0 0 0 3 0"/></svg><span>${t.label}</span><span id="alerts-tab-badge" style="display: none; background: #2962ff; color: #fff; font-size: 9px; padding: 0 4px; border-radius: 8px; font-weight: 700; line-height: 13px;"></span>`;
+                    btn.innerHTML = `<svg viewBox="0 0 16 16" width="12" height="12" fill="none" stroke="currentColor" stroke-width="1.5" style="vertical-align: -1px;"><path d="M8 2a4 4 0 0 0-4 4v2.5L2.5 11v1h11v-1L12 8.5V6a4 4 0 0 0-4-4z"/><path d="M6.5 13.5a1.5 1.5 0 0 0 3 0"/></svg><span>${t.label}</span><span id="alerts-tab-badge" style="display: none; background: var(--vela-bg-chip, #292a2f); color: var(--vela-text-primary, #eeeef1); border: 1px solid var(--vela-border, #262629); font-size: 9px; padding: 0 4px; border-radius: 8px; font-weight: 700; line-height: 13px;"></span>`;
                 } else {
                     btn.textContent = t.label;
                 }
@@ -372,8 +372,8 @@ export function registerWatchlistSidePanel() {
             const updateTabViews = () => {
                 for (const [id, btn] of tabButtons.entries()) {
                     const isCur = id === activeTab;
-                    btn.style.background = isCur ? '#2a2e39' : 'transparent';
-                    btn.style.color = isCur ? '#f0f3fa' : '#868a96';
+                    btn.style.background = isCur ? 'var(--vela-bg-chip, #292a2f)' : 'transparent';
+                    btn.style.color = isCur ? 'var(--vela-text-primary, #eeeef1)' : 'var(--vela-text-secondary, #757882)';
                 }
                 viewWatchlist.style.display = activeTab === 'watchlist' ? 'flex' : 'none';
                 viewOrderBook.style.display = activeTab === 'orderbook' ? 'flex' : 'none';
@@ -394,16 +394,16 @@ export function registerWatchlistSidePanel() {
                 align-items: center;
                 justify-content: space-between;
                 padding: 8px 12px;
-                border-bottom: 1px solid #2a2e39;
-                background: #16181e;
+                border-bottom: 1px solid var(--vela-border, #262629);
+                background: var(--vela-bg-panel, #121215);
             `;
 
             const wlTitleGroup = document.createElement('div');
-            wlTitleGroup.style.cssText = `position: relative; display: flex; align-items: center; gap: 6px; font-weight: 700; font-size: 13px; color: #f0f3fa; cursor: pointer;`;
+            wlTitleGroup.style.cssText = `position: relative; display: flex; align-items: center; gap: 6px; font-weight: 700; font-size: 13px; color: var(--vela-text-primary, #eeeef1); cursor: pointer;`;
             const wlTitleText = document.createElement('span');
             wlTitleText.textContent = currentListName;
             const wlTitleChevron = document.createElement('span');
-            wlTitleChevron.style.cssText = 'font-size: 10px; color: #868a96;';
+            wlTitleChevron.style.cssText = 'font-size: 10px; color: var(--vela-text-secondary, #757882);';
             wlTitleChevron.textContent = '▾';
             wlTitleGroup.append(wlTitleText, wlTitleChevron);
 
@@ -417,8 +417,8 @@ export function registerWatchlistSidePanel() {
                 position: absolute;
                 top: 28px;
                 left: 0;
-                background: #1e222d;
-                border: 1px solid #363c4e;
+                background: var(--vela-bg-card, #232429);
+                border: 1px solid var(--vela-border, #262629);
                 border-radius: 6px;
                 padding: 6px 0;
                 width: 200px;
@@ -433,7 +433,7 @@ export function registerWatchlistSidePanel() {
             const renderWlDropdown = () => {
                 wlDropdown.innerHTML = '';
                 const headerItem = document.createElement('div');
-                headerItem.style.cssText = `padding: 6px 12px; font-size: 10px; text-transform: uppercase; color: #868a96; font-weight: 700; letter-spacing: 0.5px;`;
+                headerItem.style.cssText = `padding: 6px 12px; font-size: 10px; text-transform: uppercase; color: var(--vela-text-secondary, #757882); font-weight: 700; letter-spacing: 0.5px;`;
                 headerItem.textContent = 'Select Watchlist';
                 wlDropdown.appendChild(headerItem);
 
@@ -445,13 +445,13 @@ export function registerWatchlistSidePanel() {
                         display: flex;
                         align-items: center;
                         justify-content: space-between;
-                        color: ${isCur ? '#2962ff' : '#f0f3fa'};
-                        background: ${isCur ? 'rgba(41, 98, 255, 0.1)' : 'transparent'};
+                        color: ${isCur ? 'var(--vela-text-primary, #eeeef1)' : 'var(--vela-text-secondary, #757882)'};
+                        background: ${isCur ? 'var(--vela-bg-chip, #292a2f)' : 'transparent'};
                         cursor: pointer;
                         transition: background 0.15s;
                     `;
                     item.innerHTML = `<span>${listName}</span>${isCur ? '<span>✓</span>' : ''}`;
-                    item.addEventListener('mouseenter', () => { if (!isCur) item.style.background = '#2a2e39'; });
+                    item.addEventListener('mouseenter', () => { if (!isCur) item.style.background = 'var(--vela-bg-hover, #2b2d34)'; });
                     item.addEventListener('mouseleave', () => { if (!isCur) item.style.background = 'transparent'; });
                     item.addEventListener('click', (ev) => {
                         ev.stopPropagation();
@@ -467,14 +467,14 @@ export function registerWatchlistSidePanel() {
 
                 // Divider
                 const div = document.createElement('div');
-                div.style.cssText = 'height: 1px; background: #2a2e39; margin: 4px 0;';
+                div.style.cssText = 'height: 1px; background: var(--vela-border, #262629); margin: 4px 0;';
                 wlDropdown.appendChild(div);
 
                 // Add New Watchlist option
                 const addOpt = document.createElement('div');
-                addOpt.style.cssText = `padding: 6px 12px; color: #26a69a; cursor: pointer; display: flex; align-items: center; gap: 6px; font-weight: 600;`;
+                addOpt.style.cssText = `padding: 6px 12px; color: var(--vela-up, #a7be94); cursor: pointer; display: flex; align-items: center; gap: 6px; font-weight: 600;`;
                 addOpt.innerHTML = `<span>+ New Watchlist...</span>`;
-                addOpt.addEventListener('mouseenter', () => { addOpt.style.background = '#2a2e39'; });
+                addOpt.addEventListener('mouseenter', () => { addOpt.style.background = 'var(--vela-bg-hover, #2b2d34)'; });
                 addOpt.addEventListener('mouseleave', () => { addOpt.style.background = 'transparent'; });
                 addOpt.addEventListener('click', (ev) => {
                     ev.stopPropagation();
@@ -496,10 +496,10 @@ export function registerWatchlistSidePanel() {
 
                 // Reset to Default option
                 const resetOpt = document.createElement('div');
-                resetOpt.style.cssText = `padding: 6px 12px; color: #868a96; cursor: pointer; display: flex; align-items: center; gap: 6px; font-size: 11px;`;
+                resetOpt.style.cssText = `padding: 6px 12px; color: var(--vela-text-secondary, #757882); cursor: pointer; display: flex; align-items: center; gap: 6px; font-size: 11px;`;
                 resetOpt.innerHTML = `<span>↺ Reset Current to Default</span>`;
-                resetOpt.addEventListener('mouseenter', () => { resetOpt.style.background = '#2a2e39'; resetOpt.style.color = '#fff'; });
-                resetOpt.addEventListener('mouseleave', () => { resetOpt.style.background = 'transparent'; resetOpt.style.color = '#868a96'; });
+                resetOpt.addEventListener('mouseenter', () => { resetOpt.style.background = 'var(--vela-bg-hover, #2b2d34)'; resetOpt.style.color = 'var(--vela-text-primary, #eeeef1)'; });
+                resetOpt.addEventListener('mouseleave', () => { resetOpt.style.background = 'transparent'; resetOpt.style.color = 'var(--vela-text-secondary, #757882)'; });
                 resetOpt.addEventListener('click', (ev) => {
                     ev.stopPropagation();
                     wlDropdown.style.display = 'none';
@@ -529,21 +529,21 @@ export function registerWatchlistSidePanel() {
             const wlActions = document.createElement('div');
             wlActions.style.cssText = `display: flex; align-items: center; gap: 8px;`;
             wlActions.innerHTML = `
-                <button id="wl-add-btn" title="Add symbol" style="background: transparent; border: none; color: #868a96; cursor: pointer; font-size: 16px; padding: 2px 4px;">+</button>
-                <button title="Settings" style="background: transparent; border: none; color: #868a96; cursor: pointer; font-size: 12px; padding: 2px 4px;">⊶</button>
-                <button title="More" style="background: transparent; border: none; color: #868a96; cursor: pointer; font-size: 14px; padding: 2px 4px;">⋮</button>
-                <button title="Expand" style="background: transparent; border: none; color: #868a96; cursor: pointer; font-size: 12px; padding: 2px 4px;">⤢</button>
+                <button id="wl-add-btn" title="Add symbol" style="background: transparent; border: none; color: var(--vela-text-secondary, #757882); cursor: pointer; font-size: 16px; padding: 2px 4px;">+</button>
+                <button title="Settings" style="background: transparent; border: none; color: var(--vela-text-secondary, #757882); cursor: pointer; font-size: 12px; padding: 2px 4px;">⊶</button>
+                <button title="More" style="background: transparent; border: none; color: var(--vela-text-secondary, #757882); cursor: pointer; font-size: 14px; padding: 2px 4px;">⋮</button>
+                <button title="Expand" style="background: transparent; border: none; color: var(--vela-text-secondary, #757882); cursor: pointer; font-size: 12px; padding: 2px 4px;">⤢</button>
             `;
 
             wlSubheader.append(wlTitleGroup, wlActions);
 
             // Inline Add Symbol search box
             const addSearchBox = document.createElement('div');
-            addSearchBox.style.cssText = `display: none; padding: 8px 12px; background: #1c1d24; border-bottom: 1px solid #2a2e39;`;
+            addSearchBox.style.cssText = `display: none; padding: 8px 12px; background: var(--vela-bg-card, #232429); border-bottom: 1px solid var(--vela-border, #262629);`;
             addSearchBox.innerHTML = `
                 <div style="display: flex; gap: 6px;">
-                    <input id="wl-search-input" placeholder="Add symbol (e.g. SUI, NEAR)..." style="flex: 1; background: #131722; border: 1px solid #363c4e; color: #fff; padding: 4px 8px; font-size: 11px; border-radius: 4px; outline: none;" />
-                    <button id="wl-search-add" style="background: #2962ff; border: none; color: #fff; padding: 4px 10px; border-radius: 4px; font-size: 11px; font-weight: 700; cursor: pointer;">Add</button>
+                    <input id="wl-search-input" placeholder="Add symbol (e.g. SUI, NEAR)..." style="flex: 1; background: var(--vela-bg-main, #202126); border: 1px solid var(--vela-border, #262629); color: var(--vela-text-primary, #eeeef1); padding: 4px 8px; font-size: 11px; border-radius: 4px; outline: none;" />
+                    <button id="wl-search-add" style="background: var(--vela-bg-chip, #292a2f); border: 1px solid var(--vela-border, #262629); color: var(--vela-text-primary, #eeeef1); padding: 4px 10px; border-radius: 4px; font-size: 11px; font-weight: 700; cursor: pointer;">Add</button>
                 </div>
             `;
 
@@ -562,9 +562,9 @@ export function registerWatchlistSidePanel() {
                 grid-template-columns: 2fr 1.4fr 1.1fr 1.1fr 1fr 20px;
                 padding: 6px 12px;
                 font-size: 10px;
-                color: #868a96;
+                color: var(--vela-text-secondary, #757882);
                 text-transform: uppercase;
-                border-bottom: 1px solid #2a2e39;
+                border-bottom: 1px solid var(--vela-border, #262629);
                 user-select: none;
             `;
             wlTableHead.innerHTML = `
@@ -598,10 +598,10 @@ export function registerWatchlistSidePanel() {
                         grid-template-columns: 2fr 1.4fr 1.1fr 1.1fr 1fr 20px;
                         padding: 8px 12px;
                         font-size: 12px;
-                        border-bottom: 1px solid rgba(42, 46, 57, 0.4);
+                        border-bottom: 1px solid var(--vela-border, #262629);
                         cursor: pointer;
                         align-items: center;
-                        background: ${isSelected ? '#1e222d' : 'transparent'};
+                        background: ${isSelected ? 'var(--vela-bg-chip, #292a2f)' : 'transparent'};
                         transition: background 0.15s ease;
                     `;
 
@@ -611,7 +611,7 @@ export function registerWatchlistSidePanel() {
                     delBtn.style.cssText = `
                         background: transparent;
                         border: none;
-                        color: #868a96;
+                        color: var(--vela-text-secondary, #757882);
                         cursor: pointer;
                         font-size: 11px;
                         padding: 2px 4px;
@@ -620,8 +620,8 @@ export function registerWatchlistSidePanel() {
                         transition: opacity 0.15s ease, color 0.15s ease;
                         text-align: center;
                     `;
-                    delBtn.addEventListener('mouseenter', () => { delBtn.style.color = '#ef5350'; });
-                    delBtn.addEventListener('mouseleave', () => { delBtn.style.color = '#868a96'; });
+                    delBtn.addEventListener('mouseenter', () => { delBtn.style.color = 'var(--vela-down, #af6870)'; });
+                    delBtn.addEventListener('mouseleave', () => { delBtn.style.color = 'var(--vela-text-secondary, #757882)'; });
                     delBtn.addEventListener('click', (e) => {
                         e.stopPropagation();
                         watchlistItems = watchlistItems.filter(x => x.binanceSymbol !== item.binanceSymbol);
@@ -630,7 +630,7 @@ export function registerWatchlistSidePanel() {
                     });
 
                     row.addEventListener('mouseenter', () => {
-                        if (!isSelected) row.style.background = '#181b22';
+                        if (!isSelected) row.style.background = 'var(--vela-bg-hover, #2b2d34)';
                         delBtn.style.opacity = '1';
                     });
                     row.addEventListener('mouseleave', () => {
@@ -651,15 +651,15 @@ export function registerWatchlistSidePanel() {
                     });
 
                     const isUp = item.change >= 0;
-                    const chgColor = isUp ? '#26a69a' : '#ef5350';
+                    const chgColor = isUp ? 'var(--vela-up, #a7be94)' : 'var(--vela-down, #af6870)';
                     const sign = isUp ? '+' : '';
 
                     row.innerHTML = `
                         <div style="display: flex; align-items: center; gap: 8px; min-width: 0;">
                             <div style="flex: none; display: flex; align-items: center;">${item.iconSvg}</div>
-                            <span style="font-weight: 700; color: #f0f3fa; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">${item.symbol}</span>
+                            <span style="font-weight: 700; color: var(--vela-text-primary, #eeeef1); overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">${item.symbol}</span>
                         </div>
-                        <div style="text-align: right; color: #f0f3fa; font-weight: 600; font-family: ui-monospace, monospace; font-size: 11px;">
+                        <div style="text-align: right; color: var(--vela-text-primary, #eeeef1); font-weight: 600; font-family: ui-monospace, monospace; font-size: 11px;">
                             ${item.price.toLocaleString(undefined, { minimumFractionDigits: item.price < 1 ? 4 : 2, maximumFractionDigits: item.price < 1 ? 5 : 2 })}
                         </div>
                         <div style="text-align: right; color: ${chgColor}; font-family: ui-monospace, monospace; font-size: 11px;">
@@ -668,7 +668,7 @@ export function registerWatchlistSidePanel() {
                         <div style="text-align: right; color: ${chgColor}; font-weight: 600; font-family: ui-monospace, monospace; font-size: 11px;">
                             ${sign}${item.changePercent.toFixed(2)}%
                         </div>
-                        <div style="text-align: right; color: #868a96; font-size: 10px; font-family: ui-monospace, monospace;">
+                        <div style="text-align: right; color: var(--vela-text-secondary, #757882); font-size: 10px; font-family: ui-monospace, monospace;">
                             ${formatVol(item.volume)}
                         </div>
                     `;
@@ -746,15 +746,15 @@ export function registerWatchlistSidePanel() {
                 align-items: center;
                 justify-content: space-between;
                 padding: 8px 12px;
-                border-bottom: 1px solid #2a2e39;
-                background: #16181e;
+                border-bottom: 1px solid var(--vela-border, #262629);
+                background: var(--vela-bg-panel, #121215);
             `;
             const obSymbolTitle = document.createElement('span');
-            obSymbolTitle.style.cssText = `font-weight: 700; font-size: 13px; color: #f0f3fa;`;
+            obSymbolTitle.style.cssText = `font-weight: 700; font-size: 13px; color: var(--vela-text-primary, #eeeef1);`;
             obSymbolTitle.textContent = `${activeSymbol} Depth`;
 
             const obPrecision = document.createElement('span');
-            obPrecision.style.cssText = `font-size: 10px; color: #868a96; background: #2a2e39; padding: 2px 6px; border-radius: 3px;`;
+            obPrecision.style.cssText = `font-size: 10px; color: var(--vela-text-secondary, #757882); background: var(--vela-bg-chip, #292a2f); padding: 2px 6px; border-radius: 3px;`;
             obPrecision.textContent = `0.1 Precision`;
             obHeader.append(obSymbolTitle, obPrecision);
 
@@ -764,9 +764,9 @@ export function registerWatchlistSidePanel() {
                 grid-template-columns: 1fr 1fr 1fr;
                 padding: 6px 12px;
                 font-size: 10px;
-                color: #868a96;
+                color: var(--vela-text-secondary, #757882);
                 text-transform: uppercase;
-                border-bottom: 1px solid #2a2e39;
+                border-bottom: 1px solid var(--vela-border, #262629);
             `;
             obTableHead.innerHTML = `
                 <div style="text-align: left;">Size</div>
@@ -783,13 +783,13 @@ export function registerWatchlistSidePanel() {
                 align-items: center;
                 justify-content: space-between;
                 padding: 6px 12px;
-                background: #191c24;
-                border-top: 1px solid #2a2e39;
-                border-bottom: 1px solid #2a2e39;
+                background: var(--vela-bg-card, #232429);
+                border-top: 1px solid var(--vela-border, #262629);
+                border-bottom: 1px solid var(--vela-border, #262629);
                 font-size: 11px;
                 font-weight: 600;
             `;
-            spreadRow.innerHTML = `<span style="color: #26a69a;" id="ob-mid-price">--</span><span style="color: #868a96; font-size: 10px;" id="ob-spread">Spread: $0.10 (0.00%)</span>`;
+            spreadRow.innerHTML = `<span style="color: var(--vela-up, #a7be94);" id="ob-mid-price">--</span><span style="color: var(--vela-text-secondary, #757882); font-size: 10px;" id="ob-spread">Spread: $0.10 (0.00%)</span>`;
 
             const bidsList = document.createElement('div');
             bidsList.style.cssText = `display: flex; flex-direction: column; padding: 4px 0;`;
@@ -812,10 +812,10 @@ export function registerWatchlistSidePanel() {
                     const pct = Math.min(100, Math.round((runningAsk / maxAskTotal) * 100));
                     askRows += `
                         <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; padding: 3px 12px; font-size: 11px; font-family: ui-monospace, monospace; position: relative;">
-                            <div style="position: absolute; right: 0; top: 0; bottom: 0; width: ${pct}%; background: rgba(239, 83, 80, 0.14); z-index: 1;"></div>
-                            <div style="color: #d1d4dc; z-index: 2;">${size.toFixed(3)}</div>
-                            <div style="text-align: center; color: #ef5350; font-weight: 600; z-index: 2;">${price.toFixed(2)}</div>
-                            <div style="text-align: right; color: #868a96; z-index: 2;">${runningAsk.toFixed(3)}</div>
+                            <div style="position: absolute; right: 0; top: 0; bottom: 0; width: ${pct}%; background: rgba(175, 104, 112, 0.16); z-index: 1;"></div>
+                            <div style="color: var(--vela-text-primary, #eeeef1); z-index: 2;">${size.toFixed(3)}</div>
+                            <div style="text-align: center; color: var(--vela-down, #af6870); font-weight: 600; z-index: 2;">${price.toFixed(2)}</div>
+                            <div style="text-align: right; color: var(--vela-text-secondary, #757882); z-index: 2;">${runningAsk.toFixed(3)}</div>
                         </div>
                     `;
                 }
@@ -844,10 +844,10 @@ export function registerWatchlistSidePanel() {
                     const pct = Math.min(100, Math.round((runningBid / maxBidTotal) * 100));
                     bidRows += `
                         <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; padding: 3px 12px; font-size: 11px; font-family: ui-monospace, monospace; position: relative;">
-                            <div style="position: absolute; right: 0; top: 0; bottom: 0; width: ${pct}%; background: rgba(38, 166, 154, 0.14); z-index: 1;"></div>
-                            <div style="color: #d1d4dc; z-index: 2;">${size.toFixed(3)}</div>
-                            <div style="text-align: center; color: #26a69a; font-weight: 600; z-index: 2;">${price.toFixed(2)}</div>
-                            <div style="text-align: right; color: #868a96; z-index: 2;">${runningBid.toFixed(3)}</div>
+                            <div style="position: absolute; right: 0; top: 0; bottom: 0; width: ${pct}%; background: rgba(167, 190, 148, 0.16); z-index: 1;"></div>
+                            <div style="color: var(--vela-text-primary, #eeeef1); z-index: 2;">${size.toFixed(3)}</div>
+                            <div style="text-align: center; color: var(--vela-up, #a7be94); font-weight: 600; z-index: 2;">${price.toFixed(2)}</div>
+                            <div style="text-align: right; color: var(--vela-text-secondary, #757882); z-index: 2;">${runningBid.toFixed(3)}</div>
                         </div>
                     `;
                 }
@@ -881,15 +881,15 @@ export function registerWatchlistSidePanel() {
             viewAlerts.innerHTML = `
                 <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px;">
                     <div style="display: flex; align-items: center; gap: 7px;">
-                        <svg viewBox="0 0 16 16" width="15" height="15" fill="none" stroke="#2962ff" stroke-width="1.5"><path d="M8 2a4 4 0 0 0-4 4v2.5L2.5 11v1h11v-1L12 8.5V6a4 4 0 0 0-4-4z"/><path d="M6.5 13.5a1.5 1.5 0 0 0 3 0"/></svg>
-                        <span style="font-weight: 700; color: #f0f3fa; font-size: 13px;">Alerts & Notifications</span>
+                        <svg viewBox="0 0 16 16" width="15" height="15" fill="none" stroke="var(--vela-text-secondary, #757882)" stroke-width="1.5"><path d="M8 2a4 4 0 0 0-4 4v2.5L2.5 11v1h11v-1L12 8.5V6a4 4 0 0 0-4-4z"/><path d="M6.5 13.5a1.5 1.5 0 0 0 3 0"/></svg>
+                        <span style="font-weight: 700; color: var(--vela-text-primary, #eeeef1); font-size: 13px;">Alerts & Notifications</span>
                     </div>
-                    <button id="alert-create-btn" style="background: #2962ff; border: none; color: #fff; padding: 4px 10px; border-radius: 4px; font-size: 11px; font-weight: 700; cursor: pointer;">+ Create Alert</button>
+                    <button id="alert-create-btn" style="background: var(--vela-bg-chip, #292a2f); border: 1px solid var(--vela-border, #262629); color: var(--vela-text-primary, #eeeef1); padding: 4px 10px; border-radius: 4px; font-size: 11px; font-weight: 700; cursor: pointer;">+ Create Alert</button>
                 </div>
-                <div id="alert-form-panel" style="display: none; background: #1c1d24; border: 1px solid #363c4e; border-radius: 6px; padding: 10px; margin-bottom: 12px;">
+                <div id="alert-form-panel" style="display: none; background: var(--vela-bg-card, #232429); border: 1px solid var(--vela-border, #262629); border-radius: 6px; padding: 10px; margin-bottom: 12px;">
                     <div style="margin-bottom: 8px;">
-                        <label style="font-size: 10px; color: #868a96; text-transform: uppercase;">Condition</label>
-                        <select id="alert-condition" style="width: 100%; background: #131722; border: 1px solid #2a2e39; color: #fff; padding: 5px; border-radius: 4px; font-size: 11px; margin-top: 2px;">
+                        <label style="font-size: 10px; color: var(--vela-text-secondary, #757882); text-transform: uppercase;">Condition</label>
+                        <select id="alert-condition" style="width: 100%; background: var(--vela-bg-main, #202126); border: 1px solid var(--vela-border, #262629); color: var(--vela-text-primary, #eeeef1); padding: 5px; border-radius: 4px; font-size: 11px; margin-top: 2px;">
                             <option value="cross_up">Crossing Up</option>
                             <option value="cross_down">Crossing Down</option>
                             <option value="greater">Greater Than</option>
@@ -897,16 +897,16 @@ export function registerWatchlistSidePanel() {
                         </select>
                     </div>
                     <div style="margin-bottom: 10px;">
-                        <label style="font-size: 10px; color: #868a96; text-transform: uppercase;">Trigger Price</label>
-                        <input id="alert-target-price" type="number" step="any" placeholder="85000" style="width: 100%; background: #131722; border: 1px solid #2a2e39; color: #fff; padding: 5px; border-radius: 4px; font-size: 11px; margin-top: 2px; box-sizing: border-box;" />
+                        <label style="font-size: 10px; color: var(--vela-text-secondary, #757882); text-transform: uppercase;">Trigger Price</label>
+                        <input id="alert-target-price" type="number" step="any" placeholder="85000" style="width: 100%; background: var(--vela-bg-main, #202126); border: 1px solid var(--vela-border, #262629); color: var(--vela-text-primary, #eeeef1); padding: 5px; border-radius: 4px; font-size: 11px; margin-top: 2px; box-sizing: border-box;" />
                     </div>
                     <div style="display: flex; justify-content: flex-end; gap: 6px;">
-                        <button id="alert-cancel-btn" style="background: #2a2e39; border: none; color: #868a96; padding: 4px 8px; border-radius: 4px; font-size: 11px; cursor: pointer;">Cancel</button>
-                        <button id="alert-save-btn" style="background: #26a69a; border: none; color: #fff; padding: 4px 10px; border-radius: 4px; font-size: 11px; font-weight: 700; cursor: pointer;">Save Alert</button>
+                        <button id="alert-cancel-btn" style="background: var(--vela-bg-chip, #292a2f); border: 1px solid var(--vela-border, #262629); color: var(--vela-text-secondary, #757882); padding: 4px 8px; border-radius: 4px; font-size: 11px; cursor: pointer;">Cancel</button>
+                        <button id="alert-save-btn" style="background: var(--vela-up, #a7be94); border: none; color: var(--vela-bg-panel, #121215); padding: 4px 10px; border-radius: 4px; font-size: 11px; font-weight: 700; cursor: pointer;">Save Alert</button>
                     </div>
                 </div>
                 <div id="alerts-list-container" style="flex: 1; overflow-y: auto;">
-                    <div style="padding: 16px; text-align: center; color: #868a96; font-size: 11px;">
+                    <div style="padding: 16px; text-align: center; color: var(--vela-text-secondary, #757882); font-size: 11px;">
                         No active alerts.<br/>Click "+ Create Alert" to monitor price levels.
                     </div>
                 </div>
@@ -954,27 +954,27 @@ export function registerWatchlistSidePanel() {
 
                 // Section 1: Active Price Alerts
                 html += `
-                    <div style="font-size: 10px; font-weight: 700; color: #868a96; text-transform: uppercase; margin-bottom: 8px; letter-spacing: 0.5px;">
+                    <div style="font-size: 10px; font-weight: 700; color: var(--vela-text-secondary, #757882); text-transform: uppercase; margin-bottom: 8px; letter-spacing: 0.5px;">
                         Active Price Alerts (${alertList.length})
                     </div>
                 `;
                 if (alertList.length === 0) {
-                    html += `<div style="padding: 10px; text-align: center; color: #868a96; font-size: 11px; background: #191c24; border-radius: 6px; margin-bottom: 12px;">No active price alerts. Click "+ Create Alert" above.</div>`;
+                    html += `<div style="padding: 10px; text-align: center; color: var(--vela-text-secondary, #757882); font-size: 11px; background: var(--vela-bg-card, #232429); border-radius: 6px; margin-bottom: 12px;">No active price alerts. Click "+ Create Alert" above.</div>`;
                 } else {
                     for (const al of alertList) {
                         html += `
-                            <div style="background: #191c24; border: 1px solid #2a2e39; border-radius: 6px; padding: 8px 10px; margin-bottom: 8px; display: flex; align-items: center; justify-content: space-between;">
+                            <div style="background: var(--vela-bg-card, #232429); border: 1px solid var(--vela-border, #262629); border-radius: 6px; padding: 8px 10px; margin-bottom: 8px; display: flex; align-items: center; justify-content: space-between;">
                                 <div>
                                     <div style="display: flex; align-items: center; gap: 6px;">
-                                        <span style="font-weight: 700; color: #f0f3fa; font-size: 12px;">${al.symbol}</span>
-                                        <span style="font-size: 10px; color: #2962ff; background: rgba(41, 98, 255, 0.15); padding: 1px 4px; border-radius: 3px;">${al.condition}</span>
+                                        <span style="font-weight: 700; color: var(--vela-text-primary, #eeeef1); font-size: 12px;">${al.symbol}</span>
+                                        <span style="font-size: 10px; color: var(--vela-text-primary, #eeeef1); background: var(--vela-bg-chip, #292a2f); padding: 1px 4px; border-radius: 3px;">${al.condition}</span>
                                     </div>
-                                    <div style="font-family: ui-monospace, monospace; color: #26a69a; font-weight: 700; font-size: 12px; margin-top: 3px;">
+                                    <div style="font-family: ui-monospace, monospace; color: var(--vela-up, #a7be94); font-weight: 700; font-size: 12px; margin-top: 3px;">
                                         $${al.price.toFixed(2)}
                                     </div>
                                 </div>
                                 <div style="display: flex; align-items: center; gap: 8px;">
-                                    <button class="alert-del-btn" data-id="${al.id}" style="background: transparent; border: none; color: #ef5350; cursor: pointer; font-size: 13px;">✕</button>
+                                    <button class="alert-del-btn" data-id="${al.id}" style="background: transparent; border: none; color: var(--vela-down, #af6870); cursor: pointer; font-size: 13px;">✕</button>
                                 </div>
                             </div>
                         `;
@@ -984,25 +984,25 @@ export function registerWatchlistSidePanel() {
                 // Section 2: Triggered Alerts Log
                 html += `
                     <div style="display: flex; align-items: center; justify-content: space-between; margin-top: 14px; margin-bottom: 8px;">
-                        <span style="font-size: 10px; font-weight: 700; color: #868a96; text-transform: uppercase; letter-spacing: 0.5px;">Notification Log (${triggeredAlerts.length})</span>
-                        ${triggeredAlerts.length > 0 ? '<button id="clear-triggered-alerts-btn" style="background: transparent; border: none; color: #868a96; font-size: 10px; cursor: pointer; text-decoration: underline;">Clear</button>' : ''}
+                        <span style="font-size: 10px; font-weight: 700; color: var(--vela-text-secondary, #757882); text-transform: uppercase; letter-spacing: 0.5px;">Notification Log (${triggeredAlerts.length})</span>
+                        ${triggeredAlerts.length > 0 ? '<button id="clear-triggered-alerts-btn" style="background: transparent; border: none; color: var(--vela-text-secondary, #757882); font-size: 10px; cursor: pointer; text-decoration: underline;">Clear</button>' : ''}
                     </div>
                 `;
                 if (triggeredAlerts.length === 0) {
-                    html += `<div style="padding: 10px; text-align: center; color: #868a96; font-size: 11px; background: #191c24; border-radius: 6px;">No triggered alerts yet.</div>`;
+                    html += `<div style="padding: 10px; text-align: center; color: var(--vela-text-secondary, #757882); font-size: 11px; background: var(--vela-bg-card, #232429); border-radius: 6px;">No triggered alerts yet.</div>`;
                 } else {
                     for (const ta of triggeredAlerts) {
                         html += `
-                            <div style="background: #191c24; border: 1px solid #2a2e39; border-radius: 6px; padding: 8px 10px; margin-bottom: 6px;">
+                            <div style="background: var(--vela-bg-card, #232429); border: 1px solid var(--vela-border, #262629); border-radius: 6px; padding: 8px 10px; margin-bottom: 6px;">
                                 <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 3px;">
                                     <div style="display: flex; align-items: center; gap: 5px;">
-                                        <span style="font-weight: 700; color: #f0f3fa; font-size: 11px;">${ta.symbol}</span>
-                                        <span style="font-size: 9px; color: #ffd54f; background: rgba(255, 213, 79, 0.15); padding: 1px 4px; border-radius: 3px;">${ta.source}</span>
+                                        <span style="font-weight: 700; color: var(--vela-text-primary, #eeeef1); font-size: 11px;">${ta.symbol}</span>
+                                        <span style="font-size: 9px; color: var(--vela-warning, #fde047); background: var(--vela-warning-bg, #29261a); padding: 1px 4px; border-radius: 3px;">${ta.source}</span>
                                     </div>
-                                    <span style="font-size: 10px; color: #868a96;">${ta.time}</span>
+                                    <span style="font-size: 10px; color: var(--vela-text-secondary, #757882);">${ta.time}</span>
                                 </div>
-                                <div style="font-size: 11px; color: #d1d4dc;">
-                                    <strong style="color: #f0f3fa;">${ta.title}:</strong> ${ta.message}
+                                <div style="font-size: 11px; color: var(--vela-text-secondary, #757882);">
+                                    <strong style="color: var(--vela-text-primary, #eeeef1);">${ta.title}:</strong> ${ta.message}
                                 </div>
                             </div>
                         `;
@@ -1061,13 +1061,13 @@ export function registerWatchlistSidePanel() {
             // ─────────────────────────────────────────────────────────────────────────
             viewTables.innerHTML = `
                 <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 10px;">
-                    <div style="font-weight: 700; color: #f0f3fa; font-size: 13px;">Multi-Timeframe Scanner</div>
-                    <span style="font-size: 10px; color: #26a69a; background: rgba(38,166,154,0.15); padding: 2px 6px; border-radius: 3px;">LIVE</span>
+                    <div style="font-weight: 700; color: var(--vela-text-primary, #eeeef1); font-size: 13px;">Multi-Timeframe Scanner</div>
+                    <span style="font-size: 10px; color: var(--vela-up, #a7be94); background: rgba(167, 190, 148, 0.15); padding: 2px 6px; border-radius: 3px;">LIVE</span>
                 </div>
-                <div style="background: #191c24; border: 1px solid #2a2e39; border-radius: 6px; overflow: hidden;">
+                <div style="background: var(--vela-bg-card, #232429); border: 1px solid var(--vela-border, #262629); border-radius: 6px; overflow: hidden;">
                     <table style="width: 100%; border-collapse: collapse; font-size: 11px; text-align: center;">
                         <thead>
-                            <tr style="border-bottom: 1px solid #2a2e39; color: #868a96; font-size: 10px;">
+                            <tr style="border-bottom: 1px solid var(--vela-border, #262629); color: var(--vela-text-secondary, #757882); font-size: 10px;">
                                 <th style="padding: 6px 8px; text-align: left;">Symbol</th>
                                 <th style="padding: 6px 4px;">1m</th>
                                 <th style="padding: 6px 4px;">5m</th>
@@ -1077,45 +1077,45 @@ export function registerWatchlistSidePanel() {
                             </tr>
                         </thead>
                         <tbody>
-                            <tr style="border-bottom: 1px solid rgba(42,46,57,0.3);">
-                                <td style="padding: 6px 8px; text-align: left; font-weight: 700; color: #f0f3fa;">BTC</td>
-                                <td style="padding: 4px;"><span style="background: rgba(38,166,154,0.2); color: #26a69a; padding: 1px 4px; border-radius: 2px; font-weight: 600;">BUY</span></td>
-                                <td style="padding: 4px;"><span style="background: rgba(38,166,154,0.2); color: #26a69a; padding: 1px 4px; border-radius: 2px; font-weight: 600;">BUY</span></td>
-                                <td style="padding: 4px;"><span style="background: rgba(38,166,154,0.3); color: #26a69a; padding: 1px 4px; border-radius: 2px; font-weight: 700;">STRONG</span></td>
-                                <td style="padding: 4px;"><span style="background: rgba(38,166,154,0.2); color: #26a69a; padding: 1px 4px; border-radius: 2px; font-weight: 600;">BUY</span></td>
-                                <td style="padding: 4px;"><span style="background: rgba(38,166,154,0.2); color: #26a69a; padding: 1px 4px; border-radius: 2px; font-weight: 600;">BUY</span></td>
+                            <tr style="border-bottom: 1px solid var(--vela-border, #262629);">
+                                <td style="padding: 6px 8px; text-align: left; font-weight: 700; color: var(--vela-text-primary, #eeeef1);">BTC</td>
+                                <td style="padding: 4px;"><span style="background: rgba(167, 190, 148, 0.18); color: var(--vela-up, #a7be94); padding: 1px 4px; border-radius: 2px; font-weight: 600;">BUY</span></td>
+                                <td style="padding: 4px;"><span style="background: rgba(167, 190, 148, 0.18); color: var(--vela-up, #a7be94); padding: 1px 4px; border-radius: 2px; font-weight: 600;">BUY</span></td>
+                                <td style="padding: 4px;"><span style="background: rgba(167, 190, 148, 0.28); color: var(--vela-up, #a7be94); padding: 1px 4px; border-radius: 2px; font-weight: 700;">STRONG</span></td>
+                                <td style="padding: 4px;"><span style="background: rgba(167, 190, 148, 0.18); color: var(--vela-up, #a7be94); padding: 1px 4px; border-radius: 2px; font-weight: 600;">BUY</span></td>
+                                <td style="padding: 4px;"><span style="background: rgba(167, 190, 148, 0.18); color: var(--vela-up, #a7be94); padding: 1px 4px; border-radius: 2px; font-weight: 600;">BUY</span></td>
                             </tr>
-                            <tr style="border-bottom: 1px solid rgba(42,46,57,0.3);">
-                                <td style="padding: 6px 8px; text-align: left; font-weight: 700; color: #f0f3fa;">ETH</td>
-                                <td style="padding: 4px;"><span style="background: rgba(38,166,154,0.2); color: #26a69a; padding: 1px 4px; border-radius: 2px; font-weight: 600;">BUY</span></td>
-                                <td style="padding: 4px;"><span style="background: rgba(134,138,150,0.2); color: #868a96; padding: 1px 4px; border-radius: 2px;">NEUT</span></td>
-                                <td style="padding: 4px;"><span style="background: rgba(38,166,154,0.2); color: #26a69a; padding: 1px 4px; border-radius: 2px; font-weight: 600;">BUY</span></td>
-                                <td style="padding: 4px;"><span style="background: rgba(38,166,154,0.2); color: #26a69a; padding: 1px 4px; border-radius: 2px; font-weight: 600;">BUY</span></td>
-                                <td style="padding: 4px;"><span style="background: rgba(38,166,154,0.2); color: #26a69a; padding: 1px 4px; border-radius: 2px; font-weight: 600;">BUY</span></td>
+                            <tr style="border-bottom: 1px solid var(--vela-border, #262629);">
+                                <td style="padding: 6px 8px; text-align: left; font-weight: 700; color: var(--vela-text-primary, #eeeef1);">ETH</td>
+                                <td style="padding: 4px;"><span style="background: rgba(167, 190, 148, 0.18); color: var(--vela-up, #a7be94); padding: 1px 4px; border-radius: 2px; font-weight: 600;">BUY</span></td>
+                                <td style="padding: 4px;"><span style="background: rgba(117, 120, 130, 0.18); color: var(--vela-text-secondary, #757882); padding: 1px 4px; border-radius: 2px;">NEUT</span></td>
+                                <td style="padding: 4px;"><span style="background: rgba(167, 190, 148, 0.18); color: var(--vela-up, #a7be94); padding: 1px 4px; border-radius: 2px; font-weight: 600;">BUY</span></td>
+                                <td style="padding: 4px;"><span style="background: rgba(167, 190, 148, 0.18); color: var(--vela-up, #a7be94); padding: 1px 4px; border-radius: 2px; font-weight: 600;">BUY</span></td>
+                                <td style="padding: 4px;"><span style="background: rgba(167, 190, 148, 0.18); color: var(--vela-up, #a7be94); padding: 1px 4px; border-radius: 2px; font-weight: 600;">BUY</span></td>
                             </tr>
-                            <tr style="border-bottom: 1px solid rgba(42,46,57,0.3);">
-                                <td style="padding: 6px 8px; text-align: left; font-weight: 700; color: #f0f3fa;">SOL</td>
-                                <td style="padding: 4px;"><span style="background: rgba(38,166,154,0.3); color: #26a69a; padding: 1px 4px; border-radius: 2px; font-weight: 700;">STRONG</span></td>
-                                <td style="padding: 4px;"><span style="background: rgba(38,166,154,0.2); color: #26a69a; padding: 1px 4px; border-radius: 2px; font-weight: 600;">BUY</span></td>
-                                <td style="padding: 4px;"><span style="background: rgba(38,166,154,0.2); color: #26a69a; padding: 1px 4px; border-radius: 2px; font-weight: 600;">BUY</span></td>
-                                <td style="padding: 4px;"><span style="background: rgba(38,166,154,0.3); color: #26a69a; padding: 1px 4px; border-radius: 2px; font-weight: 700;">STRONG</span></td>
-                                <td style="padding: 4px;"><span style="background: rgba(38,166,154,0.2); color: #26a69a; padding: 1px 4px; border-radius: 2px; font-weight: 600;">BUY</span></td>
+                            <tr style="border-bottom: 1px solid var(--vela-border, #262629);">
+                                <td style="padding: 6px 8px; text-align: left; font-weight: 700; color: var(--vela-text-primary, #eeeef1);">SOL</td>
+                                <td style="padding: 4px;"><span style="background: rgba(167, 190, 148, 0.28); color: var(--vela-up, #a7be94); padding: 1px 4px; border-radius: 2px; font-weight: 700;">STRONG</span></td>
+                                <td style="padding: 4px;"><span style="background: rgba(167, 190, 148, 0.18); color: var(--vela-up, #a7be94); padding: 1px 4px; border-radius: 2px; font-weight: 600;">BUY</span></td>
+                                <td style="padding: 4px;"><span style="background: rgba(167, 190, 148, 0.18); color: var(--vela-up, #a7be94); padding: 1px 4px; border-radius: 2px; font-weight: 600;">BUY</span></td>
+                                <td style="padding: 4px;"><span style="background: rgba(167, 190, 148, 0.28); color: var(--vela-up, #a7be94); padding: 1px 4px; border-radius: 2px; font-weight: 700;">STRONG</span></td>
+                                <td style="padding: 4px;"><span style="background: rgba(167, 190, 148, 0.18); color: var(--vela-up, #a7be94); padding: 1px 4px; border-radius: 2px; font-weight: 600;">BUY</span></td>
                             </tr>
-                            <tr style="border-bottom: 1px solid rgba(42,46,57,0.3);">
-                                <td style="padding: 6px 8px; text-align: left; font-weight: 700; color: #f0f3fa;">XRP</td>
-                                <td style="padding: 4px;"><span style="background: rgba(38,166,154,0.2); color: #26a69a; padding: 1px 4px; border-radius: 2px; font-weight: 600;">BUY</span></td>
-                                <td style="padding: 4px;"><span style="background: rgba(38,166,154,0.2); color: #26a69a; padding: 1px 4px; border-radius: 2px; font-weight: 600;">BUY</span></td>
-                                <td style="padding: 4px;"><span style="background: rgba(38,166,154,0.2); color: #26a69a; padding: 1px 4px; border-radius: 2px; font-weight: 600;">BUY</span></td>
-                                <td style="padding: 4px;"><span style="background: rgba(134,138,150,0.2); color: #868a96; padding: 1px 4px; border-radius: 2px;">NEUT</span></td>
-                                <td style="padding: 4px;"><span style="background: rgba(239,83,80,0.2); color: #ef5350; padding: 1px 4px; border-radius: 2px; font-weight: 600;">SELL</span></td>
+                            <tr style="border-bottom: 1px solid var(--vela-border, #262629);">
+                                <td style="padding: 6px 8px; text-align: left; font-weight: 700; color: var(--vela-text-primary, #eeeef1);">XRP</td>
+                                <td style="padding: 4px;"><span style="background: rgba(167, 190, 148, 0.18); color: var(--vela-up, #a7be94); padding: 1px 4px; border-radius: 2px; font-weight: 600;">BUY</span></td>
+                                <td style="padding: 4px;"><span style="background: rgba(167, 190, 148, 0.18); color: var(--vela-up, #a7be94); padding: 1px 4px; border-radius: 2px; font-weight: 600;">BUY</span></td>
+                                <td style="padding: 4px;"><span style="background: rgba(167, 190, 148, 0.18); color: var(--vela-up, #a7be94); padding: 1px 4px; border-radius: 2px; font-weight: 600;">BUY</span></td>
+                                <td style="padding: 4px;"><span style="background: rgba(117, 120, 130, 0.18); color: var(--vela-text-secondary, #757882); padding: 1px 4px; border-radius: 2px;">NEUT</span></td>
+                                <td style="padding: 4px;"><span style="background: rgba(175, 104, 112, 0.18); color: var(--vela-down, #af6870); padding: 1px 4px; border-radius: 2px; font-weight: 600;">SELL</span></td>
                             </tr>
                             <tr>
-                                <td style="padding: 6px 8px; text-align: left; font-weight: 700; color: #f0f3fa;">DOGE</td>
-                                <td style="padding: 4px;"><span style="background: rgba(38,166,154,0.2); color: #26a69a; padding: 1px 4px; border-radius: 2px; font-weight: 600;">BUY</span></td>
-                                <td style="padding: 4px;"><span style="background: rgba(38,166,154,0.2); color: #26a69a; padding: 1px 4px; border-radius: 2px; font-weight: 600;">BUY</span></td>
-                                <td style="padding: 4px;"><span style="background: rgba(38,166,154,0.2); color: #26a69a; padding: 1px 4px; border-radius: 2px; font-weight: 600;">BUY</span></td>
-                                <td style="padding: 4px;"><span style="background: rgba(38,166,154,0.2); color: #26a69a; padding: 1px 4px; border-radius: 2px; font-weight: 600;">BUY</span></td>
-                                <td style="padding: 4px;"><span style="background: rgba(38,166,154,0.2); color: #26a69a; padding: 1px 4px; border-radius: 2px; font-weight: 600;">BUY</span></td>
+                                <td style="padding: 6px 8px; text-align: left; font-weight: 700; color: var(--vela-text-primary, #eeeef1);">DOGE</td>
+                                <td style="padding: 4px;"><span style="background: rgba(167, 190, 148, 0.18); color: var(--vela-up, #a7be94); padding: 1px 4px; border-radius: 2px; font-weight: 600;">BUY</span></td>
+                                <td style="padding: 4px;"><span style="background: rgba(167, 190, 148, 0.18); color: var(--vela-up, #a7be94); padding: 1px 4px; border-radius: 2px; font-weight: 600;">BUY</span></td>
+                                <td style="padding: 4px;"><span style="background: rgba(167, 190, 148, 0.18); color: var(--vela-up, #a7be94); padding: 1px 4px; border-radius: 2px; font-weight: 600;">BUY</span></td>
+                                <td style="padding: 4px;"><span style="background: rgba(167, 190, 148, 0.18); color: var(--vela-up, #a7be94); padding: 1px 4px; border-radius: 2px; font-weight: 600;">BUY</span></td>
+                                <td style="padding: 4px;"><span style="background: rgba(167, 190, 148, 0.18); color: var(--vela-up, #a7be94); padding: 1px 4px; border-radius: 2px; font-weight: 600;">BUY</span></td>
                             </tr>
                         </tbody>
                     </table>

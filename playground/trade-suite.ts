@@ -95,29 +95,29 @@ function updatePositionsUI() {
 
     if (!positionsContainer) return;
     if (state.activePositions.length === 0) {
-        positionsContainer.innerHTML = `<div style="padding: 16px; text-align: center; color: #868a96;">No open positions</div>`;
+        positionsContainer.innerHTML = `<div style="padding: 16px; text-align: center; color: var(--vela-text-muted, #46474b);">No open positions</div>`;
         return;
     }
 
     let rowsHtml = '';
     for (const p of state.activePositions) {
         const isLong = p.side === 'LONG';
-        const pnlColor = p.pnl >= 0 ? '#26a69a' : '#ef5350';
+        const pnlColor = p.pnl >= 0 ? 'var(--vela-up, #a7be94)' : 'var(--vela-down, #af6870)';
         rowsHtml += `
-            <tr style="border-bottom: 1px solid #2a2e39; font-size: 12px;">
+            <tr style="border-bottom: 1px solid var(--vela-border, #262629); font-size: 12px;">
                 <td style="padding: 8px 10px;">
-                    <span style="font-weight: 700; color: #f0f3fa;">${p.symbol}</span>
-                    <span style="padding: 1px 4px; border-radius: 2px; font-size: 10px; font-weight: 700; background: ${isLong ? 'rgba(38,166,154,0.2)' : 'rgba(239,83,80,0.2)'}; color: ${isLong ? '#26a69a' : '#ef5350'}; margin-left: 4px;">${p.side} ${p.leverage}x</span>
+                    <span style="font-weight: 700; color: var(--vela-text-primary, #eeeef1);">${p.symbol}</span>
+                    <span style="padding: 1px 4px; border-radius: 2px; font-size: 10px; font-weight: 700; background: ${isLong ? 'var(--vela-up-selected-bg, #363a38)' : 'rgba(175,104,112,0.25)'}; color: ${isLong ? 'var(--vela-up, #a7be94)' : 'var(--vela-down, #af6870)'}; margin-left: 4px;">${p.side} ${p.leverage}x</span>
                 </td>
-                <td style="padding: 8px 10px; color: #d1d4dc;">${p.size}</td>
-                <td style="padding: 8px 10px; color: #d1d4dc;">${p.entryPrice.toFixed(2)}</td>
-                <td style="padding: 8px 10px; color: #d1d4dc;">${p.markPrice.toFixed(2)}</td>
-                <td style="padding: 8px 10px; color: #f23645;">${p.liqPrice > 0 ? p.liqPrice.toFixed(2) : '--'}</td>
+                <td style="padding: 8px 10px; color: var(--vela-text-secondary, #757882);">${p.size}</td>
+                <td style="padding: 8px 10px; color: var(--vela-text-secondary, #757882);">${p.entryPrice.toFixed(2)}</td>
+                <td style="padding: 8px 10px; color: var(--vela-text-secondary, #757882);">${p.markPrice.toFixed(2)}</td>
+                <td style="padding: 8px 10px; color: var(--vela-down, #af6870);">${p.liqPrice > 0 ? p.liqPrice.toFixed(2) : '--'}</td>
                 <td style="padding: 8px 10px; color: ${pnlColor}; font-weight: 600;">
                     ${p.pnl >= 0 ? '+' : ''}${p.pnl.toFixed(2)} USDT (${p.roe.toFixed(2)}%)
                 </td>
                 <td style="padding: 8px 10px; text-align: right;">
-                    <button class="close-pos-btn" data-sym="${p.symbol}" data-side="${p.side}" data-size="${p.size}" style="background: #2a2e39; border: 1px solid #363c4e; color: #ef5350; font-size: 11px; padding: 3px 8px; border-radius: 4px; cursor: pointer;">Close</button>
+                    <button class="close-pos-btn" data-sym="${p.symbol}" data-side="${p.side}" data-size="${p.size}" style="background: var(--vela-bg-card, #232429); border: 1px solid var(--vela-border, #262629); color: var(--vela-down, #af6870); font-size: 11px; padding: 3px 8px; border-radius: 4px; cursor: pointer;">Close</button>
                 </td>
             </tr>
         `;
@@ -126,7 +126,7 @@ function updatePositionsUI() {
     positionsContainer.innerHTML = `
         <table style="width: 100%; border-collapse: collapse; text-align: left;">
             <thead>
-                <tr style="color: #868a96; font-size: 10px; text-transform: uppercase; border-bottom: 1px solid #2a2e39;">
+                <tr style="color: var(--vela-text-muted, #46474b); font-size: 10px; text-transform: uppercase; border-bottom: 1px solid var(--vela-border, #262629);">
                     <th style="padding: 6px 10px;">Symbol</th>
                     <th style="padding: 6px 10px;">Size</th>
                     <th style="padding: 6px 10px;">Entry Price</th>
@@ -162,7 +162,7 @@ function updateOrdersUI() {
 
     if (!ordersContainer) return;
     if (state.openOrders.length === 0) {
-        ordersContainer.innerHTML = `<div style="padding: 16px; text-align: center; color: #868a96;">No open orders</div>`;
+        ordersContainer.innerHTML = `<div style="padding: 16px; text-align: center; color: var(--vela-text-muted, #46474b);">No open orders</div>`;
         return;
     }
 
@@ -170,16 +170,16 @@ function updateOrdersUI() {
     for (const o of state.openOrders) {
         const isBuy = o.side === 'BUY';
         rowsHtml += `
-            <tr style="border-bottom: 1px solid #2a2e39; font-size: 12px;">
-                <td style="padding: 8px 10px; color: #f0f3fa; font-weight: 700;">${o.symbol}</td>
+            <tr style="border-bottom: 1px solid var(--vela-border, #262629); font-size: 12px;">
+                <td style="padding: 8px 10px; color: var(--vela-text-primary, #eeeef1); font-weight: 700;">${o.symbol}</td>
                 <td style="padding: 8px 10px;">
-                    <span style="color: ${isBuy ? '#26a69a' : '#ef5350'}; font-weight: 700;">${o.side}</span>
+                    <span style="color: ${isBuy ? 'var(--vela-up, #a7be94)' : 'var(--vela-down, #af6870)'}; font-weight: 700;">${o.side}</span>
                 </td>
-                <td style="padding: 8px 10px; color: #d1d4dc;">${o.type}</td>
-                <td style="padding: 8px 10px; color: #d1d4dc;">${parseFloat(o.price || '0').toFixed(2)}</td>
-                <td style="padding: 8px 10px; color: #d1d4dc;">${parseFloat(o.origQty || '0')}</td>
+                <td style="padding: 8px 10px; color: var(--vela-text-secondary, #757882);">${o.type}</td>
+                <td style="padding: 8px 10px; color: var(--vela-text-secondary, #757882);">${parseFloat(o.price || '0').toFixed(2)}</td>
+                <td style="padding: 8px 10px; color: var(--vela-text-secondary, #757882);">${parseFloat(o.origQty || '0')}</td>
                 <td style="padding: 8px 10px; text-align: right;">
-                    <button class="cancel-ord-btn" data-sym="${o.symbol}" data-id="${o.orderId}" style="background: #2a2e39; border: 1px solid #363c4e; color: #ef5350; font-size: 11px; padding: 3px 8px; border-radius: 4px; cursor: pointer;">Cancel</button>
+                    <button class="cancel-ord-btn" data-sym="${o.symbol}" data-id="${o.orderId}" style="background: var(--vela-bg-card, #232429); border: 1px solid var(--vela-border, #262629); color: var(--vela-down, #af6870); font-size: 11px; padding: 3px 8px; border-radius: 4px; cursor: pointer;">Cancel</button>
                 </td>
             </tr>
         `;
@@ -187,11 +187,11 @@ function updateOrdersUI() {
 
     ordersContainer.innerHTML = `
         <div style="padding: 6px 10px; display: flex; justify-content: flex-end;">
-            <button id="cancel-all-orders-btn" style="background: #2a2e39; border: 1px solid #363c4e; color: #ef5350; font-size: 11px; padding: 4px 10px; border-radius: 4px; cursor: pointer;">Cancel All</button>
+            <button id="cancel-all-orders-btn" style="background: var(--vela-bg-card, #232429); border: 1px solid var(--vela-border, #262629); color: var(--vela-down, #af6870); font-size: 11px; padding: 4px 10px; border-radius: 4px; cursor: pointer;">Cancel All</button>
         </div>
         <table style="width: 100%; border-collapse: collapse; text-align: left;">
             <thead>
-                <tr style="color: #868a96; font-size: 10px; text-transform: uppercase; border-bottom: 1px solid #2a2e39;">
+                <tr style="color: var(--vela-text-muted, #46474b); font-size: 10px; text-transform: uppercase; border-bottom: 1px solid var(--vela-border, #262629);">
                     <th style="padding: 6px 10px;">Symbol</th>
                     <th style="padding: 6px 10px;">Side</th>
                     <th style="padding: 6px 10px;">Type</th>
@@ -243,20 +243,20 @@ export function registerTradingSidePanel() {
             header.setTitle('Order Ticket');
 
             body.innerHTML = `
-                <div style="padding: 12px; font-family: -apple-system, system-ui, sans-serif; font-size: 12px; color: #d1d4dc;">
+                <div style="padding: 12px; font-family: -apple-system, system-ui, sans-serif; font-size: 12px; color: var(--vela-text-secondary, #757882); background: var(--vela-bg-panel, #121215);">
                     <!-- Environment switcher -->
                     <div style="display: flex; gap: 6px; margin-bottom: 12px;">
-                        <button id="env-testnet-btn" style="flex: 1; padding: 6px; font-size: 11px; font-weight: 700; border-radius: 4px; border: 1px solid ${state.isTestnet ? '#f0b90b' : '#2a2e39'}; background: ${state.isTestnet ? 'rgba(240,185,11,0.15)' : '#1c1d20'}; color: ${state.isTestnet ? '#f0b90b' : '#868a96'}; cursor: pointer;">TESTNET</button>
-                        <button id="env-prod-btn" style="flex: 1; padding: 6px; font-size: 11px; font-weight: 700; border-radius: 4px; border: 1px solid ${!state.isTestnet ? '#26a69a' : '#2a2e39'}; background: ${!state.isTestnet ? 'rgba(38,166,154,0.15)' : '#1c1d20'}; color: ${!state.isTestnet ? '#26a69a' : '#868a96'}; cursor: pointer;">PRODUCTION LIVE</button>
+                        <button id="env-testnet-btn" style="flex: 1; padding: 6px; font-size: 11px; font-weight: 700; border-radius: 4px; border: 1px solid ${state.isTestnet ? 'var(--vela-warning, #fde047)' : 'var(--vela-border, #262629)'}; background: ${state.isTestnet ? 'var(--vela-warning-bg, #29261a)' : 'var(--vela-bg-card, #232429)'}; color: ${state.isTestnet ? 'var(--vela-warning, #fde047)' : 'var(--vela-text-secondary, #757882)'}; cursor: pointer;">TESTNET</button>
+                        <button id="env-prod-btn" style="flex: 1; padding: 6px; font-size: 11px; font-weight: 700; border-radius: 4px; border: 1px solid ${!state.isTestnet ? 'var(--vela-up, #a7be94)' : 'var(--vela-border, #262629)'}; background: ${!state.isTestnet ? 'var(--vela-up-selected-bg, #363a38)' : 'var(--vela-bg-card, #232429)'}; color: ${!state.isTestnet ? 'var(--vela-up, #a7be94)' : 'var(--vela-text-secondary, #757882)'}; cursor: pointer;">PRODUCTION LIVE</button>
                     </div>
 
                     <!-- Margin Mode & Leverage -->
                     <div style="display: flex; gap: 8px; margin-bottom: 12px;">
-                        <select id="trade-margin-mode" style="flex: 1; background: #2a2e39; color: #f0f3fa; border: 1px solid #363c4e; border-radius: 4px; padding: 6px 8px; font-size: 11px;">
+                        <select id="trade-margin-mode" style="flex: 1; background: var(--vela-bg-card, #232429); color: var(--vela-text-primary, #eeeef1); border: 1px solid var(--vela-border, #262629); border-radius: 4px; padding: 6px 8px; font-size: 11px;">
                             <option value="isolated">Isolated</option>
                             <option value="cross">Cross</option>
                         </select>
-                        <select id="trade-leverage" style="flex: 1; background: #2a2e39; color: #f0f3fa; border: 1px solid #363c4e; border-radius: 4px; padding: 6px 8px; font-size: 11px; font-weight: 700;">
+                        <select id="trade-leverage" style="flex: 1; background: var(--vela-bg-card, #232429); color: var(--vela-text-primary, #eeeef1); border: 1px solid var(--vela-border, #262629); border-radius: 4px; padding: 6px 8px; font-size: 11px; font-weight: 700;">
                             <option value="5">5x</option>
                             <option value="10">10x</option>
                             <option value="20" selected>20x</option>
@@ -268,60 +268,60 @@ export function registerTradingSidePanel() {
 
                     <!-- Buy / Sell Split Buttons -->
                     <div style="display: flex; gap: 8px; margin-bottom: 14px;">
-                        <button id="btn-side-buy" style="flex: 1; padding: 10px; font-size: 13px; font-weight: 800; border-radius: 6px; border: none; background: #26a69a; color: #fff; cursor: pointer; box-shadow: 0 2px 8px rgba(38,166,154,0.3);">BUY / LONG</button>
-                        <button id="btn-side-sell" style="flex: 1; padding: 10px; font-size: 13px; font-weight: 800; border-radius: 6px; border: none; background: #2a2e39; color: #868a96; cursor: pointer;">SELL / SHORT</button>
+                        <button id="btn-side-buy" style="flex: 1; padding: 10px; font-size: 13px; font-weight: 800; border-radius: 6px; border: none; background: var(--vela-up, #a7be94); color: var(--vela-button-light-text, #121215); cursor: pointer;">BUY / LONG</button>
+                        <button id="btn-side-sell" style="flex: 1; padding: 10px; font-size: 13px; font-weight: 800; border-radius: 6px; border: none; background: var(--vela-bg-card, #232429); color: var(--vela-text-secondary, #757882); cursor: pointer;">SELL / SHORT</button>
                     </div>
 
                     <!-- Order Type Selector -->
-                    <div style="display: flex; background: #1c1d20; border: 1px solid #2a2e39; border-radius: 6px; margin-bottom: 12px; overflow: hidden;">
-                        <button id="type-market-btn" style="flex: 1; padding: 6px; font-size: 11px; font-weight: 700; background: #2a2e39; color: #f0f3fa; border: none; cursor: pointer;">Market</button>
-                        <button id="type-limit-btn" style="flex: 1; padding: 6px; font-size: 11px; font-weight: 700; background: transparent; color: #868a96; border: none; cursor: pointer;">Limit</button>
-                        <button id="type-stop-btn" style="flex: 1; padding: 6px; font-size: 11px; font-weight: 700; background: transparent; color: #868a96; border: none; cursor: pointer;">Stop</button>
+                    <div style="display: flex; background: var(--vela-bg-panel, #121215); border: 1px solid var(--vela-border, #262629); border-radius: 6px; margin-bottom: 12px; overflow: hidden;">
+                        <button id="type-market-btn" style="flex: 1; padding: 6px; font-size: 11px; font-weight: 700; background: var(--vela-bg-chip, #292a2f); color: var(--vela-text-primary, #eeeef1); border: none; cursor: pointer;">Market</button>
+                        <button id="type-limit-btn" style="flex: 1; padding: 6px; font-size: 11px; font-weight: 700; background: transparent; color: var(--vela-text-secondary, #757882); border: none; cursor: pointer;">Limit</button>
+                        <button id="type-stop-btn" style="flex: 1; padding: 6px; font-size: 11px; font-weight: 700; background: transparent; color: var(--vela-text-secondary, #757882); border: none; cursor: pointer;">Stop</button>
                     </div>
 
                     <!-- Price input (Limit/Stop) -->
                     <div id="field-price-group" style="display: none; margin-bottom: 10px;">
-                        <label style="display: block; font-size: 11px; color: #868a96; margin-bottom: 4px;">Price (USDT)</label>
-                        <input id="input-order-price" type="number" step="any" placeholder="Price" style="width: 100%; box-sizing: border-box; background: #2a2e39; color: #f0f3fa; border: 1px solid #363c4e; border-radius: 4px; padding: 8px 10px; font-size: 12px; outline: none;" />
+                        <label style="display: block; font-size: 11px; color: var(--vela-text-secondary, #757882); margin-bottom: 4px;">Price (USDT)</label>
+                        <input id="input-order-price" type="number" step="any" placeholder="Price" style="width: 100%; box-sizing: border-box; background: var(--vela-bg-card, #232429); color: var(--vela-text-primary, #eeeef1); border: 1px solid var(--vela-border, #262629); border-radius: 4px; padding: 8px 10px; font-size: 12px; outline: none;" />
                     </div>
 
                     <!-- Quantity Input -->
                     <div style="margin-bottom: 10px;">
                         <div style="display: flex; justify-content: space-between; margin-bottom: 4px;">
-                            <span style="font-size: 11px; color: #868a96;">Amount</span>
-                            <span style="font-size: 11px; color: #868a96;">Avail: <strong id="trade-panel-avail" style="color: #f0f3fa;">--</strong></span>
+                            <span style="font-size: 11px; color: var(--vela-text-secondary, #757882);">Amount</span>
+                            <span style="font-size: 11px; color: var(--vela-text-secondary, #757882);">Avail: <strong id="trade-panel-avail" style="color: var(--vela-text-primary, #eeeef1);">--</strong></span>
                         </div>
-                        <input id="input-order-qty" type="number" step="any" placeholder="Size (e.g. 0.05)" style="width: 100%; box-sizing: border-box; background: #2a2e39; color: #f0f3fa; border: 1px solid #363c4e; border-radius: 4px; padding: 8px 10px; font-size: 12px; outline: none;" />
+                        <input id="input-order-qty" type="number" step="any" placeholder="Size (e.g. 0.05)" style="width: 100%; box-sizing: border-box; background: var(--vela-bg-card, #232429); color: var(--vela-text-primary, #eeeef1); border: 1px solid var(--vela-border, #262629); border-radius: 4px; padding: 8px 10px; font-size: 12px; outline: none;" />
                     </div>
 
                     <!-- Quick % Allocation Buttons -->
                     <div style="display: flex; gap: 4px; margin-bottom: 14px;">
-                        <button class="pct-btn" data-pct="0.25" style="flex: 1; background: #2a2e39; border: 1px solid #363c4e; color: #d1d4dc; font-size: 10px; padding: 4px 0; border-radius: 4px; cursor: pointer;">25%</button>
-                        <button class="pct-btn" data-pct="0.50" style="flex: 1; background: #2a2e39; border: 1px solid #363c4e; color: #d1d4dc; font-size: 10px; padding: 4px 0; border-radius: 4px; cursor: pointer;">50%</button>
-                        <button class="pct-btn" data-pct="0.75" style="flex: 1; background: #2a2e39; border: 1px solid #363c4e; color: #d1d4dc; font-size: 10px; padding: 4px 0; border-radius: 4px; cursor: pointer;">75%</button>
-                        <button class="pct-btn" data-pct="1.00" style="flex: 1; background: #2a2e39; border: 1px solid #363c4e; color: #d1d4dc; font-size: 10px; padding: 4px 0; border-radius: 4px; cursor: pointer;">100%</button>
+                        <button class="pct-btn" data-pct="0.25" style="flex: 1; background: var(--vela-bg-card, #232429); border: 1px solid var(--vela-border, #262629); color: var(--vela-text-secondary, #757882); font-size: 10px; padding: 4px 0; border-radius: 4px; cursor: pointer;">25%</button>
+                        <button class="pct-btn" data-pct="0.50" style="flex: 1; background: var(--vela-bg-card, #232429); border: 1px solid var(--vela-border, #262629); color: var(--vela-text-secondary, #757882); font-size: 10px; padding: 4px 0; border-radius: 4px; cursor: pointer;">50%</button>
+                        <button class="pct-btn" data-pct="0.75" style="flex: 1; background: var(--vela-bg-card, #232429); border: 1px solid var(--vela-border, #262629); color: var(--vela-text-secondary, #757882); font-size: 10px; padding: 4px 0; border-radius: 4px; cursor: pointer;">75%</button>
+                        <button class="pct-btn" data-pct="1.00" style="flex: 1; background: var(--vela-bg-card, #232429); border: 1px solid var(--vela-border, #262629); color: var(--vela-text-secondary, #757882); font-size: 10px; padding: 4px 0; border-radius: 4px; cursor: pointer;">100%</button>
                     </div>
 
                     <!-- Bracket TP / SL -->
-                    <div style="background: #1c1d20; border: 1px solid #2a2e39; border-radius: 6px; padding: 8px 10px; margin-bottom: 14px;">
+                    <div style="background: var(--vela-bg-panel, #121215); border: 1px solid var(--vela-border, #262629); border-radius: 6px; padding: 8px 10px; margin-bottom: 14px;">
                         <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 6px;">
                             <label style="display: flex; align-items: center; gap: 6px; font-size: 11px; cursor: pointer;">
                                 <input id="chk-tp" type="checkbox" /> Take Profit
                             </label>
-                            <input id="input-tp" type="number" step="any" placeholder="TP Price" disabled style="width: 100px; background: #2a2e39; border: 1px solid #363c4e; color: #26a69a; border-radius: 3px; padding: 3px 6px; font-size: 11px; outline: none; text-align: right;" />
+                            <input id="input-tp" type="number" step="any" placeholder="TP Price" disabled style="width: 100px; background: var(--vela-bg-card, #232429); border: 1px solid var(--vela-border, #262629); color: var(--vela-up, #a7be94); border-radius: 3px; padding: 3px 6px; font-size: 11px; outline: none; text-align: right;" />
                         </div>
                         <div style="display: flex; align-items: center; justify-content: space-between;">
                             <label style="display: flex; align-items: center; gap: 6px; font-size: 11px; cursor: pointer;">
                                 <input id="chk-sl" type="checkbox" /> Stop Loss
                             </label>
-                            <input id="input-sl" type="number" step="any" placeholder="SL Price" disabled style="width: 100px; background: #2a2e39; border: 1px solid #363c4e; color: #ef5350; border-radius: 3px; padding: 3px 6px; font-size: 11px; outline: none; text-align: right;" />
+                            <input id="input-sl" type="number" step="any" placeholder="SL Price" disabled style="width: 100px; background: var(--vela-bg-card, #232429); border: 1px solid var(--vela-border, #262629); color: var(--vela-down, #af6870); border-radius: 3px; padding: 3px 6px; font-size: 11px; outline: none; text-align: right;" />
                         </div>
                     </div>
 
                     <!-- Action Submit Button -->
-                    <button id="btn-place-order" style="width: 100%; padding: 12px; font-size: 14px; font-weight: 800; border-radius: 6px; border: none; background: #26a69a; color: #fff; cursor: pointer; transition: filter 120ms;">BUY / LONG BTCUSDT</button>
+                    <button id="btn-place-order" style="width: 100%; padding: 12px; font-size: 14px; font-weight: 800; border-radius: 6px; border: none; background: var(--vela-up, #a7be94); color: var(--vela-button-light-text, #121215); cursor: pointer; transition: filter 120ms;">BUY / LONG BTCUSDT</button>
 
-                    <div id="trade-msg" style="margin-top: 8px; font-size: 11px; text-align: center; color: #868a96;"></div>
+                    <div id="trade-msg" style="margin-top: 8px; font-size: 11px; text-align: center; color: var(--vela-text-muted, #46474b);"></div>
                 </div>
             `;
 
@@ -346,11 +346,12 @@ export function registerTradingSidePanel() {
             const refreshSideAndButton = () => {
                 const isBuy = state.side === 'BUY';
                 if (sideBuy && sideSell && placeBtn) {
-                    sideBuy.style.background = isBuy ? '#26a69a' : '#2a2e39';
-                    sideBuy.style.color = isBuy ? '#fff' : '#868a96';
-                    sideSell.style.background = !isBuy ? '#ef5350' : '#2a2e39';
-                    sideSell.style.color = !isBuy ? '#fff' : '#868a96';
-                    placeBtn.style.background = isBuy ? '#26a69a' : '#ef5350';
+                    sideBuy.style.background = isBuy ? 'var(--vela-up, #a7be94)' : 'var(--vela-bg-card, #232429)';
+                    sideBuy.style.color = isBuy ? 'var(--vela-button-light-text, #121215)' : 'var(--vela-text-secondary, #757882)';
+                    sideSell.style.background = !isBuy ? 'var(--vela-down, #af6870)' : 'var(--vela-bg-card, #232429)';
+                    sideSell.style.color = !isBuy ? 'var(--vela-button-light-text, #121215)' : 'var(--vela-text-secondary, #757882)';
+                    placeBtn.style.background = isBuy ? 'var(--vela-up, #a7be94)' : 'var(--vela-down, #af6870)';
+                    placeBtn.style.color = 'var(--vela-button-light-text, #121215)';
                     placeBtn.textContent = `${isBuy ? 'BUY / LONG' : 'SELL / SHORT'} ${state.symbol}`;
                 }
             };
@@ -361,19 +362,19 @@ export function registerTradingSidePanel() {
 
             envTestnet?.addEventListener('click', () => {
                 state.isTestnet = true;
-                envTestnet.style.border = '1px solid #f0b90b';
-                envTestnet.style.background = 'rgba(240,185,11,0.15)';
-                envTestnet.style.color = '#f0b90b';
+                envTestnet.style.border = '1px solid var(--vela-warning, #fde047)';
+                envTestnet.style.background = 'var(--vela-warning-bg, #29261a)';
+                envTestnet.style.color = 'var(--vela-warning, #fde047)';
                 if (envProd) {
-                    envProd.style.border = '1px solid #2a2e39';
-                    envProd.style.background = '#1c1d20';
-                    envProd.style.color = '#868a96';
+                    envProd.style.border = '1px solid var(--vela-border, #262629)';
+                    envProd.style.background = 'var(--vela-bg-card, #232429)';
+                    envProd.style.color = 'var(--vela-text-secondary, #757882)';
                 }
                 const badge = document.getElementById('strip-env-badge');
                 if (badge) {
                     badge.textContent = 'BINANCE TESTNET';
-                    badge.style.color = '#f0b90b';
-                    badge.style.background = 'rgba(240,185,11,0.15)';
+                    badge.style.color = 'var(--vela-warning, #fde047)';
+                    badge.style.background = 'var(--vela-warning-bg, #29261a)';
                 }
                 fetchAccount();
                 fetchOrders(state.symbol);
@@ -381,19 +382,19 @@ export function registerTradingSidePanel() {
 
             envProd?.addEventListener('click', () => {
                 state.isTestnet = false;
-                envProd.style.border = '1px solid #26a69a';
-                envProd.style.background = 'rgba(38,166,154,0.15)';
-                envProd.style.color = '#26a69a';
+                envProd.style.border = '1px solid var(--vela-up, #a7be94)';
+                envProd.style.background = 'var(--vela-up-selected-bg, #363a38)';
+                envProd.style.color = 'var(--vela-up, #a7be94)';
                 if (envTestnet) {
-                    envTestnet.style.border = '1px solid #2a2e39';
-                    envTestnet.style.background = '#1c1d20';
-                    envTestnet.style.color = '#868a96';
+                    envTestnet.style.border = '1px solid var(--vela-border, #262629)';
+                    envTestnet.style.background = 'var(--vela-bg-card, #232429)';
+                    envTestnet.style.color = 'var(--vela-text-secondary, #757882)';
                 }
                 const badge = document.getElementById('strip-env-badge');
                 if (badge) {
                     badge.textContent = 'BINANCE PRODUCTION';
-                    badge.style.color = '#26a69a';
-                    badge.style.background = 'rgba(38,166,154,0.15)';
+                    badge.style.color = 'var(--vela-up, #a7be94)';
+                    badge.style.background = 'var(--vela-up-selected-bg, #363a38)';
                 }
                 fetchAccount();
                 fetchOrders(state.symbol);
@@ -405,25 +406,25 @@ export function registerTradingSidePanel() {
             typeMarket?.addEventListener('click', () => {
                 state.orderType = 'MARKET';
                 if (priceGroup) (priceGroup as HTMLElement).style.display = 'none';
-                typeMarket.style.background = '#2a2e39'; typeMarket.style.color = '#f0f3fa';
-                if (typeLimit) { typeLimit.style.background = 'transparent'; typeLimit.style.color = '#868a96'; }
-                if (typeStop) { typeStop.style.background = 'transparent'; typeStop.style.color = '#868a96'; }
+                typeMarket.style.background = 'var(--vela-bg-chip, #292a2f)'; typeMarket.style.color = 'var(--vela-text-primary, #eeeef1)';
+                if (typeLimit) { typeLimit.style.background = 'transparent'; typeLimit.style.color = 'var(--vela-text-secondary, #757882)'; }
+                if (typeStop) { typeStop.style.background = 'transparent'; typeStop.style.color = 'var(--vela-text-secondary, #757882)'; }
             });
 
             typeLimit?.addEventListener('click', () => {
                 state.orderType = 'LIMIT';
                 if (priceGroup) (priceGroup as HTMLElement).style.display = 'block';
-                typeLimit.style.background = '#2a2e39'; typeLimit.style.color = '#f0f3fa';
-                if (typeMarket) { typeMarket.style.background = 'transparent'; typeMarket.style.color = '#868a96'; }
-                if (typeStop) { typeStop.style.background = 'transparent'; typeStop.style.color = '#868a96'; }
+                typeLimit.style.background = 'var(--vela-bg-chip, #292a2f)'; typeLimit.style.color = 'var(--vela-text-primary, #eeeef1)';
+                if (typeMarket) { typeMarket.style.background = 'transparent'; typeMarket.style.color = 'var(--vela-text-secondary, #757882)'; }
+                if (typeStop) { typeStop.style.background = 'transparent'; typeStop.style.color = 'var(--vela-text-secondary, #757882)'; }
             });
 
             typeStop?.addEventListener('click', () => {
                 state.orderType = 'STOP_MARKET';
                 if (priceGroup) (priceGroup as HTMLElement).style.display = 'block';
-                typeStop.style.background = '#2a2e39'; typeStop.style.color = '#f0f3fa';
-                if (typeMarket) { typeMarket.style.background = 'transparent'; typeMarket.style.color = '#868a96'; }
-                if (typeLimit) { typeLimit.style.background = 'transparent'; typeLimit.style.color = '#868a96'; }
+                typeStop.style.background = 'var(--vela-bg-chip, #292a2f)'; typeStop.style.color = 'var(--vela-text-primary, #eeeef1)';
+                if (typeMarket) { typeMarket.style.background = 'transparent'; typeMarket.style.color = 'var(--vela-text-secondary, #757882)'; }
+                if (typeLimit) { typeLimit.style.background = 'transparent'; typeLimit.style.color = 'var(--vela-text-secondary, #757882)'; }
             });
 
             chkTp?.addEventListener('change', () => {
@@ -580,9 +581,9 @@ export function registerPineEditor() {
                     width: 100%;
                     box-sizing: border-box;
                     height: 240px;
-                    background: #131722;
-                    color: #d1d4dc;
-                    border: 1px solid #2a2e39;
+                    background: var(--vela-bg-main, #202126);
+                    color: var(--vela-text-primary, #eeeef1);
+                    border: 1px solid var(--vela-border, #262629);
                     border-radius: 6px;
                     padding: 10px;
                     font-family: 'JetBrains Mono', 'Fira Code', monospace;
@@ -597,8 +598,8 @@ export function registerPineEditor() {
                 pineRunBtn = document.createElement('button');
                 pineRunBtn.textContent = 'Compile & Run on Chart';
                 pineRunBtn.style.cssText = `
-                    background: #2962ff;
-                    color: #fff;
+                    background: var(--vela-up, #a7be94);
+                    color: var(--vela-bg-panel, #121215);
                     border: none;
                     border-radius: 4px;
                     padding: 8px 16px;
@@ -608,7 +609,7 @@ export function registerPineEditor() {
                 `;
 
                 pineStatus = document.createElement('div');
-                pineStatus.style.cssText = 'font-size: 12px; color: #868a96;';
+                pineStatus.style.cssText = 'font-size: 12px; color: var(--vela-text-secondary, #757882);';
 
                 btnRow.appendChild(pineRunBtn);
                 btnRow.appendChild(pineStatus);
@@ -625,19 +626,19 @@ export function registerPineEditor() {
 
             pineRunBtn!.onclick = async () => {
                 if (!pineEditorArea || !pineStatus) return;
-                pineStatus.style.color = '#868a96';
+                pineStatus.style.color = 'var(--vela-text-secondary, #757882)';
                 pineStatus.textContent = 'Compiling via PineWorkerEngine...';
                 try {
                     const res = await ctx.chart.runIndicator(pineEditorArea.value);
                     if (res.ok) {
-                        pineStatus.style.color = '#26a69a';
+                        pineStatus.style.color = 'var(--vela-up, #a7be94)';
                         pineStatus.textContent = `✓ ${res.handle?.title || 'Script'} rendered on active chart`;
                     } else {
-                        pineStatus.style.color = '#ef5350';
+                        pineStatus.style.color = 'var(--vela-down, #af6870)';
                         pineStatus.textContent = `✗ ${res.error?.message || 'Execution error'}`;
                     }
                 } catch (err: any) {
-                    pineStatus.style.color = '#ef5350';
+                    pineStatus.style.color = 'var(--vela-down, #af6870)';
                     pineStatus.textContent = `✗ ${err.message}`;
                 }
             };
@@ -671,11 +672,11 @@ export function registerReplayButton() {
                 top: 0;
                 bottom: 0;
                 width: 2px;
-                background: #f23645;
+                background: var(--vela-down, #af6870);
                 pointer-events: none;
                 z-index: 9999;
                 display: none;
-                border-left: 2px dashed #f23645;
+                border-left: 2px dashed var(--vela-down, #af6870);
             `;
 
             const cutBadge = document.createElement('div');
@@ -683,8 +684,8 @@ export function registerReplayButton() {
                 position: absolute;
                 top: 50px;
                 left: 8px;
-                background: #f23645;
-                color: #fff;
+                background: var(--vela-down, #af6870);
+                color: var(--vela-text-primary, #eeeef1);
                 padding: 3px 8px;
                 font-size: 11px;
                 font-weight: 700;
@@ -738,8 +739,8 @@ export function registerReplayButton() {
                 left: 50%;
                 transform: translateX(-50%);
                 z-index: 99999;
-                background: #1c1d20;
-                border: 1px solid #363c4e;
+                background: var(--vela-bg-card, #232429);
+                border: 1px solid var(--vela-border, #262629);
                 box-shadow: 0 10px 30px rgba(0,0,0,0.8);
                 border-radius: 8px;
                 padding: 6px 14px;
@@ -748,26 +749,26 @@ export function registerReplayButton() {
                 gap: 12px;
                 font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
                 font-size: 12px;
-                color: #d1d4dc;
+                color: var(--vela-text-primary, #eeeef1);
                 user-select: none;
             `;
 
             replayDock.innerHTML = `
-                <div style="display: flex; align-items: center; gap: 6px; font-weight: 700; color: #f23645;">
+                <div style="display: flex; align-items: center; gap: 6px; font-weight: 700; color: var(--vela-down, #af6870);">
                     <span>⮌ REPLAY</span>
                 </div>
-                <div style="border-left: 1px solid #2a2e39; height: 16px;"></div>
-                <button id="tv-dock-jump" title="Jump to another bar" style="background: #2a2e39; border: 1px solid #363c4e; color: #f0f3fa; border-radius: 4px; padding: 5px 9px; font-size: 11px; cursor: pointer; display: flex; align-items: center; gap: 4px;">✂ Jump</button>
-                <button id="tv-dock-step" title="Step forward 1 bar" style="background: #2a2e39; border: 1px solid #363c4e; color: #f0f3fa; border-radius: 4px; padding: 5px 9px; font-size: 11px; cursor: pointer;">◀ Step</button>
-                <button id="tv-dock-play" title="Play / Pause" style="background: #2962ff; border: none; color: #fff; font-weight: 700; border-radius: 4px; padding: 5px 12px; font-size: 11px; cursor: pointer;">▶ Play</button>
+                <div style="border-left: 1px solid var(--vela-border, #262629); height: 16px;"></div>
+                <button id="tv-dock-jump" title="Jump to another bar" style="background: var(--vela-bg-chip, #292a2f); border: 1px solid var(--vela-border, #262629); color: var(--vela-text-primary, #eeeef1); border-radius: 4px; padding: 5px 9px; font-size: 11px; cursor: pointer; display: flex; align-items: center; gap: 4px;">✂ Jump</button>
+                <button id="tv-dock-step" title="Step forward 1 bar" style="background: var(--vela-bg-chip, #292a2f); border: 1px solid var(--vela-border, #262629); color: var(--vela-text-primary, #eeeef1); border-radius: 4px; padding: 5px 9px; font-size: 11px; cursor: pointer;">◀ Step</button>
+                <button id="tv-dock-play" title="Play / Pause" style="background: var(--vela-up, #a7be94); border: none; color: var(--vela-bg-panel, #121215); font-weight: 700; border-radius: 4px; padding: 5px 12px; font-size: 11px; cursor: pointer;">▶ Play</button>
                 <div style="display: flex; gap: 3px;">
-                    <button class="tv-dock-spd" data-spd="100" style="background: #2a2e39; border: 1px solid #363c4e; color: #868a96; border-radius: 3px; padding: 3px 6px; font-size: 10px; cursor: pointer;">0.1s</button>
-                    <button class="tv-dock-spd" data-spd="500" style="background: #2a2e39; border: 1px solid #363c4e; color: #868a96; border-radius: 3px; padding: 3px 6px; font-size: 10px; cursor: pointer;">0.5s</button>
-                    <button class="tv-dock-spd" data-spd="1000" style="background: #26a69a; border: 1px solid #26a69a; color: #fff; border-radius: 3px; padding: 3px 6px; font-size: 10px; font-weight: 700; cursor: pointer;">1s</button>
-                    <button class="tv-dock-spd" data-spd="3000" style="background: #2a2e39; border: 1px solid #363c4e; color: #868a96; border-radius: 3px; padding: 3px 6px; font-size: 10px; cursor: pointer;">3s</button>
+                    <button class="tv-dock-spd" data-spd="100" style="background: var(--vela-bg-main, #202126); border: 1px solid var(--vela-border, #262629); color: var(--vela-text-secondary, #757882); border-radius: 3px; padding: 3px 6px; font-size: 10px; cursor: pointer;">0.1s</button>
+                    <button class="tv-dock-spd" data-spd="500" style="background: var(--vela-bg-main, #202126); border: 1px solid var(--vela-border, #262629); color: var(--vela-text-secondary, #757882); border-radius: 3px; padding: 3px 6px; font-size: 10px; cursor: pointer;">0.5s</button>
+                    <button class="tv-dock-spd" data-spd="1000" style="background: var(--vela-up, #a7be94); border: 1px solid var(--vela-up, #a7be94); color: var(--vela-bg-panel, #121215); border-radius: 3px; padding: 3px 6px; font-size: 10px; font-weight: 700; cursor: pointer;">1s</button>
+                    <button class="tv-dock-spd" data-spd="3000" style="background: var(--vela-bg-main, #202126); border: 1px solid var(--vela-border, #262629); color: var(--vela-text-secondary, #757882); border-radius: 3px; padding: 3px 6px; font-size: 10px; cursor: pointer;">3s</button>
                 </div>
-                <div style="border-left: 1px solid #2a2e39; height: 16px;"></div>
-                <button id="tv-dock-close" title="Exit Bar Replay" style="background: transparent; border: none; color: #ef5350; font-size: 14px; font-weight: 700; cursor: pointer; padding: 2px 6px;">✕</button>
+                <div style="border-left: 1px solid var(--vela-border, #262629); height: 16px;"></div>
+                <button id="tv-dock-close" title="Exit Bar Replay" style="background: transparent; border: none; color: var(--vela-down, #af6870); font-size: 14px; font-weight: 700; cursor: pointer; padding: 2px 6px;">✕</button>
             `;
 
             document.body.appendChild(replayDock);
@@ -780,8 +781,8 @@ export function registerReplayButton() {
 
             const updatePlaying = (playing: boolean) => {
                 btnPlay.textContent = playing ? '⏸ Pause' : '▶ Play';
-                btnPlay.style.background = playing ? '#f0b90b' : '#2962ff';
-                btnPlay.style.color = playing ? '#131722' : '#fff';
+                btnPlay.style.background = playing ? 'var(--vela-warning, #fde047)' : 'var(--vela-up, #a7be94)';
+                btnPlay.style.color = 'var(--vela-bg-panel, #121215)';
             };
 
             btnJump.addEventListener('click', () => {
@@ -814,14 +815,14 @@ export function registerReplayButton() {
                     const spd = parseInt(e.target.getAttribute('data-spd'), 10);
                     intervalMs = spd;
                     replayDock?.querySelectorAll('.tv-dock-spd').forEach((b: any) => {
-                        b.style.background = '#2a2e39';
-                        b.style.borderColor = '#363c4e';
-                        b.style.color = '#868a96';
+                        b.style.background = 'var(--vela-bg-main, #202126)';
+                        b.style.borderColor = 'var(--vela-border, #262629)';
+                        b.style.color = 'var(--vela-text-secondary, #757882)';
                         b.style.fontWeight = 'normal';
                     });
-                    e.target.style.background = '#26a69a';
-                    e.target.style.borderColor = '#26a69a';
-                    e.target.style.color = '#fff';
+                    e.target.style.background = 'var(--vela-up, #a7be94)';
+                    e.target.style.borderColor = 'var(--vela-up, #a7be94)';
+                    e.target.style.color = 'var(--vela-bg-panel, #121215)';
                     e.target.style.fontWeight = '700';
 
                     if (wsInstance && wsInstance.replay.state.playing) {
@@ -867,24 +868,24 @@ export function mountBottomAccountStrip(ws: VelaWorkspace) {
     strip.id = 'velo-bottom-account-drawer';
     strip.style.cssText = `
         height: 180px;
-        background: #131722;
-        border-top: 1px solid #2a2e39;
+        background: var(--vela-bg-bar, #191a1e);
+        border-top: 1px solid var(--vela-border, #262629);
         display: flex;
         flex-direction: column;
         font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-        color: #d1d4dc;
+        color: var(--vela-text-secondary, #757882);
         overflow: hidden;
     `;
 
     strip.innerHTML = `
-        <div style="display: flex; align-items: center; justify-content: space-between; border-bottom: 1px solid #2a2e39; padding: 0 10px; background: #1c1d20;">
+        <div style="display: flex; align-items: center; justify-content: space-between; border-bottom: 1px solid var(--vela-border, #262629); padding: 0 10px; background: var(--vela-bg-panel, #121215);">
             <div style="display: flex; gap: 4px;">
-                <button id="tab-positions-btn" style="background: #2a2e39; color: #f0f3fa; border: none; font-size: 11px; font-weight: 700; padding: 7px 12px; cursor: pointer; border-bottom: 2px solid #2962ff;">Positions (<span id="pos-count">0</span>)</button>
-                <button id="tab-orders-btn" style="background: transparent; color: #868a96; border: none; font-size: 11px; font-weight: 700; padding: 7px 12px; cursor: pointer;">Open Orders (<span id="ord-count">0</span>)</button>
+                <button id="tab-positions-btn" style="background: var(--vela-bg-chip, #292a2f); color: var(--vela-text-primary, #eeeef1); border: none; font-size: 11px; font-weight: 700; padding: 7px 12px; cursor: pointer; border-bottom: 2px solid var(--vela-up, #a7be94);">Positions (<span id="pos-count">0</span>)</button>
+                <button id="tab-orders-btn" style="background: transparent; color: var(--vela-text-secondary, #757882); border: none; font-size: 11px; font-weight: 700; padding: 7px 12px; cursor: pointer;">Open Orders (<span id="ord-count">0</span>)</button>
             </div>
             <div style="display: flex; align-items: center; gap: 12px; font-size: 11px;">
-                <span id="strip-env-badge" style="color: #f0b90b; font-weight: 700; font-size: 10px; background: rgba(240,185,11,0.15); padding: 2px 6px; border-radius: 4px;">BINANCE TESTNET</span>
-                <button id="strip-minimize-btn" style="background: transparent; border: none; color: #868a96; font-size: 12px; cursor: pointer;">▼</button>
+                <span id="strip-env-badge" style="color: var(--vela-warning, #fde047); font-weight: 700; font-size: 10px; background: var(--vela-warning-bg, #29261a); padding: 2px 6px; border-radius: 4px;">BINANCE TESTNET</span>
+                <button id="strip-minimize-btn" style="background: transparent; border: none; color: var(--vela-text-muted, #46474b); font-size: 12px; cursor: pointer;">▼</button>
             </div>
         </div>
         <div style="flex: 1; overflow: auto; position: relative;">
@@ -904,12 +905,12 @@ export function mountBottomAccountStrip(ws: VelaWorkspace) {
         if (positionsContainer && ordersContainer) {
             positionsContainer.style.display = 'block';
             ordersContainer.style.display = 'none';
-            tabPos.style.background = '#2a2e39';
-            tabPos.style.color = '#f0f3fa';
-            (tabPos as HTMLElement).style.borderBottom = '2px solid #2962ff';
+            tabPos.style.background = 'var(--vela-bg-chip, #292a2f)';
+            tabPos.style.color = 'var(--vela-text-primary, #eeeef1)';
+            (tabPos as HTMLElement).style.borderBottom = '2px solid var(--vela-up, #a7be94)';
             if (tabOrd) {
                 tabOrd.style.background = 'transparent';
-                tabOrd.style.color = '#868a96';
+                tabOrd.style.color = 'var(--vela-text-secondary, #757882)';
                 (tabOrd as HTMLElement).style.borderBottom = 'none';
             }
         }
@@ -919,12 +920,12 @@ export function mountBottomAccountStrip(ws: VelaWorkspace) {
         if (positionsContainer && ordersContainer) {
             positionsContainer.style.display = 'none';
             ordersContainer.style.display = 'block';
-            tabOrd.style.background = '#2a2e39';
-            tabOrd.style.color = '#f0f3fa';
-            (tabOrd as HTMLElement).style.borderBottom = '2px solid #2962ff';
+            tabOrd.style.background = 'var(--vela-bg-chip, #292a2f)';
+            tabOrd.style.color = 'var(--vela-text-primary, #eeeef1)';
+            (tabOrd as HTMLElement).style.borderBottom = '2px solid var(--vela-up, #a7be94)';
             if (tabPos) {
                 tabPos.style.background = 'transparent';
-                tabPos.style.color = '#868a96';
+                tabPos.style.color = 'var(--vela-text-secondary, #757882)';
                 (tabPos as HTMLElement).style.borderBottom = 'none';
             }
             fetchOrders(state.symbol);

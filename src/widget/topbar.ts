@@ -19,76 +19,109 @@ const CSS = `
 .vela-widget-topbar {
     display: flex;
     align-items: center;
-    gap: var(--vela-space-1);
-    padding: var(--vela-space-1) var(--vela-space-2);
-    border-bottom: 1px solid var(--vela-border-soft);
+    gap: 3px;
+    height: 40px;
+    padding: 0 8px;
+    border-bottom: 1px solid var(--vela-border, #262629);
+    background: var(--vela-bg-main, var(--vela-bg));
     color: var(--vela-fg);
     font-size: var(--vela-font-size-md);
     flex: none;
 }
-.vela-widget-symbol, .vela-widget-tf, .vela-widget-style, .vela-widget-indicators, .vela-widget-action-left {
+.vela-widget-style, .vela-widget-indicators, .vela-widget-action-left {
     all: unset;
     display: inline-flex;
     align-items: center;
     gap: 6px;
-    height: 30px;
-    padding: 0 9px;
+    height: 28px;
+    padding: 0 8px;
     border-radius: 4px;
     cursor: pointer;
-    color: var(--vela-fg-muted);
+    color: var(--vela-text-secondary, #757882);
     font-size: 13px;
     font-weight: 550;
     white-space: nowrap;
 }
 .vela-widget-symbol {
-    color: var(--vela-fg-bright);
-    font-size: 15px;
-    font-weight: 600;
-    letter-spacing: 0.3px;
-    padding: 0 10px;
-    gap: 7px;
-}
-.vela-widget-tf, .vela-widget-style, .vela-widget-indicators, .vela-widget-action-left {
-    color: var(--vela-fg-bright);
-}
-.vela-widget-symbol:hover, .vela-widget-tf:hover, .vela-widget-style:hover, .vela-widget-indicators:hover, .vela-widget-action-left:hover { background: var(--vela-hover); color: var(--vela-fg-bright); }
-/* Timeframe cluster: duration-sorted favorite chips, highlight in place, caret
-   opening the full dropdown. With no favorites the caret is the merged trigger
-   (label + chevron). An unstarred current value sits as an extra chip by the caret. */
-.vela-widget-tf-group { display: inline-flex; align-items: center; gap: 2px; }
-.vela-widget-tf-chips { display: inline-flex; align-items: center; gap: 2px; }
-.vela-widget-tf-chips:empty { display: none; }
-.vela-widget-tf[data-current='1'] { background: var(--vela-hover-strong); color: var(--vela-fg-bright); }
-.vela-widget-tf-caret {
     all: unset;
     display: inline-flex;
     align-items: center;
+    color: var(--vela-text-primary, #eeeef1);
+    font-size: 13px;
+    font-weight: 600;
+    letter-spacing: 0.2px;
+    padding: 0 10px;
+    height: 26px;
+    border-radius: 4px;
+    background: var(--vela-bg-card, #232429);
+    border: 1px solid var(--vela-border, #262629);
+    gap: 6px;
+    cursor: pointer;
+}
+.vela-widget-symbol:hover {
+    background: var(--vela-bg-hover, #2b2d34);
+    color: var(--vela-text-primary, #eeeef1);
+}
+.vela-widget-style:hover, .vela-widget-indicators:hover, .vela-widget-action-left:hover {
+    background: var(--vela-bg-hover, #2b2d34);
+    color: var(--vela-text-primary, #eeeef1);
+}
+/* Timeframe cluster: compact top-bar pills with subtle lighter fill on active */
+.vela-widget-tf-group { display: inline-flex; align-items: center; gap: 3px; margin: 0 2px; }
+.vela-widget-tf-chips { display: inline-flex; align-items: center; gap: 3px; }
+.vela-widget-tf-chips:empty { display: none; }
+.vela-widget-tf {
+    all: unset;
+    box-sizing: border-box;
+    display: inline-flex;
+    align-items: center;
     justify-content: center;
-    width: 18px;
-    height: 30px;
+    height: 24px;
+    padding: 0 8px;
+    border-radius: 4px;
+    font-size: 12px;
+    font-weight: 500;
+    color: var(--vela-text-secondary, #757882);
+    cursor: pointer;
+    transition: background 60ms ease, color 60ms ease;
+}
+.vela-widget-tf:hover {
+    background: var(--vela-bg-hover, #2b2d34);
+    color: var(--vela-text-primary, #eeeef1);
+}
+.vela-widget-tf[data-current='1'] {
+    background: var(--vela-bg-chip, #292a2f) !important;
+    color: var(--vela-text-primary, #eeeef1) !important;
+    font-weight: 600;
+}
+.vela-widget-tf-caret {
+    all: unset;
+    box-sizing: border-box;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 20px;
+    height: 24px;
     border-radius: 4px;
     cursor: pointer;
-    color: var(--vela-fg-muted);
+    color: var(--vela-text-secondary, #757882);
 }
-.vela-widget-tf-caret:hover { background: var(--vela-hover); color: var(--vela-fg-bright); }
-/* The merged trigger is a plain button (hover feedback only) — the highlight
-   background marks the CURRENT chip among favorites, and a lone trigger with a
-   permanent highlight would read as stuck-pressed. */
+.vela-widget-tf-caret:hover {
+    background: var(--vela-bg-hover, #2b2d34);
+    color: var(--vela-text-primary, #eeeef1);
+}
 .vela-widget-tf-caret[data-solo='1'] {
     width: auto;
-    padding: 0 6px 0 9px;
+    padding: 0 6px 0 8px;
     gap: 4px;
-    color: var(--vela-fg-bright);
-    font-size: 13px;
+    color: var(--vela-text-primary, #eeeef1);
+    font-size: 12px;
     font-weight: 550;
     white-space: nowrap;
 }
-.vela-widget-topbar .vela-widget-tf-caret .vela-icon { font-size: 14px; width: 14px; height: 14px; }
-.vela-widget-topbar .vela-icon { color: inherit; font-size: 16px; width: 16px; height: 16px; }
-/* Width is set in syncHairlines() to exactly one device pixel — a CSS 1px at
-   fractional DPR (1.25, 1.5…) straddles two physical pixels and siblings end
-   up looking like different thicknesses depending on subpixel placement. */
-.vela-sep { height: 22px; margin: 0 2px; flex: none; background: var(--vela-border-strong); }
+.vela-widget-topbar .vela-widget-tf-caret .vela-icon { font-size: 13px; width: 13px; height: 13px; }
+.vela-widget-topbar .vela-icon { color: inherit; font-size: 15px; width: 15px; height: 15px; }
+.vela-sep { height: 18px; margin: 0 4px; flex: none; background: var(--vela-border, #262629); }
 .vela-alerts-badge {
     position: absolute;
     top: 2px;

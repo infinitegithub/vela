@@ -13,13 +13,15 @@ export const ACCENT = '#2962ff';
  *  {@link ACCENT} so a switch reads clearly enabled. */
 export const ACCENT_BRIGHT = '#38c0fd';
 
-/** Bullish/bearish reference pair — the dark theme's candle colors, reused wherever a
- *  fixed directional color is needed outside a theme (volume profiles, baseline defaults). */
-export const BULLISH = '#089981';
-export const BEARISH = '#f23645';
+/** Bullish/bearish reference pair — muted desaturated candles matching reference design. */
+export const BULLISH = '#a7be94';
+export const BEARISH = '#af6870';
 
-/** Neutral gray for de-emphasized geometry (unstyled level lines, gann 1/1 diagonals). */
-export const NEUTRAL = '#787b86';
+/** Neutral gray for de-emphasized geometry and secondary text. */
+export const NEUTRAL = '#757882';
+
+/** Recessive muted text / faint borders. */
+export const MUTED = '#46474b';
 
 /** Attention amber — favorited items. */
 export const HIGHLIGHT = '#e0b400';
@@ -49,8 +51,8 @@ export const SESSION_OFF = '#9ca3af';
  *  reserved for interactive chrome. */
 export const SERIES_LINE = '#3b82f6';
 
-/** Crosshair ink: a cool gray that stays legible over both candles and empty surface. */
-export const CROSSHAIR = '#9aa0ad';
+/** Crosshair ink: cool gray matching reference secondary text. */
+export const CROSSHAIR = '#757882';
 
 /** Fixed slate plates for canvas badges that float over chart content of any color (info
  *  badges on drawings) — they cannot follow the theme surface and stay readable.
@@ -62,10 +64,8 @@ export const SLATE = '#475569';
  *  chip stands off the axis on both themes while its white ink stays readable. */
 export const CHIP_PLATE = '#595959';
 
-/** Strategy trade markers — entry arrows per position side, and the exits' shared violet.
- *  The entry pair deliberately reuses the accent blue / bearish red (the reference palette
- *  of order-fill marks); the violet keeps exits apart from both directions. */
-export const TRADE_LONG = ACCENT;
+/** Strategy trade markers — entry arrows per position side, and the exits' shared violet. */
+export const TRADE_LONG = BULLISH;
 export const TRADE_SHORT = BEARISH;
 export const TRADE_EXIT = '#d500f9';
 

@@ -28,20 +28,20 @@ const CSS = `
     position: relative;
     width: var(--vela-panel-w, ${DEFAULT_PANEL_WIDTH}px);
     flex: none;
-    border-left: 1px solid var(--vela-border);
+    border-left: 1px solid var(--vela-border, #262629);
     display: flex;
     flex-direction: column;
     color: var(--vela-fg);
     font-size: 13px;
     box-sizing: border-box;
-    background: var(--vela-bg);
+    background: var(--vela-bg-panel, #121215);
 }
 .vela-panel-header {
     display: flex;
     align-items: center;
     gap: 8px;
     padding: 10px 8px 10px 14px;
-    border-bottom: 1px solid var(--vela-border);
+    border-bottom: 1px solid var(--vela-border, #262629);
     font-size: 14px;
     font-weight: 600;
     color: var(--vela-fg-bright);
