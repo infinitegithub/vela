@@ -79,9 +79,10 @@ const ws = new VelaWorkspace('#workspace', {
     drawingToolbar: true, // full left drawing tools suite (67+ tools)
 
     topbar: {
-        // Templates & Replay pinned on the LEFT side beside Layout and Indicators
-        left: ['symbol', 'timeframes', 'style', 'layout', 'templates.toggle', 'indicators', 'replay.toggle', 'undo-redo'],
-        right: ['pine.editor', 'screenshot', 'panels', 'trade.toggle'],
+        // Left: Symbol, Timeframes, Style (Candles icon), Layout, Indicators, Replay, Undo/Redo
+        left: ['symbol', 'timeframes', 'style', 'layout', 'indicators', 'replay.toggle', 'undo-redo'],
+        // Right: Pine Editor, Screenshot, Templates (icon-only), Panels, Trade button
+        right: ['pine.editor', 'screenshot', 'templates.toggle', 'panels', 'trade.toggle'],
     },
 });
 

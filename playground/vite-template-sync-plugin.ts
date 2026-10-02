@@ -215,10 +215,10 @@ function seedDefaultTemplates(templatesDir: string) {
                 timeframeFavorites: ['1', '5', '15', '60', '240', 'D'],
                 panels: { open: 'watchlist.panel' },
                 charts: [
-                    { id: 'btc', symbol: 'BTCUSDT', timeframe: '1', priceStyle: 'candlestick', indicators: { manifest: [], natives: ['volume'] } },
-                    { id: 'eth', symbol: 'ETHUSDT', timeframe: '15', priceStyle: 'candlestick', indicators: { manifest: [], natives: ['volume', 'rsi'] } },
-                    { id: 'sol', symbol: 'SOLUSDT', timeframe: '60', priceStyle: 'candlestick', indicators: { manifest: [], natives: ['volume', 'ema'] } },
-                    { id: 'bnb', symbol: 'BNBUSDT', timeframe: 'D', priceStyle: 'candlestick', indicators: { manifest: [], natives: ['volume', 'bollinger'] } }
+                    { id: 'btc', symbol: 'BTCUSDT', timeframe: '1', priceStyle: 'candles', indicators: { manifest: [], natives: ['volume'] } },
+                    { id: 'eth', symbol: 'ETHUSDT', timeframe: '15', priceStyle: 'candles', indicators: { manifest: [], natives: ['volume', 'rsi'] } },
+                    { id: 'sol', symbol: 'SOLUSDT', timeframe: '60', priceStyle: 'candles', indicators: { manifest: [], natives: ['volume', 'ema'] } },
+                    { id: 'bnb', symbol: 'BNBUSDT', timeframe: 'D', priceStyle: 'candles', indicators: { manifest: [], natives: ['volume', 'bollinger'] } }
                 ]
             }
         },
@@ -237,7 +237,7 @@ function seedDefaultTemplates(templatesDir: string) {
                 timeframeFavorites: ['1', '5', '15', '60', '240', 'D'],
                 panels: { open: 'watchlist.panel' },
                 charts: [
-                    { id: 'c1', symbol: 'BTCUSDT', timeframe: '15', priceStyle: 'candlestick', indicators: { manifest: [], natives: ['volume', 'ema', 'rsi', 'macd'] } }
+                    { id: 'c1', symbol: 'BTCUSDT', timeframe: '15', priceStyle: 'candles', indicators: { manifest: [], natives: ['volume', 'ema', 'rsi', 'macd'] } }
                 ]
             }
         },
@@ -257,8 +257,8 @@ function seedDefaultTemplates(templatesDir: string) {
                 timeframeFavorites: ['1', '5', '15', '60', '240', 'D'],
                 panels: { open: 'watchlist.panel' },
                 charts: [
-                    { id: 'btc', symbol: 'BTCUSDT', timeframe: '15', priceStyle: 'candlestick', indicators: { manifest: [], natives: ['volume', 'ema'] } },
-                    { id: 'eth', symbol: 'ETHUSDT', timeframe: '15', priceStyle: 'candlestick', indicators: { manifest: [], natives: ['volume', 'ema'] } }
+                    { id: 'btc', symbol: 'BTCUSDT', timeframe: '15', priceStyle: 'candles', indicators: { manifest: [], natives: ['volume', 'ema'] } },
+                    { id: 'eth', symbol: 'ETHUSDT', timeframe: '15', priceStyle: 'candles', indicators: { manifest: [], natives: ['volume', 'ema'] } }
                 ]
             }
         },
@@ -278,14 +278,14 @@ function seedDefaultTemplates(templatesDir: string) {
                 timeframeFavorites: ['1', '5', '15', '60', '240', 'D'],
                 panels: { open: 'watchlist.panel' },
                 charts: [
-                    { id: 'c1', symbol: 'BTCUSDT', timeframe: '15', priceStyle: 'candlestick', indicators: { manifest: [], natives: ['volume'] } },
-                    { id: 'c2', symbol: 'ETHUSDT', timeframe: '15', priceStyle: 'candlestick', indicators: { manifest: [], natives: ['volume'] } },
-                    { id: 'c3', symbol: 'SOLUSDT', timeframe: '15', priceStyle: 'candlestick', indicators: { manifest: [], natives: ['volume'] } },
-                    { id: 'c4', symbol: 'BNBUSDT', timeframe: '15', priceStyle: 'candlestick', indicators: { manifest: [], natives: ['volume'] } },
-                    { id: 'c5', symbol: 'XRPUSDT', timeframe: '15', priceStyle: 'candlestick', indicators: { manifest: [], natives: ['volume'] } },
-                    { id: 'c6', symbol: 'DOGEUSDT', timeframe: '15', priceStyle: 'candlestick', indicators: { manifest: [], natives: ['volume'] } },
-                    { id: 'c7', symbol: 'ADAUSDT', timeframe: '15', priceStyle: 'candlestick', indicators: { manifest: [], natives: ['volume'] } },
-                    { id: 'c8', symbol: 'AVAXUSDT', timeframe: '15', priceStyle: 'candlestick', indicators: { manifest: [], natives: ['volume'] } }
+                    { id: 'c1', symbol: 'BTCUSDT', timeframe: '15', priceStyle: 'candles', indicators: { manifest: [], natives: ['volume'] } },
+                    { id: 'c2', symbol: 'ETHUSDT', timeframe: '15', priceStyle: 'candles', indicators: { manifest: [], natives: ['volume'] } },
+                    { id: 'c3', symbol: 'SOLUSDT', timeframe: '15', priceStyle: 'candles', indicators: { manifest: [], natives: ['volume'] } },
+                    { id: 'c4', symbol: 'BNBUSDT', timeframe: '15', priceStyle: 'candles', indicators: { manifest: [], natives: ['volume'] } },
+                    { id: 'c5', symbol: 'XRPUSDT', timeframe: '15', priceStyle: 'candles', indicators: { manifest: [], natives: ['volume'] } },
+                    { id: 'c6', symbol: 'DOGEUSDT', timeframe: '15', priceStyle: 'candles', indicators: { manifest: [], natives: ['volume'] } },
+                    { id: 'c7', symbol: 'ADAUSDT', timeframe: '15', priceStyle: 'candles', indicators: { manifest: [], natives: ['volume'] } },
+                    { id: 'c8', symbol: 'AVAXUSDT', timeframe: '15', priceStyle: 'candles', indicators: { manifest: [], natives: ['volume'] } }
                 ]
             }
         }

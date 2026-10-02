@@ -35,8 +35,9 @@ export function registerTemplateManager() {
         target: 'topbar',
         label: 'Templates',
         icon: 'templates-icon',
-        align: 'left',
-        order: 3, // Pinned right beside layout picker in topbar.left
+        iconOnly: true,
+        align: 'right',
+        order: 5,
         run: () => {
             openTemplateModal();
         },

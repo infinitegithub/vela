@@ -147,6 +147,7 @@ const CSS = `
 
 const BUILTIN_STYLE_LABELS: Record<string, string> = {
     candles: 'Candles',
+    candlestick: 'Candles',
     bars: 'Bars',
     line: 'Line',
     area: 'Area',
@@ -154,14 +155,18 @@ const BUILTIN_STYLE_LABELS: Record<string, string> = {
 };
 
 export function priceStyleLabel(id: string): string {
-    return chartType(id)?.label ?? BUILTIN_STYLE_LABELS[id] ?? id;
+    const canonical = id === 'candlestick' ? 'candles' : id;
+    return chartType(id)?.label ?? chartType(canonical)?.label ?? BUILTIN_STYLE_LABELS[canonical] ?? BUILTIN_STYLE_LABELS[id] ?? id;
 }
 
 /** Icon id for a price style — registers a plugin type's `icon` markup on first use. */
 export function priceStyleIcon(id: string): string | undefined {
-    const iconId = `style-${id}`;
+    const canonical = id === 'candlestick' ? 'candles' : id;
+    const iconId = `style-${canonical}`;
     if (iconMarkup(iconId)) return iconId;
-    const svg = chartType(id)?.icon;
+    const directIconId = `style-${id}`;
+    if (iconMarkup(directIconId)) return directIconId;
+    const svg = chartType(id)?.icon ?? chartType(canonical)?.icon;
     if (svg) {
         registerIcon(iconId, svg);
         return iconId;
