@@ -7,8 +7,14 @@ import { PineWorkerEngine } from '@luxalgo/vela-pinets';
 import { DemoEngine } from './demo-engine';
 import { playgroundStorage } from './persistence';
 import { addSampleMarks } from './marks';
+import { registerClassicIndicators } from '../src/core/native-indicators/classics';
 import { registerFootprintChartType } from './footprint-style';
 import { registerTradingLinesLayer } from './trading-lines';
+import {
+    registerWatchlistSidePanel,
+    setWatchlistWorkspaceInstance,
+    setWatchlistActiveSymbol,
+} from './watchlist-panel';
 import {
     registerTradingSidePanel,
     registerTradeButton,
@@ -19,9 +25,11 @@ import {
     setActiveSymbol,
 } from './trade-suite';
 
-// 1. Register Footprint Chart Type, Trading Lines layer, Replay & Trading extensions before workspace mounts
+// 1. Register Native Classic Indicators, Footprint Chart Type, Trading Lines layer, Watchlist, Replay & Trading extensions
+registerClassicIndicators();
 registerFootprintChartType();
 registerTradingLinesLayer();
+registerWatchlistSidePanel();
 registerTradingSidePanel();
 registerTradeButton();
 registerReplayButton();
@@ -72,23 +80,25 @@ const ws = new VelaWorkspace('#workspace', {
     },
 });
 
-// 3. Bind workspace instance for Replay
+// 3. Bind workspace instance for Replay & Watchlist
 setWorkspaceInstance(ws);
+setWatchlistWorkspaceInstance(ws);
 
 // 4. Mount bottom account drawer (Positions & Orders)
 mountBottomAccountStrip(ws);
 
-// 5. Hook active cell changes so order ticket follows user chart clicks
+// 5. Hook active cell changes so order ticket & watchlist follow user chart clicks
 ws.on('cell:active', ({ id }) => {
     const cell = ws.cell(id);
     if (cell && cell.symbol) {
         setActiveSymbol(cell.symbol);
+        setWatchlistActiveSymbol(cell.symbol);
     }
 });
 
-// 6. Open Trade side panel and set drawing favorites once first chart is ready
+// 6. Open Watchlist side panel and set drawing favorites once first chart is ready
 void ws.cells()[0]?.chart.ready().then(() => {
-    (ws as any).dock?.toggle('trade.panel', true);
+    (ws as any).dock?.toggle('watchlist.panel', true);
 
     for (const cell of ws.cells()) {
         try {
