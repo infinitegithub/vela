@@ -3,8 +3,8 @@ import crypto from 'node:crypto';
 const PROD_URL = 'https://fapi.binance.com';
 const TEST_URL = 'https://testnet.binancefuture.com';
 
-const DEFAULT_API_KEY = process.env.BINANCE_API_KEY || 'nXaBUieS5JU1zRTnosAn756scXf1rpUvzj2sJOyZwVBfGVenWjWiYhomaHC8Dfgs';
-const DEFAULT_SECRET_KEY = process.env.BINANCE_SECRET_KEY || 'MOSjJJT5wVZB7KntzS7afPM1ZxmnZ6UbpdsTSajcmxW6JnOFTSwrYsh7g5IjN8te';
+const DEFAULT_API_KEY = (typeof process !== 'undefined' && process.env?.BINANCE_API_KEY) || 'nXaBUieS5JU1zRTnosAn756scXf1rpUvzj2sJOyZwVBfGVenWjWiYhomaHC8Dfgs';
+const DEFAULT_SECRET_KEY = (typeof process !== 'undefined' && process.env?.BINANCE_SECRET_KEY) || 'MOSjJJT5wVZB7KntzS7afPM1ZxmnZ6UbpdsTSajcmxW6JnOFTSwrYsh7g5IjN8te';
 
 function getBaseUrl(isTestnet: boolean): string {
     return isTestnet ? TEST_URL : PROD_URL;

@@ -1,5 +1,4 @@
 import type { VelaWorkspace } from '../src/workspace';
-import { fetchDerivativesStats } from './binance-service';
 
 let currentSymbol = 'BTCUSDT';
 let pollTimer: any = null;
@@ -39,27 +38,48 @@ export function mountTelemetryStrip(ws: VelaWorkspace) {
         user-select: none;
     `;
 
-    // Try to find the topbar element
-    const topbar = document.querySelector('.vela-widget-topbar');
-    if (topbar) {
-        const rightCluster = topbar.querySelector('.vela-topbar-right');
-        if (rightCluster) {
-            topbar.insertBefore(stripEl, rightCluster);
-        } else {
-            topbar.appendChild(stripEl);
-        }
-    }
-
-    // Follow active cell symbol
-    const updateActiveSymbol = () => {
-        const active = ws.activeCell;
-        if (active && active.symbol) {
-            currentSymbol = active.symbol.replace(/[-_]/g, '').toUpperCase();
-            refreshTelemetry();
+    const tryAttach = () => {
+        const topbar = document.querySelector('.vela-widget-topbar');
+        if (topbar && !document.getElementById('vela-topbar-telemetry-ribbon')) {
+            const rightCluster = topbar.querySelector('.vela-topbar-right');
+            if (rightCluster) {
+                topbar.insertBefore(stripEl!, rightCluster);
+            } else {
+                topbar.appendChild(stripEl!);
+            }
         }
     };
 
-    ws.on('cell:active', updateActiveSymbol);
+    tryAttach();
+    // In case topbar is still mounting
+    setTimeout(tryAttach, 100);
+    setTimeout(tryAttach, 500);
+
+    // Follow active cell symbol
+    const updateActiveSymbol = () => {
+        try {
+            const active = ws.active;
+            if (active && active.symbol) {
+                currentSymbol = active.symbol.replace(/[-_]/g, '').toUpperCase();
+                refreshTelemetry();
+            }
+        } catch {
+            // Ignored if workspace not fully initialized
+        }
+    };
+
+    ws.on('cell:active', (ev: any) => {
+        if (ev?.id) {
+            try {
+                const cell = ws.cell(ev.id);
+                if (cell && cell.symbol) {
+                    currentSymbol = cell.symbol.replace(/[-_]/g, '').toUpperCase();
+                    refreshTelemetry();
+                }
+            } catch {}
+        }
+    });
+
     updateActiveSymbol();
 
     // Poll every 3 seconds for live ticker and funding
@@ -71,8 +91,10 @@ export function mountTelemetryStrip(ws: VelaWorkspace) {
 async function refreshTelemetry() {
     if (!stripEl) return;
     try {
-        const stats = await fetchDerivativesStats(currentSymbol);
-        if (!stripEl) return;
+        const res = await fetch(`/api/binance/stats?symbol=${currentSymbol}`);
+        if (!res.ok) return;
+        const stats = await res.json();
+        if (!stripEl || !stats || typeof stats.lastPrice !== 'number') return;
 
         const isUp = stats.priceChangePercent >= 0;
         const sign = isUp ? '+' : '';
