@@ -3,17 +3,22 @@
     <head>
         <meta charset="utf-8" />
         <meta name="viewport" content="width=device-width, initial-scale=1" />
-        <title>Vela — workspace playground</title>
+        <title>Velo Terminal — LuxAlgo Vela</title>
         <style>
             html,
             body {
                 margin: 0;
                 height: 100%;
                 background: #131722;
+                overflow: hidden;
+                display: flex;
+                flex-direction: column;
             }
             #workspace {
-                position: absolute;
-                inset: 0;
+                flex: 1;
+                position: relative;
+                width: 100%;
+                min-height: 0;
             }
         </style>
     </head>
