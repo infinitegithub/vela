@@ -191,6 +191,8 @@ export interface SidePanelDescriptor {
      *  column that shrinks the chart). For panels wide enough that a column would crush
      *  the plot. The dock stays exclusive either way. */
     overlay?: boolean;
+    /** Whether to show a toggle button in the topbar panel button group (default true). */
+    button?: boolean;
     mount(ctx: WidgetContext, body: HTMLElement, header: SidePanelHeader): SidePanelHandle | void;
 }
 

@@ -74,8 +74,8 @@ const ws = new VelaWorkspace('#workspace', {
     drawingToolbar: true, // full left drawing tools suite (67+ tools)
 
     topbar: {
-        // Replay pinned on the LEFT side beside Indicators and Alerts (TradingView & screenshot layout)
-        left: ['symbol', 'timeframes', 'style', 'layout', 'indicators', 'alerts', 'replay.toggle', 'undo-redo'],
+        // Replay pinned on the LEFT side beside Indicators (Alerts moved to side panel)
+        left: ['symbol', 'timeframes', 'style', 'layout', 'indicators', 'replay.toggle', 'undo-redo'],
         right: ['pine.editor', 'screenshot', 'panels', 'trade.toggle'],
     },
 });

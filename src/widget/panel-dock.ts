@@ -48,6 +48,7 @@ interface Entry {
     /** Contributed entries are created (and destroyed) by the dock; built-ins by the shell. */
     contributed: boolean;
     handle?: SidePanelHandle;
+    button?: boolean;
 }
 
 export class PanelDock {
@@ -96,6 +97,7 @@ export class PanelDock {
                 order: desc.order ?? DEFAULT_PANEL_ORDER,
                 panel,
                 contributed: true,
+                button: desc.button !== false,
             };
             // A contribution that throws on mount must not take the shell down with it: the
             // panel stays docked but empty, and the reason is on the console.
@@ -216,7 +218,7 @@ export class PanelDock {
 
     /** Push the current toggle group to the chrome, pressed states included. */
     private publish(): void {
-        const buttons: SidePanelButton[] = this.entries.map((e) => ({ id: e.id, title: e.title, icon: e.icon }));
+        const buttons: SidePanelButton[] = this.entries.filter((e) => e.button !== false).map((e) => ({ id: e.id, title: e.title, icon: e.icon }));
         this.deps.chrome.setPanelButtons(buttons, (id) => this.toggle(id));
         for (const entry of this.entries) this.deps.chrome.setPanelActive(entry.id, entry.panel.open);
     }

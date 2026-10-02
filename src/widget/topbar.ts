@@ -131,6 +131,7 @@ const CSS = `
 .vela-widget-tool:hover:not(:disabled) { background: var(--vela-hover); color: var(--vela-fg-bright); }
 .vela-widget-tool:disabled { opacity: 0.35; cursor: default; }
 .vela-widget-tool[data-active='1'] { background: var(--vela-hover); color: var(--vela-fg-bright); }
+.vela-widget-action[data-active='1'] { background: var(--vela-hover); color: var(--vela-fg-bright); }
 .vela-widget-action {
     all: unset;
     display: inline-flex;
@@ -597,6 +598,7 @@ export class Topbar {
             // icon-only ones on the right take the native 32px TOOL chrome outright,
             // so a slot override is pixel-faithful to the button it replaces.
             b.className = left ? 'vela-widget-action-left' : iconOnly ? 'vela-widget-tool' : 'vela-widget-action';
+            b.dataset.actionId = action.id;
             if (action.icon) b.appendChild(iconEl(action.icon, doc));
             if (iconOnly) {
                 // The label still speaks — as the accessible name and the hover tooltip.
@@ -652,6 +654,8 @@ export class Topbar {
     setPanelActive(id: string, open: boolean): void {
         const btn = this.panelBtns.get(id);
         if (btn) btn.dataset.active = open ? '1' : '';
+        const actionBtn = this.el.querySelector<HTMLButtonElement>("[data-action-id='" + id.replace('.panel', '.toggle') + "']");
+        if (actionBtn) actionBtn.dataset.active = open ? '1' : '';
     }
 
     destroy(): void {

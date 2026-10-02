@@ -238,6 +238,7 @@ export function registerTradingSidePanel() {
         resizable: true,
         minWidth: 280,
         maxWidth: 450,
+        button: false, // Suppress redundant panel button; opened exclusively via [⇄ Trade] button
         mount: (ctx, body, header) => {
             header.setTitle('Order Ticket');
 

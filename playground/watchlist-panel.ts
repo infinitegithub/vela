@@ -8,8 +8,63 @@ let wsInstance: VelaWorkspace | null = null;
 let activeSymbol = 'BTCUSDT';
 let symbolChangeListeners: Array<(sym: string) => void> = [];
 
+interface TriggeredAlert {
+    id: string;
+    source: string;
+    symbol: string;
+    title: string;
+    message: string;
+    time: string;
+}
+
+const triggeredAlerts: TriggeredAlert[] = [
+    { id: "sample-1", source: "Pine Script", symbol: "BTCUSDT", title: "SuperTrend", message: "Bullish trend reversal at 86,400", time: "12m ago" }
+];
+let alertChangeListeners: Array<() => void> = [];
+
+export function pushWorkspaceAlert(alert: { source?: string; symbol?: string; title?: string; message: string; time?: number }) {
+    triggeredAlerts.unshift({
+        id: String(Date.now() + Math.random()),
+        source: alert.source || "Indicator",
+        symbol: alert.symbol || activeSymbol,
+        title: alert.title || "Alert",
+        message: alert.message,
+        time: new Date(alert.time || Date.now()).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
+    });
+    if (triggeredAlerts.length > 50) triggeredAlerts.pop();
+    for (const fn of alertChangeListeners) fn();
+}
+
+export function openAlertsPanel() {
+    if (wsInstance) {
+        (wsInstance as any).dock?.toggle("watchlist.panel", true);
+    }
+    const switchFn = (window as any).__switchWatchlistTab;
+    if (switchFn) switchFn("alerts");
+}
+
 export function setWatchlistWorkspaceInstance(ws: VelaWorkspace) {
     wsInstance = ws;
+    const bindCell = (cell: any) => {
+        try {
+            cell.chart.on("alert", (alert: any) => {
+                pushWorkspaceAlert({
+                    symbol: cell.symbol,
+                    source: alert.indicator || cell.symbol,
+                    title: alert.title,
+                    message: alert.message,
+                    time: alert.time,
+                });
+            });
+        } catch (e) {
+            // cell alert listener error
+        }
+    };
+    for (const cell of ws.cells()) bindCell(cell);
+    ws.on("cell:created", ({ id }) => {
+        const cell = ws.cell(id);
+        if (cell) bindCell(cell);
+    });
 }
 
 export function setWatchlistActiveSymbol(sym: string) {
@@ -174,6 +229,7 @@ export function registerWatchlistSidePanel() {
             for (const t of tabIds) {
                 const btn = document.createElement('button');
                 btn.className = `vela-wpt-tab ${t.id === activeTab ? 'active' : ''}`;
+                btn.dataset.tab = t.id;
                 btn.style.cssText = `
                     background: ${t.id === activeTab ? '#2a2e39' : 'transparent'};
                     color: ${t.id === activeTab ? '#f0f3fa' : '#868a96'};
@@ -183,10 +239,17 @@ export function registerWatchlistSidePanel() {
                     font-size: 11px;
                     font-weight: 600;
                     cursor: pointer;
+                    display: inline-flex;
+                    align-items: center;
+                    gap: 4px;
                     transition: all 0.15s ease;
                     white-space: nowrap;
                 `;
-                btn.textContent = t.label;
+                if (t.id === 'alerts') {
+                    btn.innerHTML = `<svg viewBox="0 0 16 16" width="12" height="12" fill="none" stroke="currentColor" stroke-width="1.5" style="vertical-align: -1px;"><path d="M8 2a4 4 0 0 0-4 4v2.5L2.5 11v1h11v-1L12 8.5V6a4 4 0 0 0-4-4z"/><path d="M6.5 13.5a1.5 1.5 0 0 0 3 0"/></svg><span>${t.label}</span><span id="alerts-tab-badge" style="display: none; background: #2962ff; color: #fff; font-size: 9px; padding: 0 4px; border-radius: 8px; font-weight: 700; line-height: 13px;"></span>`;
+                } else {
+                    btn.textContent = t.label;
+                }
 
                 btn.addEventListener('click', () => {
                     activeTab = t.id;
@@ -196,6 +259,10 @@ export function registerWatchlistSidePanel() {
                 tabButtons.set(t.id, btn);
                 tabsContainer.appendChild(btn);
             }
+            (window as any).__switchWatchlistTab = (id: string) => {
+                activeTab = id;
+                updateTabViews();
+            };
 
             header.slot.appendChild(tabsContainer);
 
@@ -584,7 +651,10 @@ export function registerWatchlistSidePanel() {
             // ─────────────────────────────────────────────────────────────────────────
             viewAlerts.innerHTML = `
                 <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px;">
-                    <div style="font-weight: 700; color: #f0f3fa; font-size: 13px;">Price Alerts</div>
+                    <div style="display: flex; align-items: center; gap: 7px;">
+                        <svg viewBox="0 0 16 16" width="15" height="15" fill="none" stroke="#2962ff" stroke-width="1.5"><path d="M8 2a4 4 0 0 0-4 4v2.5L2.5 11v1h11v-1L12 8.5V6a4 4 0 0 0-4-4z"/><path d="M6.5 13.5a1.5 1.5 0 0 0 3 0"/></svg>
+                        <span style="font-weight: 700; color: #f0f3fa; font-size: 13px;">Alerts & Notifications</span>
+                    </div>
                     <button id="alert-create-btn" style="background: #2962ff; border: none; color: #fff; padding: 4px 10px; border-radius: 4px; font-size: 11px; font-weight: 700; cursor: pointer;">+ Create Alert</button>
                 </div>
                 <div id="alert-form-panel" style="display: none; background: #1c1d24; border: 1px solid #363c4e; border-radius: 6px; padding: 10px; margin-bottom: 12px;">
@@ -640,31 +710,76 @@ export function registerWatchlistSidePanel() {
                 alertForm.style.display = 'none';
             });
 
+            const updateAlertsBadge = () => {
+                const badge = tabsContainer.querySelector('#alerts-tab-badge') as HTMLElement;
+                if (badge) {
+                    const count = alertList.length + triggeredAlerts.length;
+                    badge.textContent = String(count);
+                    badge.style.display = count > 0 ? 'inline-block' : 'none';
+                }
+            };
+
             const renderAlerts = () => {
+                updateAlertsBadge();
+                let html = '';
+
+                // Section 1: Active Price Alerts
+                html += `
+                    <div style="font-size: 10px; font-weight: 700; color: #868a96; text-transform: uppercase; margin-bottom: 8px; letter-spacing: 0.5px;">
+                        Active Price Alerts (${alertList.length})
+                    </div>
+                `;
                 if (alertList.length === 0) {
-                    alertListContainer.innerHTML = `<div style="padding: 16px; text-align: center; color: #868a96; font-size: 11px;">No active alerts.</div>`;
-                    return;
+                    html += `<div style="padding: 10px; text-align: center; color: #868a96; font-size: 11px; background: #191c24; border-radius: 6px; margin-bottom: 12px;">No active price alerts. Click "+ Create Alert" above.</div>`;
+                } else {
+                    for (const al of alertList) {
+                        html += `
+                            <div style="background: #191c24; border: 1px solid #2a2e39; border-radius: 6px; padding: 8px 10px; margin-bottom: 8px; display: flex; align-items: center; justify-content: space-between;">
+                                <div>
+                                    <div style="display: flex; align-items: center; gap: 6px;">
+                                        <span style="font-weight: 700; color: #f0f3fa; font-size: 12px;">${al.symbol}</span>
+                                        <span style="font-size: 10px; color: #2962ff; background: rgba(41, 98, 255, 0.15); padding: 1px 4px; border-radius: 3px;">${al.condition}</span>
+                                    </div>
+                                    <div style="font-family: ui-monospace, monospace; color: #26a69a; font-weight: 700; font-size: 12px; margin-top: 3px;">
+                                        $${al.price.toFixed(2)}
+                                    </div>
+                                </div>
+                                <div style="display: flex; align-items: center; gap: 8px;">
+                                    <button class="alert-del-btn" data-id="${al.id}" style="background: transparent; border: none; color: #ef5350; cursor: pointer; font-size: 13px;">✕</button>
+                                </div>
+                            </div>
+                        `;
+                    }
                 }
 
-                let html = '';
-                for (const al of alertList) {
-                    html += `
-                        <div style="background: #191c24; border: 1px solid #2a2e39; border-radius: 6px; padding: 8px 10px; margin-bottom: 8px; display: flex; align-items: center; justify-content: space-between;">
-                            <div>
-                                <div style="display: flex; align-items: center; gap: 6px;">
-                                    <span style="font-weight: 700; color: #f0f3fa; font-size: 12px;">${al.symbol}</span>
-                                    <span style="font-size: 10px; color: #2962ff; background: rgba(41, 98, 255, 0.15); padding: 1px 4px; border-radius: 3px;">${al.condition}</span>
+                // Section 2: Triggered Alerts Log
+                html += `
+                    <div style="display: flex; align-items: center; justify-content: space-between; margin-top: 14px; margin-bottom: 8px;">
+                        <span style="font-size: 10px; font-weight: 700; color: #868a96; text-transform: uppercase; letter-spacing: 0.5px;">Notification Log (${triggeredAlerts.length})</span>
+                        ${triggeredAlerts.length > 0 ? '<button id="clear-triggered-alerts-btn" style="background: transparent; border: none; color: #868a96; font-size: 10px; cursor: pointer; text-decoration: underline;">Clear</button>' : ''}
+                    </div>
+                `;
+                if (triggeredAlerts.length === 0) {
+                    html += `<div style="padding: 10px; text-align: center; color: #868a96; font-size: 11px; background: #191c24; border-radius: 6px;">No triggered alerts yet.</div>`;
+                } else {
+                    for (const ta of triggeredAlerts) {
+                        html += `
+                            <div style="background: #191c24; border: 1px solid #2a2e39; border-radius: 6px; padding: 8px 10px; margin-bottom: 6px;">
+                                <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 3px;">
+                                    <div style="display: flex; align-items: center; gap: 5px;">
+                                        <span style="font-weight: 700; color: #f0f3fa; font-size: 11px;">${ta.symbol}</span>
+                                        <span style="font-size: 9px; color: #ffd54f; background: rgba(255, 213, 79, 0.15); padding: 1px 4px; border-radius: 3px;">${ta.source}</span>
+                                    </div>
+                                    <span style="font-size: 10px; color: #868a96;">${ta.time}</span>
                                 </div>
-                                <div style="font-family: ui-monospace, monospace; color: #26a69a; font-weight: 700; font-size: 12px; margin-top: 3px;">
-                                    $${al.price.toFixed(2)}
+                                <div style="font-size: 11px; color: #d1d4dc;">
+                                    <strong style="color: #f0f3fa;">${ta.title}:</strong> ${ta.message}
                                 </div>
                             </div>
-                            <div style="display: flex; align-items: center; gap: 8px;">
-                                <button class="alert-del-btn" data-id="${al.id}" style="background: transparent; border: none; color: #ef5350; cursor: pointer; font-size: 13px;">✕</button>
-                            </div>
-                        </div>
-                    `;
+                        `;
+                    }
                 }
+
                 alertListContainer.innerHTML = html;
 
                 alertListContainer.querySelectorAll('.alert-del-btn').forEach(btn => {
@@ -677,7 +792,19 @@ export function registerWatchlistSidePanel() {
                         }
                     });
                 });
+
+                const clearBtn = alertListContainer.querySelector('#clear-triggered-alerts-btn');
+                if (clearBtn) {
+                    clearBtn.addEventListener('click', () => {
+                        triggeredAlerts.length = 0;
+                        renderAlerts();
+                    });
+                }
             };
+
+            alertChangeListeners.push(() => {
+                renderAlerts();
+            });
 
             alertSaveBtn.addEventListener('click', () => {
                 const condEl = viewAlerts.querySelector('#alert-condition') as HTMLSelectElement;
