@@ -33,7 +33,6 @@ import {
     setThemeWorkspaceInstance,
     getSavedTheme,
 } from './theme-switcher';
-import { mountTelemetryStrip } from './telemetry-strip';
 
 // 1. Register Extensions
 registerClassicIndicators();
@@ -102,10 +101,7 @@ setThemeWorkspaceInstance(ws);
 // 4. Mount bottom account drawer (starts collapsed at 28px)
 mountBottomAccountStrip(ws);
 
-// 5. Mount Top Bar Market Telemetry Ribbon
-mountTelemetryStrip(ws);
-
-// 6. Hook active cell changes so order ticket & watchlist follow user chart clicks
+// 5. Hook active cell changes so order ticket & watchlist follow user chart clicks
 ws.on('cell:active', ({ id }) => {
     const cell = ws.cell(id);
     if (cell && cell.symbol) {
