@@ -1,0 +1,304 @@
+import type { Plugin } from 'vite';
+import fs from 'node:fs';
+import path from 'node:path';
+
+function readJsonBody(req: any): Promise<any> {
+    return new Promise((resolve, reject) => {
+        let body = '';
+        req.on('data', (chunk: any) => { body += chunk; });
+        req.on('end', () => {
+            try {
+                resolve(body ? JSON.parse(body) : {});
+            } catch (e) {
+                // If body is raw string, wrap it
+                resolve(body ? { raw: body } : {});
+            }
+        });
+        req.on('error', reject);
+    });
+}
+
+function sendJson(res: any, data: any, status: number = 200) {
+    res.statusCode = status;
+    res.setHeader('Content-Type', 'application/json');
+    res.setHeader('Access-Control-Allow-Origin', '*');
+    res.setHeader('Access-Control-Allow-Headers', '*');
+    res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
+    res.end(JSON.stringify(data));
+}
+
+function slugify(text: string): string {
+    return text
+        .toString()
+        .toLowerCase()
+        .trim()
+        .replace(/\s+/g, '-')
+        .replace(/[^\w\-]+/g, '')
+        .replace(/\-\-+/g, '-');
+}
+
+export function templateSyncPlugin(): Plugin {
+    return {
+        name: 'template-sync-plugin',
+        configureServer(server) {
+            const dataDir = path.resolve(process.cwd(), 'data');
+            const templatesDir = path.resolve(dataDir, 'templates');
+            const workspacesDir = path.resolve(dataDir, 'workspaces');
+
+            fs.mkdirSync(templatesDir, { recursive: true });
+            fs.mkdirSync(workspacesDir, { recursive: true });
+
+            // Seed default starter templates if empty
+            seedDefaultTemplates(templatesDir);
+
+            server.middlewares.use(async (req, res, next) => {
+                const url = new URL(req.url || '/', 'http://localhost');
+
+                // Handle CORS preflight
+                if (req.method === 'OPTIONS') {
+                    if (url.pathname.startsWith('/api/templates') || url.pathname.startsWith('/api/workspace')) {
+                        res.statusCode = 204;
+                        res.setHeader('Access-Control-Allow-Origin', '*');
+                        res.setHeader('Access-Control-Allow-Headers', '*');
+                        res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
+                        return res.end();
+                    }
+                }
+
+                try {
+                    // ── Workspace State Endpoints (/api/workspace/:key) ──────────────────
+                    if (url.pathname.startsWith('/api/workspace/')) {
+                        const key = decodeURIComponent(url.pathname.replace('/api/workspace/', ''));
+                        const safeKey = slugify(key) || 'default';
+                        const filePath = path.join(workspacesDir, `${safeKey}.json`);
+
+                        if (req.method === 'GET') {
+                            if (fs.existsSync(filePath)) {
+                                const content = fs.readFileSync(filePath, 'utf-8');
+                                res.statusCode = 200;
+                                res.setHeader('Content-Type', 'application/json');
+                                res.setHeader('Access-Control-Allow-Origin', '*');
+                                return res.end(content);
+                            } else {
+                                return sendJson(res, { error: 'No saved workspace found', key }, 404);
+                            }
+                        }
+
+                        if (req.method === 'PUT' || req.method === 'POST') {
+                            let body = '';
+                            req.on('data', (chunk: any) => { body += chunk; });
+                            req.on('end', () => {
+                                try {
+                                    // Validate JSON
+                                    JSON.parse(body);
+                                    fs.writeFileSync(filePath, body, 'utf-8');
+                                    return sendJson(res, { success: true, key, updatedAt: Date.now() });
+                                } catch (e: any) {
+                                    return sendJson(res, { error: 'Invalid JSON payload: ' + e.message }, 400);
+                                }
+                            });
+                            return;
+                        }
+
+                        if (req.method === 'DELETE') {
+                            if (fs.existsSync(filePath)) {
+                                fs.unlinkSync(filePath);
+                            }
+                            return sendJson(res, { success: true, key });
+                        }
+                    }
+
+                    // ── Templates Endpoints (/api/templates) ─────────────────────────────
+                    if (url.pathname === '/api/templates' || url.pathname === '/api/templates/') {
+                        if (req.method === 'GET') {
+                            const files = fs.readdirSync(templatesDir).filter(f => f.endsWith('.json'));
+                            const list = files.map(file => {
+                                try {
+                                    const raw = fs.readFileSync(path.join(templatesDir, file), 'utf-8');
+                                    const data = JSON.parse(raw);
+                                    return {
+                                        id: data.id || file.replace('.json', ''),
+                                        name: data.name || file.replace('.json', ''),
+                                        description: data.description || '',
+                                        layout: data.state?.layout || '4',
+                                        cellCount: Array.isArray(data.state?.charts) ? data.state.charts.length : 1,
+                                        symbols: Array.isArray(data.state?.charts)
+                                            ? data.state.charts.map((c: any) => c.symbol).filter(Boolean).slice(0, 4)
+                                            : ['BTCUSDT'],
+                                        updatedAt: data.updatedAt || fs.statSync(path.join(templatesDir, file)).mtimeMs,
+                                        isDefault: data.isDefault === true
+                                    };
+                                } catch (e) {
+                                    return null;
+                                }
+                            }).filter(Boolean);
+
+                            list.sort((a: any, b: any) => (b.updatedAt || 0) - (a.updatedAt || 0));
+                            return sendJson(res, list);
+                        }
+
+                        if (req.method === 'POST') {
+                            const body = await readJsonBody(req);
+                            if (!body.name || !body.state) {
+                                return sendJson(res, { error: 'Template name and state are required' }, 400);
+                            }
+
+                            const id = body.id || `${slugify(body.name)}-${Date.now().toString(36)}`;
+                            const record = {
+                                id,
+                                name: body.name.trim(),
+                                description: body.description || '',
+                                state: body.state,
+                                updatedAt: Date.now(),
+                                isDefault: body.isDefault === true
+                            };
+
+                            const filePath = path.join(templatesDir, `${slugify(id)}.json`);
+                            fs.writeFileSync(filePath, JSON.stringify(record, null, 2), 'utf-8');
+                            return sendJson(res, { success: true, id, name: record.name, updatedAt: record.updatedAt });
+                        }
+                    }
+
+                    // Single Template Endpoint: /api/templates/:id
+                    if (url.pathname.startsWith('/api/templates/')) {
+                        const id = decodeURIComponent(url.pathname.replace('/api/templates/', ''));
+                        const safeId = slugify(id);
+                        const filePath = path.join(templatesDir, `${safeId}.json`);
+
+                        if (req.method === 'GET') {
+                            if (fs.existsSync(filePath)) {
+                                const content = fs.readFileSync(filePath, 'utf-8');
+                                res.statusCode = 200;
+                                res.setHeader('Content-Type', 'application/json');
+                                res.setHeader('Access-Control-Allow-Origin', '*');
+                                return res.end(content);
+                            } else {
+                                return sendJson(res, { error: 'Template not found', id }, 404);
+                            }
+                        }
+
+                        if (req.method === 'DELETE') {
+                            if (fs.existsSync(filePath)) {
+                                fs.unlinkSync(filePath);
+                                return sendJson(res, { success: true, id });
+                            } else {
+                                return sendJson(res, { error: 'Template not found', id }, 404);
+                            }
+                        }
+                    }
+
+                    next();
+                } catch (err: any) {
+                    console.error('[template-sync error]', err);
+                    return sendJson(res, { error: err.message || 'Internal error' }, 500);
+                }
+            });
+        }
+    };
+}
+
+function seedDefaultTemplates(templatesDir: string) {
+    const defaults = [
+        {
+            id: 'velo-4cell-trading',
+            name: 'Velo 4-Cell Trading (Default)',
+            description: '4-chart multi-timeframe grid: BTC 1m, ETH 15m, SOL 1H, BNB 1D with synced crosshairs and volume profiles.',
+            isDefault: true,
+            updatedAt: Date.now(),
+            state: {
+                version: 1,
+                layout: '4',
+                activeCellId: 'btc',
+                timezone: 'Etc/UTC',
+                sync: { viewport: true, crosshair: true, drawings: true, style: true },
+                favorites: ['trendline', 'hline', 'box', 'position', 'anchoredvwap', 'fixedrangevp'],
+                timeframeFavorites: ['1', '5', '15', '60', '240', 'D'],
+                panels: { open: 'watchlist.panel' },
+                charts: [
+                    { id: 'btc', symbol: 'BTCUSDT', timeframe: '1', priceStyle: 'candlestick', indicators: { manifest: [], natives: ['volume'] } },
+                    { id: 'eth', symbol: 'ETHUSDT', timeframe: '15', priceStyle: 'candlestick', indicators: { manifest: [], natives: ['volume', 'rsi'] } },
+                    { id: 'sol', symbol: 'SOLUSDT', timeframe: '60', priceStyle: 'candlestick', indicators: { manifest: [], natives: ['volume', 'ema'] } },
+                    { id: 'bnb', symbol: 'BNBUSDT', timeframe: 'D', priceStyle: 'candlestick', indicators: { manifest: [], natives: ['volume', 'bollinger'] } }
+                ]
+            }
+        },
+        {
+            id: 'single-chart-deep-dive',
+            name: 'Single Chart Deep Dive',
+            description: 'Full-screen single chart setup with maximum viewport space for detailed analysis.',
+            isDefault: false,
+            updatedAt: Date.now() - 1000,
+            state: {
+                version: 1,
+                layout: '1',
+                activeCellId: 'c1',
+                timezone: 'Etc/UTC',
+                favorites: ['trendline', 'hline', 'box', 'position', 'anchoredvwap', 'fixedrangevp'],
+                timeframeFavorites: ['1', '5', '15', '60', '240', 'D'],
+                panels: { open: 'watchlist.panel' },
+                charts: [
+                    { id: 'c1', symbol: 'BTCUSDT', timeframe: '15', priceStyle: 'candlestick', indicators: { manifest: [], natives: ['volume', 'ema', 'rsi', 'macd'] } }
+                ]
+            }
+        },
+        {
+            id: 'dual-split-btc-eth',
+            name: 'Dual Split (BTC / ETH)',
+            description: '2 side-by-side charts comparing Bitcoin and Ethereum market structures in real time.',
+            isDefault: false,
+            updatedAt: Date.now() - 2000,
+            state: {
+                version: 1,
+                layout: '2h',
+                activeCellId: 'btc',
+                timezone: 'Etc/UTC',
+                sync: { viewport: true, crosshair: true, drawings: true, style: true },
+                favorites: ['trendline', 'hline', 'box', 'position', 'anchoredvwap'],
+                timeframeFavorites: ['1', '5', '15', '60', '240', 'D'],
+                panels: { open: 'watchlist.panel' },
+                charts: [
+                    { id: 'btc', symbol: 'BTCUSDT', timeframe: '15', priceStyle: 'candlestick', indicators: { manifest: [], natives: ['volume', 'ema'] } },
+                    { id: 'eth', symbol: 'ETHUSDT', timeframe: '15', priceStyle: 'candlestick', indicators: { manifest: [], natives: ['volume', 'ema'] } }
+                ]
+            }
+        },
+        {
+            id: '8-cell-market-overview',
+            name: '8-Cell Market Overview',
+            description: '8 synchronized charts monitoring the top crypto market leaders simultaneously.',
+            isDefault: false,
+            updatedAt: Date.now() - 3000,
+            state: {
+                version: 1,
+                layout: '8',
+                activeCellId: 'c1',
+                timezone: 'Etc/UTC',
+                sync: { crosshair: true, timeframe: true },
+                favorites: ['trendline', 'hline', 'box'],
+                timeframeFavorites: ['1', '5', '15', '60', '240', 'D'],
+                panels: { open: 'watchlist.panel' },
+                charts: [
+                    { id: 'c1', symbol: 'BTCUSDT', timeframe: '15', priceStyle: 'candlestick', indicators: { manifest: [], natives: ['volume'] } },
+                    { id: 'c2', symbol: 'ETHUSDT', timeframe: '15', priceStyle: 'candlestick', indicators: { manifest: [], natives: ['volume'] } },
+                    { id: 'c3', symbol: 'SOLUSDT', timeframe: '15', priceStyle: 'candlestick', indicators: { manifest: [], natives: ['volume'] } },
+                    { id: 'c4', symbol: 'BNBUSDT', timeframe: '15', priceStyle: 'candlestick', indicators: { manifest: [], natives: ['volume'] } },
+                    { id: 'c5', symbol: 'XRPUSDT', timeframe: '15', priceStyle: 'candlestick', indicators: { manifest: [], natives: ['volume'] } },
+                    { id: 'c6', symbol: 'DOGEUSDT', timeframe: '15', priceStyle: 'candlestick', indicators: { manifest: [], natives: ['volume'] } },
+                    { id: 'c7', symbol: 'ADAUSDT', timeframe: '15', priceStyle: 'candlestick', indicators: { manifest: [], natives: ['volume'] } },
+                    { id: 'c8', symbol: 'AVAXUSDT', timeframe: '15', priceStyle: 'candlestick', indicators: { manifest: [], natives: ['volume'] } }
+                ]
+            }
+        }
+    ];
+
+    for (const tpl of defaults) {
+        const filePath = path.join(templatesDir, `${tpl.id}.json`);
+        if (!fs.existsSync(filePath)) {
+            try {
+                fs.writeFileSync(filePath, JSON.stringify(tpl, null, 2), 'utf-8');
+            } catch (e) {
+                console.error('Failed to write default template:', tpl.id, e);
+            }
+        }
+    }
+}

@@ -24,6 +24,10 @@ import {
     mountBottomAccountStrip,
     setActiveSymbol,
 } from './trade-suite';
+import {
+    registerTemplateManager,
+    setTemplateWorkspaceInstance,
+} from './template-manager';
 
 // 1. Register Native Classic Indicators, Footprint Chart Type, Trading Lines layer, Watchlist, Replay & Trading extensions
 registerClassicIndicators();
@@ -34,6 +38,7 @@ registerTradingSidePanel();
 registerTradeButton();
 registerReplayButton();
 registerPineEditor();
+registerTemplateManager();
 
 // 2. Instantiate the multi-chart VelaWorkspace
 const ws = new VelaWorkspace('#workspace', {
@@ -74,15 +79,16 @@ const ws = new VelaWorkspace('#workspace', {
     drawingToolbar: true, // full left drawing tools suite (67+ tools)
 
     topbar: {
-        // Replay pinned on the LEFT side beside Indicators (Alerts moved to side panel)
-        left: ['symbol', 'timeframes', 'style', 'layout', 'indicators', 'replay.toggle', 'undo-redo'],
+        // Templates & Replay pinned on the LEFT side beside Layout and Indicators
+        left: ['symbol', 'timeframes', 'style', 'layout', 'templates.toggle', 'indicators', 'replay.toggle', 'undo-redo'],
         right: ['pine.editor', 'screenshot', 'panels', 'trade.toggle'],
     },
 });
 
-// 3. Bind workspace instance for Replay & Watchlist
+// 3. Bind workspace instance for Replay, Watchlist & Template Manager
 setWorkspaceInstance(ws);
 setWatchlistWorkspaceInstance(ws);
+setTemplateWorkspaceInstance(ws);
 
 // 4. Mount bottom account drawer (Positions & Orders)
 mountBottomAccountStrip(ws);
@@ -98,11 +104,18 @@ ws.on('cell:active', ({ id }) => {
 
 // 6. Open Watchlist side panel and set drawing favorites once first chart is ready
 void ws.cells()[0]?.chart.ready().then(() => {
-    (ws as any).dock?.toggle('watchlist.panel', true);
+    // Only toggle watchlist panel if dock does not already have an active open panel
+    const dockState = (ws as any).dock?.getState?.();
+    if (!dockState || !dockState.open) {
+        (ws as any).dock?.toggle('watchlist.panel', true);
+    }
 
     for (const cell of ws.cells()) {
         try {
-            cell.chart.drawings.setFavorites(['trendline', 'hline', 'box', 'position', 'anchoredvwap', 'fixedrangevp']);
+            const currentFavs = cell.chart.drawings.favorites?.();
+            if (!currentFavs || currentFavs.length === 0) {
+                cell.chart.drawings.setFavorites(['trendline', 'hline', 'box', 'position', 'anchoredvwap', 'fixedrangevp']);
+            }
         } catch (e) {
             // Drawings favorites setup
         }

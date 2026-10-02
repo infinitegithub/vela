@@ -1,4 +1,4 @@
-import { registerSidePanel, registerIcon } from '../src/plugin';
+import { registerSidePanel, registerIcon, registerStatePersistence } from '../src/plugin';
 import type { VelaWorkspace } from '../src/workspace';
 
 // Register custom icons
@@ -189,6 +189,83 @@ const DEFAULT_WATCHLIST: WatchlistItem[] = [
     }
 ];
 
+const WATCHLIST_STORAGE_KEY = 'vela-play:watchlist-store';
+
+function loadInitialWatchlists(): { activeList: string; lists: Record<string, WatchlistItem[]> } {
+    try {
+        const raw = typeof window !== 'undefined' ? window.localStorage.getItem(WATCHLIST_STORAGE_KEY) : null;
+        if (raw) {
+            const data = JSON.parse(raw);
+            if (data && typeof data === 'object' && data.lists && Object.keys(data.lists).length > 0) {
+                return {
+                    activeList: data.activeList || Object.keys(data.lists)[0],
+                    lists: data.lists,
+                };
+            }
+        }
+    } catch (e) {}
+    return {
+        activeList: 'Crypto Majors',
+        lists: {
+            'Crypto Majors': [...DEFAULT_WATCHLIST],
+        },
+    };
+}
+
+let { activeList: currentListName, lists: watchlistsStore } = loadInitialWatchlists();
+let watchlistItems: WatchlistItem[] = watchlistsStore[currentListName] || [...DEFAULT_WATCHLIST];
+let renderWatchlistRowsFn: (() => void) | null = null;
+let updateWlTitleFn: (() => void) | null = null;
+
+function saveWatchlistStore() {
+    watchlistsStore[currentListName] = [...watchlistItems];
+    try {
+        if (typeof window !== 'undefined') {
+            window.localStorage.setItem(WATCHLIST_STORAGE_KEY, JSON.stringify({
+                activeList: currentListName,
+                lists: watchlistsStore,
+            }));
+        }
+    } catch {}
+    if (wsInstance) {
+        try {
+            (wsInstance as any).markStateDirty?.();
+            (wsInstance as any).events?.emit?.('state:changed', undefined);
+        } catch {}
+    }
+}
+
+// ── Hook Watchlist into Vela's Unified State Persistence Document ─────────────
+registerStatePersistence({
+    key: 'vela.watchlist',
+    scope: 'global',
+    serialize: () => ({
+        activeList: currentListName,
+        lists: watchlistsStore,
+    }),
+    restore: (payload: any) => {
+        if (payload && typeof payload === 'object') {
+            if (payload.lists && typeof payload.lists === 'object' && Object.keys(payload.lists).length > 0) {
+                watchlistsStore = payload.lists;
+            }
+            if (payload.activeList && watchlistsStore[payload.activeList]) {
+                currentListName = payload.activeList;
+            }
+            watchlistItems = watchlistsStore[currentListName] || [...DEFAULT_WATCHLIST];
+            try {
+                if (typeof window !== 'undefined') {
+                    window.localStorage.setItem(WATCHLIST_STORAGE_KEY, JSON.stringify({
+                        activeList: currentListName,
+                        lists: watchlistsStore,
+                    }));
+                }
+            } catch {}
+            if (updateWlTitleFn) updateWlTitleFn();
+            if (renderWatchlistRowsFn) renderWatchlistRowsFn();
+        }
+    },
+});
+
 export function registerWatchlistSidePanel() {
     registerSidePanel({
         id: 'watchlist.panel',
@@ -322,8 +399,132 @@ export function registerWatchlistSidePanel() {
             `;
 
             const wlTitleGroup = document.createElement('div');
-            wlTitleGroup.style.cssText = `display: flex; align-items: center; gap: 6px; font-weight: 700; font-size: 13px; color: #f0f3fa; cursor: pointer;`;
-            wlTitleGroup.innerHTML = `<span>My Watchlist</span><span style="font-size: 10px; color: #868a96;">▾</span>`;
+            wlTitleGroup.style.cssText = `position: relative; display: flex; align-items: center; gap: 6px; font-weight: 700; font-size: 13px; color: #f0f3fa; cursor: pointer;`;
+            const wlTitleText = document.createElement('span');
+            wlTitleText.textContent = currentListName;
+            const wlTitleChevron = document.createElement('span');
+            wlTitleChevron.style.cssText = 'font-size: 10px; color: #868a96;';
+            wlTitleChevron.textContent = '▾';
+            wlTitleGroup.append(wlTitleText, wlTitleChevron);
+
+            updateWlTitleFn = () => {
+                wlTitleText.textContent = currentListName;
+            };
+
+            // Dropdown menu for watchlist switcher
+            const wlDropdown = document.createElement('div');
+            wlDropdown.style.cssText = `
+                position: absolute;
+                top: 28px;
+                left: 0;
+                background: #1e222d;
+                border: 1px solid #363c4e;
+                border-radius: 6px;
+                padding: 6px 0;
+                width: 200px;
+                box-shadow: 0 8px 24px rgba(0,0,0,0.5);
+                z-index: 10000;
+                display: none;
+                flex-direction: column;
+                font-size: 12px;
+                font-weight: 500;
+            `;
+
+            const renderWlDropdown = () => {
+                wlDropdown.innerHTML = '';
+                const headerItem = document.createElement('div');
+                headerItem.style.cssText = `padding: 6px 12px; font-size: 10px; text-transform: uppercase; color: #868a96; font-weight: 700; letter-spacing: 0.5px;`;
+                headerItem.textContent = 'Select Watchlist';
+                wlDropdown.appendChild(headerItem);
+
+                for (const listName of Object.keys(watchlistsStore)) {
+                    const isCur = listName === currentListName;
+                    const item = document.createElement('div');
+                    item.style.cssText = `
+                        padding: 6px 12px;
+                        display: flex;
+                        align-items: center;
+                        justify-content: space-between;
+                        color: ${isCur ? '#2962ff' : '#f0f3fa'};
+                        background: ${isCur ? 'rgba(41, 98, 255, 0.1)' : 'transparent'};
+                        cursor: pointer;
+                        transition: background 0.15s;
+                    `;
+                    item.innerHTML = `<span>${listName}</span>${isCur ? '<span>✓</span>' : ''}`;
+                    item.addEventListener('mouseenter', () => { if (!isCur) item.style.background = '#2a2e39'; });
+                    item.addEventListener('mouseleave', () => { if (!isCur) item.style.background = 'transparent'; });
+                    item.addEventListener('click', (ev) => {
+                        ev.stopPropagation();
+                        currentListName = listName;
+                        watchlistItems = watchlistsStore[currentListName] || [];
+                        saveWatchlistStore();
+                        updateWlTitleFn?.();
+                        renderWatchlistRows();
+                        wlDropdown.style.display = 'none';
+                    });
+                    wlDropdown.appendChild(item);
+                }
+
+                // Divider
+                const div = document.createElement('div');
+                div.style.cssText = 'height: 1px; background: #2a2e39; margin: 4px 0;';
+                wlDropdown.appendChild(div);
+
+                // Add New Watchlist option
+                const addOpt = document.createElement('div');
+                addOpt.style.cssText = `padding: 6px 12px; color: #26a69a; cursor: pointer; display: flex; align-items: center; gap: 6px; font-weight: 600;`;
+                addOpt.innerHTML = `<span>+ New Watchlist...</span>`;
+                addOpt.addEventListener('mouseenter', () => { addOpt.style.background = '#2a2e39'; });
+                addOpt.addEventListener('mouseleave', () => { addOpt.style.background = 'transparent'; });
+                addOpt.addEventListener('click', (ev) => {
+                    ev.stopPropagation();
+                    wlDropdown.style.display = 'none';
+                    const name = prompt('Enter new watchlist name:');
+                    if (name && name.trim()) {
+                        const trimmed = name.trim();
+                        if (!watchlistsStore[trimmed]) {
+                            watchlistsStore[trimmed] = [...DEFAULT_WATCHLIST.slice(0, 4)];
+                            currentListName = trimmed;
+                            watchlistItems = watchlistsStore[currentListName];
+                            saveWatchlistStore();
+                            updateWlTitleFn?.();
+                            renderWatchlistRows();
+                        }
+                    }
+                });
+                wlDropdown.appendChild(addOpt);
+
+                // Reset to Default option
+                const resetOpt = document.createElement('div');
+                resetOpt.style.cssText = `padding: 6px 12px; color: #868a96; cursor: pointer; display: flex; align-items: center; gap: 6px; font-size: 11px;`;
+                resetOpt.innerHTML = `<span>↺ Reset Current to Default</span>`;
+                resetOpt.addEventListener('mouseenter', () => { resetOpt.style.background = '#2a2e39'; resetOpt.style.color = '#fff'; });
+                resetOpt.addEventListener('mouseleave', () => { resetOpt.style.background = 'transparent'; resetOpt.style.color = '#868a96'; });
+                resetOpt.addEventListener('click', (ev) => {
+                    ev.stopPropagation();
+                    wlDropdown.style.display = 'none';
+                    watchlistItems = [...DEFAULT_WATCHLIST];
+                    saveWatchlistStore();
+                    renderWatchlistRows();
+                });
+                wlDropdown.appendChild(resetOpt);
+            };
+
+            wlTitleGroup.addEventListener('click', (ev) => {
+                ev.stopPropagation();
+                if (wlDropdown.style.display === 'flex') {
+                    wlDropdown.style.display = 'none';
+                } else {
+                    renderWlDropdown();
+                    wlDropdown.style.display = 'flex';
+                }
+            });
+
+            document.addEventListener('click', () => {
+                wlDropdown.style.display = 'none';
+            });
+
+            wlTitleGroup.appendChild(wlDropdown);
 
             const wlActions = document.createElement('div');
             wlActions.style.cssText = `display: flex; align-items: center; gap: 8px;`;
@@ -354,11 +555,11 @@ export function registerWatchlistSidePanel() {
                 }
             });
 
-            // Table Header: Symbol | Price | Chg | Chg% | Vol
+            // Table Header: Symbol | Price | Chg | Chg% | Vol | [Del]
             const wlTableHead = document.createElement('div');
             wlTableHead.style.cssText = `
                 display: grid;
-                grid-template-columns: 2fr 1.6fr 1.2fr 1.2fr 1.1fr;
+                grid-template-columns: 2fr 1.4fr 1.1fr 1.1fr 1fr 20px;
                 padding: 6px 12px;
                 font-size: 10px;
                 color: #868a96;
@@ -372,14 +573,13 @@ export function registerWatchlistSidePanel() {
                 <div style="text-align: right;">Chg</div>
                 <div style="text-align: right;">Chg%</div>
                 <div style="text-align: right;">Vol</div>
+                <div></div>
             `;
 
             const wlList = document.createElement('div');
             wlList.style.cssText = `flex: 1; overflow-y: auto; overflow-x: hidden;`;
 
             viewWatchlist.append(wlSubheader, addSearchBox, wlTableHead, wlList);
-
-            let watchlistItems: WatchlistItem[] = [...DEFAULT_WATCHLIST];
 
             const formatVol = (v: number) => {
                 if (v >= 1_000_000) return `${(v / 1_000_000).toFixed(2)}M`;
@@ -395,7 +595,7 @@ export function registerWatchlistSidePanel() {
                     row.className = 'wl-row';
                     row.style.cssText = `
                         display: grid;
-                        grid-template-columns: 2fr 1.6fr 1.2fr 1.2fr 1.1fr;
+                        grid-template-columns: 2fr 1.4fr 1.1fr 1.1fr 1fr 20px;
                         padding: 8px 12px;
                         font-size: 12px;
                         border-bottom: 1px solid rgba(42, 46, 57, 0.4);
@@ -405,11 +605,37 @@ export function registerWatchlistSidePanel() {
                         transition: background 0.15s ease;
                     `;
 
+                    const delBtn = document.createElement('button');
+                    delBtn.title = 'Remove from watchlist';
+                    delBtn.innerHTML = '✕';
+                    delBtn.style.cssText = `
+                        background: transparent;
+                        border: none;
+                        color: #868a96;
+                        cursor: pointer;
+                        font-size: 11px;
+                        padding: 2px 4px;
+                        border-radius: 2px;
+                        opacity: 0;
+                        transition: opacity 0.15s ease, color 0.15s ease;
+                        text-align: center;
+                    `;
+                    delBtn.addEventListener('mouseenter', () => { delBtn.style.color = '#ef5350'; });
+                    delBtn.addEventListener('mouseleave', () => { delBtn.style.color = '#868a96'; });
+                    delBtn.addEventListener('click', (e) => {
+                        e.stopPropagation();
+                        watchlistItems = watchlistItems.filter(x => x.binanceSymbol !== item.binanceSymbol);
+                        saveWatchlistStore();
+                        renderWatchlistRows();
+                    });
+
                     row.addEventListener('mouseenter', () => {
                         if (!isSelected) row.style.background = '#181b22';
+                        delBtn.style.opacity = '1';
                     });
                     row.addEventListener('mouseleave', () => {
                         if (!isSelected) row.style.background = 'transparent';
+                        delBtn.style.opacity = '0';
                     });
 
                     row.addEventListener('click', () => {
@@ -447,10 +673,12 @@ export function registerWatchlistSidePanel() {
                         </div>
                     `;
 
+                    row.appendChild(delBtn);
                     wlList.appendChild(row);
                 }
             };
 
+            renderWatchlistRowsFn = renderWatchlistRows;
             renderWatchlistRows();
 
             // Handle adding new symbol
@@ -472,6 +700,7 @@ export function registerWatchlistSidePanel() {
                         volume: 1000,
                         iconSvg: `<svg viewBox="0 0 24 24" width="20" height="20"><circle cx="12" cy="12" r="11" fill="#363c4e"/><text x="12" y="16" font-size="11" fill="#fff" text-anchor="middle" font-weight="bold">${val.charAt(0)}</text></svg>`
                     });
+                    saveWatchlistStore();
                     renderWatchlistRows();
                 }
                 searchInput.value = '';
