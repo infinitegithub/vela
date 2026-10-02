@@ -657,7 +657,16 @@ export class SettingsDialog {
         if (this.themeControl) {
             const tc = this.themeControl;
             body.append(sid(this.sectionTitle('Theme'), 'canvas.theme'));
-            body.append(sid(this.selectRow('Color theme', tc.current === 'dark' ? 'Dark' : 'Light', ['Dark', 'Light'], (v) => tc.onSelect(v === 'Dark' ? 'dark' : 'light')), 'canvas.theme'));
+            const currentLabel = tc.current === 'classic' ? 'Standard Classic' : (tc.current === 'dark' ? 'Vela Muted (Dark)' : 'Light');
+            body.append(sid(this.selectRow(
+                'Color theme',
+                currentLabel,
+                ['Vela Muted (Dark)', 'Standard Classic', 'Light'],
+                (v) => {
+                    const mapped: ThemeName = v === 'Standard Classic' ? 'classic' : (v === 'Light' ? 'light' : 'dark');
+                    tc.onSelect(mapped);
+                }
+            ), 'canvas.theme'));
         }
 
         // ══ EVENTS — timeline-mark group visibility, a tab of its own (present only while marks name groups) ══

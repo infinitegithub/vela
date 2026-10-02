@@ -621,6 +621,25 @@ export function factoryResetConfig(factory: ChartConfig, priceStyle: PriceStyle 
     return { ...factory, chartTypes: bag, series: { ...factory.series, style: priceStyle } };
 }
 
+const LEGACY_UP_DEFAULTS = new Set(['#089981', '#26a69a', '#22c55e']);
+const LEGACY_DOWN_DEFAULTS = new Set(['#f23645', '#ef5350', '#ef4444']);
+const LEGACY_BG_DEFAULTS = new Set(['#000000e9', '#131722', '#141414']);
+
+function sanitizeCandleColor(input: unknown, baseVal: string): string {
+    if (!isColor(input)) return baseVal;
+    const lower = input.toLowerCase().trim();
+    if (baseVal === '#a7be94' && LEGACY_UP_DEFAULTS.has(lower)) return baseVal;
+    if (baseVal === '#af6870' && LEGACY_DOWN_DEFAULTS.has(lower)) return baseVal;
+    return input;
+}
+
+function sanitizeBgColor(input: unknown, baseVal: string): string {
+    if (!isColor(input)) return baseVal;
+    const lower = input.toLowerCase().trim();
+    if (baseVal === '#202126' && LEGACY_BG_DEFAULTS.has(lower)) return baseVal;
+    return input;
+}
+
 /**
  * Deep-merge an untrusted partial `patch` onto a known-good `base`, validating every
  * field and silently dropping malformed ones. Pure (returns a fresh config, mutates
@@ -660,7 +679,7 @@ export function mergeConfig(base: ChartConfig, patch: unknown): ChartConfig {
         version: CHART_CONFIG_VERSION,
         chartTypes: chartTypesBag,
         layout: {
-            background: isColor(layout.background) ? layout.background : base.layout.background,
+            background: sanitizeBgColor(layout.background, base.layout.background),
             textColor: isColor(layout.textColor) ? layout.textColor : base.layout.textColor,
             fontFamily: isColor(layout.fontFamily) ? layout.fontFamily : base.layout.fontFamily,
             fontSize: isNum(layout.fontSize) ? Math.max(6, Math.min(32, layout.fontSize)) : base.layout.fontSize,
@@ -728,19 +747,19 @@ export function mergeConfig(base: ChartConfig, patch: unknown): ChartConfig {
             },
         },
         candles: {
-            upColor: isColor(candles.upColor) ? candles.upColor : base.candles.upColor,
-            downColor: isColor(candles.downColor) ? candles.downColor : base.candles.downColor,
+            upColor: sanitizeCandleColor(candles.upColor, base.candles.upColor),
+            downColor: sanitizeCandleColor(candles.downColor, base.candles.downColor),
             bodyVisible: isBool(candles.bodyVisible) ? candles.bodyVisible : base.candles.bodyVisible,
             borderVisible: isBool(candles.borderVisible) ? candles.borderVisible : base.candles.borderVisible,
-            borderUpColor: isColor(candles.borderUpColor) ? candles.borderUpColor : base.candles.borderUpColor,
-            borderDownColor: isColor(candles.borderDownColor) ? candles.borderDownColor : base.candles.borderDownColor,
+            borderUpColor: sanitizeCandleColor(candles.borderUpColor, base.candles.borderUpColor),
+            borderDownColor: sanitizeCandleColor(candles.borderDownColor, base.candles.borderDownColor),
             wickVisible: isBool(candles.wickVisible) ? candles.wickVisible : base.candles.wickVisible,
-            wickUpColor: isColor(candles.wickUpColor) ? candles.wickUpColor : base.candles.wickUpColor,
-            wickDownColor: isColor(candles.wickDownColor) ? candles.wickDownColor : base.candles.wickDownColor,
+            wickUpColor: sanitizeCandleColor(candles.wickUpColor, base.candles.wickUpColor),
+            wickDownColor: sanitizeCandleColor(candles.wickDownColor, base.candles.wickDownColor),
         },
         bars: {
-            upColor: isColor(bars.upColor) ? bars.upColor : base.bars.upColor,
-            downColor: isColor(bars.downColor) ? bars.downColor : base.bars.downColor,
+            upColor: sanitizeCandleColor(bars.upColor, base.bars.upColor),
+            downColor: sanitizeCandleColor(bars.downColor, base.bars.downColor),
         },
         line: {
             color: isColor(line.color) ? line.color : base.line.color,

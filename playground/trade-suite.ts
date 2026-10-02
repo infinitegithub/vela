@@ -867,7 +867,7 @@ export function mountBottomAccountStrip(ws: VelaWorkspace) {
     const strip = document.createElement('div');
     strip.id = 'velo-bottom-account-drawer';
     strip.style.cssText = `
-        height: 180px;
+        height: 28px;
         background: var(--vela-bg-bar, #191a1e);
         border-top: 1px solid var(--vela-border, #262629);
         display: flex;
@@ -932,11 +932,28 @@ export function mountBottomAccountStrip(ws: VelaWorkspace) {
         }
     });
 
-    let minimized = false;
+    let minimized = true;
+    if (minimizeBtn) minimizeBtn.textContent = '▲';
     minimizeBtn?.addEventListener('click', () => {
         minimized = !minimized;
-        strip.style.height = minimized ? '32px' : '180px';
+        strip.style.height = minimized ? '28px' : '180px';
         minimizeBtn.textContent = minimized ? '▲' : '▼';
+    });
+
+    // Clicking tabs automatically expands if minimized
+    tabPos?.addEventListener('click', () => {
+        if (minimized) {
+            minimized = false;
+            strip.style.height = '180px';
+            if (minimizeBtn) minimizeBtn.textContent = '▼';
+        }
+    });
+    tabOrd?.addEventListener('click', () => {
+        if (minimized) {
+            minimized = false;
+            strip.style.height = '180px';
+            if (minimizeBtn) minimizeBtn.textContent = '▼';
+        }
     });
 
     document.body.appendChild(strip);

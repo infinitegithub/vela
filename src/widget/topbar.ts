@@ -322,9 +322,7 @@ export class Topbar {
         this.el.className = 'vela-widget-topbar';
         this.symbolEl = doc.createElement('button');
         this.symbolEl.className = 'vela-widget-symbol';
-        // The button DISPLAYS the bare ticker; the venue-prefixed identity stays in the
-        // shell's state (the statusline meta and the picker badges name the venue).
-        this.symbolEl.textContent = parseSymbol(opts.symbol).ticker;
+        this.renderSymbol(opts.symbol);
         if (opts.onSymbolClick) this.symbolEl.addEventListener('click', opts.onSymbolClick);
         // Duration-sorted chips with highlight in place; the caret is the dropdown
         // trigger (merged with the current label when there are no favorites).
@@ -513,8 +511,14 @@ export class Topbar {
         });
     }
 
+    private renderSymbol(symbol: string): void {
+        const s = parseSymbol(symbol);
+        const prefix = s.provider ? `${s.provider.toUpperCase()}.F` : 'BINANCE.F';
+        this.symbolEl.innerHTML = `<span style="color: var(--vela-text-muted, #757882); font-size: 10px; font-weight: 600; letter-spacing: 0.3px; margin-right: 3px;">${prefix}</span><span style="font-weight: 700; color: var(--vela-text-primary, #eeeef1);">${s.ticker}</span><span style="color: var(--vela-text-secondary, #757882); font-size: 10px; margin-left: 2px;">▾</span>`;
+    }
+
     setSymbol(symbol: string): void {
-        this.symbolEl.textContent = parseSymbol(symbol).ticker;
+        this.renderSymbol(symbol);
     }
 
     setTimeframe(tf: string): void {

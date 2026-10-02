@@ -235,9 +235,9 @@ function seedDefaultTemplates(templatesDir: string) {
                 timezone: 'Etc/UTC',
                 favorites: ['trendline', 'hline', 'box', 'position', 'anchoredvwap', 'fixedrangevp'],
                 timeframeFavorites: ['1', '5', '15', '60', '240', 'D'],
-                panels: { open: 'watchlist.panel' },
+                panels: {},
                 charts: [
-                    { id: 'c1', symbol: 'BTCUSDT', timeframe: '15', priceStyle: 'candles', indicators: { manifest: [], natives: ['volume', 'ema', 'rsi', 'macd'] } }
+                    { id: 'c1', symbol: 'BTCUSDT', timeframe: '1', priceStyle: 'candles', indicators: { manifest: [], natives: ['volume'] } }
                 ]
             }
         },

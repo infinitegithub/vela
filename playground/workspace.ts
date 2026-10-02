@@ -28,8 +28,14 @@ import {
     registerTemplateManager,
     setTemplateWorkspaceInstance,
 } from './template-manager';
+import {
+    registerThemeSwitcher,
+    setThemeWorkspaceInstance,
+    getSavedTheme,
+} from './theme-switcher';
+import { mountTelemetryStrip } from './telemetry-strip';
 
-// 1. Register Native Classic Indicators, Footprint Chart Type, Trading Lines layer, Watchlist, Replay & Trading extensions
+// 1. Register Extensions
 registerClassicIndicators();
 registerFootprintChartType();
 registerTradingLinesLayer();
@@ -39,6 +45,7 @@ registerTradeButton();
 registerReplayButton();
 registerPineEditor();
 registerTemplateManager();
+registerThemeSwitcher();
 
 // 2. Instantiate the multi-chart VelaWorkspace
 const ws = new VelaWorkspace('#workspace', {
@@ -62,7 +69,7 @@ const ws = new VelaWorkspace('#workspace', {
     },
     defaultLanguage: 'pine',
     live: true,
-    theme: 'dark',
+    theme: getSavedTheme(),
     autofocus: true,
     persist: true,
     storage: playgroundStorage(),
@@ -81,20 +88,24 @@ const ws = new VelaWorkspace('#workspace', {
     topbar: {
         // Left: Symbol, Timeframes, Style (Candles icon), Layout, Indicators, Replay, Undo/Redo
         left: ['symbol', 'timeframes', 'style', 'layout', 'indicators', 'replay.toggle', 'undo-redo'],
-        // Right: Pine Editor, Screenshot, Templates (icon-only), Panels, Trade button
-        right: ['pine.editor', 'screenshot', 'templates.toggle', 'panels', 'trade.toggle'],
+        // Right: Pine Editor, Screenshot, Theme Toggle (Vela Muted / Standard Classic), Templates, Panels, Trade button
+        right: ['pine.editor', 'screenshot', 'theme.toggle', 'templates.toggle', 'panels', 'trade.toggle'],
     },
 });
 
-// 3. Bind workspace instance for Replay, Watchlist & Template Manager
+// 3. Bind workspace instances
 setWorkspaceInstance(ws);
 setWatchlistWorkspaceInstance(ws);
 setTemplateWorkspaceInstance(ws);
+setThemeWorkspaceInstance(ws);
 
-// 4. Mount bottom account drawer (Positions & Orders)
+// 4. Mount bottom account drawer (starts collapsed at 28px)
 mountBottomAccountStrip(ws);
 
-// 5. Hook active cell changes so order ticket & watchlist follow user chart clicks
+// 5. Mount Top Bar Market Telemetry Ribbon
+mountTelemetryStrip(ws);
+
+// 6. Hook active cell changes so order ticket & watchlist follow user chart clicks
 ws.on('cell:active', ({ id }) => {
     const cell = ws.cell(id);
     if (cell && cell.symbol) {
@@ -103,14 +114,8 @@ ws.on('cell:active', ({ id }) => {
     }
 });
 
-// 6. Open Watchlist side panel and set drawing favorites once first chart is ready
+// 7. Initialize chart tools & drawing favorites (leave dock closed by default for clean full-screen view)
 void ws.cells()[0]?.chart.ready().then(() => {
-    // Only toggle watchlist panel if dock does not already have an active open panel
-    const dockState = (ws as any).dock?.getState?.();
-    if (!dockState || !dockState.open) {
-        (ws as any).dock?.toggle('watchlist.panel', true);
-    }
-
     for (const cell of ws.cells()) {
         try {
             const currentFavs = cell.chart.drawings.favorites?.();

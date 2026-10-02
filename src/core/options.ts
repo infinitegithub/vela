@@ -80,6 +80,7 @@ export interface MarketSnapshot {
 }
 
 export interface VelaTheme {
+    name?: string;
     background: string;
     textColor: string;
     gridColor: string;
@@ -87,9 +88,18 @@ export interface VelaTheme {
     upColor: string;
     downColor: string;
     fontFamily: string;
+    bgPanel?: string;
+    bgCard?: string;
+    bgBar?: string;
+    bgChip?: string;
+    bgHover?: string;
+    border?: string;
+    textPrimary?: string;
+    textSecondary?: string;
+    textMuted?: string;
 }
 
-export type ThemeName = 'dark' | 'light';
+export type ThemeName = 'dark' | 'light' | 'classic' | 'standard' | 'vela';
 
 /** A renderer **class** — Vela instantiates it with the resolved display options.
  *  Built-in default: `NativeRenderer`.

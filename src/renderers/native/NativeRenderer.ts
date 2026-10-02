@@ -1070,7 +1070,8 @@ export class NativeRenderer implements IChartRenderer {
      *  independently); a pick is raised to the host (`onThemeSelect`), which owns the
      *  canonical theme. */
     private syncThemeControl(): void {
-        this.settingsDialog?.setThemeControl(isDarkColor(this.surfaceBackground) ? 'dark' : 'light', (name) => {
+        const themeId = this.theme.name === 'classic' ? 'classic' : (isDarkColor(this.surfaceBackground) ? 'dark' : 'light');
+        this.settingsDialog?.setThemeControl(themeId, (name) => {
             for (const cb of this.themeSelectCbs) cb(name);
         });
     }
@@ -1763,10 +1764,25 @@ export class NativeRenderer implements IChartRenderer {
     };
 
     setTheme(theme: VelaTheme): void {
+        this.candleUp = theme.upColor;
+        this.candleDown = theme.downColor;
         this.theme = this.deriveTheme(theme);
         // a full app-theme swap re-bases the chrome surface
         this.surfaceBackground = theme.background;
         this.surfaceTextColor = theme.textColor;
+        const s = this.scene.style;
+        s.candle.borderUpColor = theme.upColor;
+        s.candle.borderDownColor = theme.downColor;
+        s.candle.wickUpColor = theme.upColor;
+        s.candle.wickDownColor = theme.downColor;
+        s.bars.upColor = theme.upColor;
+        s.bars.downColor = theme.downColor;
+        s.baseline.topLineColor = theme.upColor;
+        s.baseline.bottomLineColor = theme.downColor;
+        s.gridVert.color = theme.gridColor;
+        s.gridHorz.color = theme.gridColor;
+        s.borderColor = theme.borderColor;
+        s.separatorColor = theme.borderColor;
         if (this.wrapper) applyChromeTokens(this.wrapper, this.chromeTheme());
         this.applyBackground();
         this.inputsUI.setTheme(theme);
