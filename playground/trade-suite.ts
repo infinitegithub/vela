@@ -23,6 +23,8 @@ export interface TradeState {
     availableBalance: number;
     activePositions: any[];
     openOrders: any[];
+    orderHistory: any[];
+    tradeHistory: any[];
 }
 
 export const state: TradeState = {
@@ -39,7 +41,9 @@ export const state: TradeState = {
     reduceOnly: false,
     availableBalance: 0,
     activePositions: [],
-    openOrders: []
+    openOrders: [],
+    orderHistory: [],
+    tradeHistory: []
 };
 
 let updateTicketSymbolCallback: (() => void) | null = null;
@@ -52,6 +56,8 @@ export function setActiveSymbol(symbol: string) {
         updateTicketSymbolCallback();
     }
     fetchOrders(clean);
+    fetchOrderHistory(clean);
+    fetchTradeHistory(clean);
 }
 
 export async function fetchAccount() {
@@ -84,6 +90,46 @@ export async function fetchOrders(symbol: string) {
 function updateAccountBalanceUI() {
     const balEl = document.getElementById('trade-panel-avail');
     if (balEl) balEl.textContent = `$${state.availableBalance.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+    const stripBalEl = document.getElementById('strip-avail-val');
+    if (stripBalEl) stripBalEl.textContent = `$${state.availableBalance.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+}
+
+let historyContainer: HTMLElement | null = null;
+let journalContainer: HTMLElement | null = null;
+
+function formatDateTime(ts: number): string {
+    if (!ts) return '--';
+    const d = new Date(ts);
+    const mm = String(d.getMonth() + 1).padStart(2, '0');
+    const dd = String(d.getDate()).padStart(2, '0');
+    const hh = String(d.getHours()).padStart(2, '0');
+    const min = String(d.getMinutes()).padStart(2, '0');
+    const ss = String(d.getSeconds()).padStart(2, '0');
+    return `${mm}/${dd} ${hh}:${min}:${ss}`;
+}
+
+export async function fetchOrderHistory(symbol: string) {
+    try {
+        const res = await fetch(`/api/binance/order-history?symbol=${encodeURIComponent(symbol)}&testnet=${state.isTestnet}`);
+        if (res.ok) {
+            state.orderHistory = await res.json();
+            updateHistoryUI();
+        }
+    } catch (e) {
+        console.error('Failed to fetch order history', e);
+    }
+}
+
+export async function fetchTradeHistory(symbol: string) {
+    try {
+        const res = await fetch(`/api/binance/trade-history?symbol=${encodeURIComponent(symbol)}&testnet=${state.isTestnet}`);
+        if (res.ok) {
+            state.tradeHistory = await res.json();
+            updateJournalUI();
+        }
+    } catch (e) {
+        console.error('Failed to fetch trade history', e);
+    }
 }
 
 let positionsContainer: HTMLElement | null = null;
@@ -224,6 +270,162 @@ function updateOrdersUI() {
             });
             await fetchOrders(state.symbol);
         });
+    });
+}
+
+
+function updateHistoryUI() {
+    if (!historyContainer) return;
+    if (!Array.isArray(state.orderHistory) || state.orderHistory.length === 0) {
+        historyContainer.innerHTML = `<div style="padding: 24px; text-align: center; color: var(--vela-text-muted, #46474b);">No order history for ${state.symbol}</div>`;
+        return;
+    }
+
+    let rowsHtml = '';
+    for (const o of state.orderHistory) {
+        const isBuy = o.side === 'BUY';
+        const sideColor = isBuy ? 'var(--vela-up, #a7be94)' : 'var(--vela-down, #af6870)';
+        const status = o.status || 'UNKNOWN';
+        let statusBg = 'rgba(117,120,130,0.15)';
+        let statusFg = 'var(--vela-text-secondary, #757882)';
+        if (status === 'FILLED') {
+            statusBg = 'rgba(167,190,148,0.2)';
+            statusFg = 'var(--vela-up, #a7be94)';
+        } else if (status === 'CANCELED') {
+            statusBg = 'rgba(175,104,112,0.15)';
+            statusFg = 'var(--vela-down, #af6870)';
+        } else if (status === 'NEW') {
+            statusBg = 'rgba(253,224,71,0.15)';
+            statusFg = 'var(--vela-warning, #fde047)';
+        }
+
+        const dateStr = formatDateTime(o.time || o.updateTime);
+        const priceStr = parseFloat(o.price || '0') > 0 ? parseFloat(o.price).toFixed(2) : 'Market';
+        const avgPriceStr = parseFloat(o.avgPrice || '0') > 0 ? parseFloat(o.avgPrice).toFixed(2) : '--';
+        const execQty = parseFloat(o.executedQty || '0');
+        const origQty = parseFloat(o.origQty || '0');
+
+        rowsHtml += `
+            <tr style="border-bottom: 1px solid var(--vela-border, #262629); font-size: 11px;">
+                <td style="padding: 7px 10px; color: var(--vela-text-muted, #757882); white-space: nowrap;">${dateStr}</td>
+                <td style="padding: 7px 10px; font-weight: 700; color: var(--vela-text-primary, #eeeef1);">${o.symbol}</td>
+                <td style="padding: 7px 10px; font-weight: 700; color: ${sideColor};">${o.side}</td>
+                <td style="padding: 7px 10px; color: var(--vela-text-secondary, #757882);">${o.type || 'LIMIT'}</td>
+                <td style="padding: 7px 10px; color: var(--vela-text-secondary, #757882);">${priceStr}</td>
+                <td style="padding: 7px 10px; color: var(--vela-text-secondary, #757882);">${avgPriceStr}</td>
+                <td style="padding: 7px 10px; color: var(--vela-text-primary, #eeeef1);">${execQty} / ${origQty}</td>
+                <td style="padding: 7px 10px;">
+                    <span style="font-size: 10px; font-weight: 700; padding: 2px 6px; border-radius: 3px; background: ${statusBg}; color: ${statusFg};">${status}</span>
+                </td>
+            </tr>
+        `;
+    }
+
+    historyContainer.innerHTML = `
+        <div style="padding: 6px 12px; display: flex; align-items: center; justify-content: space-between; border-bottom: 1px solid var(--vela-border, #262629); background: var(--vela-bg-panel, #121215); font-size: 11px;">
+            <span style="color: var(--vela-text-muted, #757882);">Recent orders for <strong style="color: var(--vela-text-primary, #eeeef1);">${state.symbol}</strong></span>
+            <button id="refresh-history-btn" style="background: var(--vela-bg-card, #232429); border: 1px solid var(--vela-border, #262629); color: var(--vela-text-secondary, #757882); font-size: 10px; padding: 2px 8px; border-radius: 4px; cursor: pointer;">↻ Refresh</button>
+        </div>
+        <table style="width: 100%; border-collapse: collapse; text-align: left;">
+            <thead>
+                <tr style="color: var(--vela-text-muted, #46474b); font-size: 10px; text-transform: uppercase; border-bottom: 1px solid var(--vela-border, #262629);">
+                    <th style="padding: 6px 10px;">Time</th>
+                    <th style="padding: 6px 10px;">Symbol</th>
+                    <th style="padding: 6px 10px;">Side</th>
+                    <th style="padding: 6px 10px;">Type</th>
+                    <th style="padding: 6px 10px;">Order Price</th>
+                    <th style="padding: 6px 10px;">Avg Price</th>
+                    <th style="padding: 6px 10px;">Filled / Total</th>
+                    <th style="padding: 6px 10px;">Status</th>
+                </tr>
+            </thead>
+            <tbody>${rowsHtml}</tbody>
+        </table>
+    `;
+
+    historyContainer.querySelector('#refresh-history-btn')?.addEventListener('click', () => {
+        fetchOrderHistory(state.symbol);
+    });
+}
+
+function updateJournalUI() {
+    if (!journalContainer) return;
+    if (!Array.isArray(state.tradeHistory) || state.tradeHistory.length === 0) {
+        journalContainer.innerHTML = `<div style="padding: 24px; text-align: center; color: var(--vela-text-muted, #46474b);">No trade executions recorded in journal for ${state.symbol}</div>`;
+        return;
+    }
+
+    let totalRealizedPnl = 0;
+    let winningTrades = 0;
+    let losingTrades = 0;
+    let totalCommission = 0;
+    let rowsHtml = '';
+
+    for (const t of state.tradeHistory) {
+        const isBuy = t.side === 'BUY';
+        const sideColor = isBuy ? 'var(--vela-up, #a7be94)' : 'var(--vela-down, #af6870)';
+        const pnl = parseFloat(t.realizedPnl || '0');
+        const comm = parseFloat(t.commission || '0');
+        const price = parseFloat(t.price || '0');
+        const qty = parseFloat(t.qty || '0');
+
+        totalRealizedPnl += pnl;
+        totalCommission += Math.abs(comm);
+        if (pnl > 0.0001) winningTrades++;
+        else if (pnl < -0.0001) losingTrades++;
+
+        const pnlStr = pnl === 0 ? '$0.00' : `${pnl > 0 ? '+' : ''}$${pnl.toFixed(4)} USDT`;
+        const pnlColor = pnl > 0 ? 'var(--vela-up, #a7be94)' : (pnl < 0 ? 'var(--vela-down, #af6870)' : 'var(--vela-text-muted, #757882)');
+        const dateStr = formatDateTime(t.time);
+
+        rowsHtml += `
+            <tr style="border-bottom: 1px solid var(--vela-border, #262629); font-size: 11px;">
+                <td style="padding: 7px 10px; color: var(--vela-text-muted, #757882); white-space: nowrap;">${dateStr}</td>
+                <td style="padding: 7px 10px; font-weight: 700; color: var(--vela-text-primary, #eeeef1);">${t.symbol}</td>
+                <td style="padding: 7px 10px; font-weight: 700; color: ${sideColor};">${t.side}</td>
+                <td style="padding: 7px 10px; color: var(--vela-text-secondary, #757882);">$${price.toFixed(2)}</td>
+                <td style="padding: 7px 10px; color: var(--vela-text-primary, #eeeef1);">${qty}</td>
+                <td style="padding: 7px 10px; font-weight: 700; color: ${pnlColor};">${pnlStr}</td>
+                <td style="padding: 7px 10px; color: var(--vela-text-muted, #757882);">${comm.toFixed(4)} ${t.commissionAsset || 'USDT'}</td>
+                <td style="padding: 7px 10px; color: var(--vela-text-muted, #46474b); font-family: monospace; font-size: 10px;">#${t.id || t.orderId}</td>
+            </tr>
+        `;
+    }
+
+    const tradeCount = state.tradeHistory.length;
+    const closedCount = winningTrades + losingTrades;
+    const winRate = closedCount > 0 ? Math.round((winningTrades / closedCount) * 100) : 0;
+    const pnlHeaderColor = totalRealizedPnl >= 0 ? 'var(--vela-up, #a7be94)' : 'var(--vela-down, #af6870)';
+
+    journalContainer.innerHTML = `
+        <div style="padding: 8px 12px; display: flex; align-items: center; justify-content: space-between; border-bottom: 1px solid var(--vela-border, #262629); background: var(--vela-bg-panel, #121215); font-size: 11px;">
+            <div style="display: flex; gap: 16px; align-items: center;">
+                <span>Journal Realized PnL: <strong style="color: ${pnlHeaderColor}; font-size: 12px;">${totalRealizedPnl >= 0 ? '+' : ''}$${totalRealizedPnl.toFixed(2)} USDT</strong></span>
+                <span>Win Rate: <strong style="color: var(--vela-text-primary, #eeeef1);">${winRate}%</strong> (${winningTrades}W / ${losingTrades}L)</span>
+                <span>Fills: <strong style="color: var(--vela-text-primary, #eeeef1);">${tradeCount}</strong></span>
+                <span>Total Fees: <strong style="color: var(--vela-text-muted, #757882);">$${totalCommission.toFixed(3)} USDT</strong></span>
+            </div>
+            <button id="refresh-journal-btn" style="background: var(--vela-bg-card, #232429); border: 1px solid var(--vela-border, #262629); color: var(--vela-text-secondary, #757882); font-size: 10px; padding: 2px 8px; border-radius: 4px; cursor: pointer;">↻ Refresh</button>
+        </div>
+        <table style="width: 100%; border-collapse: collapse; text-align: left;">
+            <thead>
+                <tr style="color: var(--vela-text-muted, #46474b); font-size: 10px; text-transform: uppercase; border-bottom: 1px solid var(--vela-border, #262629);">
+                    <th style="padding: 6px 10px;">Time</th>
+                    <th style="padding: 6px 10px;">Symbol</th>
+                    <th style="padding: 6px 10px;">Side</th>
+                    <th style="padding: 6px 10px;">Fill Price</th>
+                    <th style="padding: 6px 10px;">Quantity</th>
+                    <th style="padding: 6px 10px;">Realized PnL</th>
+                    <th style="padding: 6px 10px;">Commission Fee</th>
+                    <th style="padding: 6px 10px;">Trade ID</th>
+                </tr>
+            </thead>
+            <tbody>${rowsHtml}</tbody>
+        </table>
+    `;
+
+    journalContainer.querySelector('#refresh-journal-btn')?.addEventListener('click', () => {
+        fetchTradeHistory(state.symbol);
     });
 }
 
@@ -862,105 +1064,158 @@ export function registerReplayButton() {
     });
 }
 
-// ── Docked Bottom Account Drawer (Positions & Orders Strip) ─────────────────────
+// ── Docked Bottom Account Drawer (Unified into Range Bar) ──────────────────────
 export function mountBottomAccountStrip(ws: VelaWorkspace) {
-    const strip = document.createElement('div');
-    strip.id = 'velo-bottom-account-drawer';
-    strip.style.cssText = `
-        height: 28px;
+    const bottombarEl = document.querySelector('.vela-widget-bottombar') as HTMLElement;
+    if (!bottombarEl) {
+        setTimeout(() => mountBottomAccountStrip(ws), 100);
+        return;
+    }
+
+    // Clean up any legacy standalone strip
+    document.getElementById('velo-bottom-account-drawer')?.remove();
+    document.getElementById('velo-bottom-account-panel')?.remove();
+
+    // 1. Create the Expandable Account Drawer Tray immediately ABOVE the Range Bar
+    const panel = document.createElement('div');
+    panel.id = 'velo-bottom-account-panel';
+    panel.style.cssText = `
+        height: 0px;
+        display: none;
         background: var(--vela-bg-bar, #191a1e);
         border-top: 1px solid var(--vela-border, #262629);
-        display: flex;
+        border-bottom: 1px solid var(--vela-border, #262629);
         flex-direction: column;
         font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
         color: var(--vela-text-secondary, #757882);
         overflow: hidden;
+        flex: none;
+        z-index: 10;
+        transition: height 0.15s ease;
     `;
 
-    strip.innerHTML = `
-        <div style="display: flex; align-items: center; justify-content: space-between; border-bottom: 1px solid var(--vela-border, #262629); padding: 0 10px; background: var(--vela-bg-panel, #121215);">
-            <div style="display: flex; gap: 4px;">
-                <button id="tab-positions-btn" style="background: var(--vela-bg-chip, #292a2f); color: var(--vela-text-primary, #eeeef1); border: none; font-size: 11px; font-weight: 700; padding: 7px 12px; cursor: pointer; border-bottom: 2px solid var(--vela-up, #a7be94);">Positions (<span id="pos-count">0</span>)</button>
-                <button id="tab-orders-btn" style="background: transparent; color: var(--vela-text-secondary, #757882); border: none; font-size: 11px; font-weight: 700; padding: 7px 12px; cursor: pointer;">Open Orders (<span id="ord-count">0</span>)</button>
-            </div>
-            <div style="display: flex; align-items: center; gap: 12px; font-size: 11px;">
-                <span id="strip-env-badge" style="color: var(--vela-warning, #fde047); font-weight: 700; font-size: 10px; background: var(--vela-warning-bg, #29261a); padding: 2px 6px; border-radius: 4px;">BINANCE TESTNET</span>
-                <button id="strip-minimize-btn" style="background: transparent; border: none; color: var(--vela-text-muted, #46474b); font-size: 12px; cursor: pointer;">▼</button>
-            </div>
-        </div>
+    panel.innerHTML = `
         <div style="flex: 1; overflow: auto; position: relative;">
             <div id="positions-table-view" style="position: absolute; inset: 0; overflow: auto;"></div>
             <div id="orders-table-view" style="position: absolute; inset: 0; overflow: auto; display: none;"></div>
+            <div id="history-table-view" style="position: absolute; inset: 0; overflow: auto; display: none;"></div>
+            <div id="journal-table-view" style="position: absolute; inset: 0; overflow: auto; display: none;"></div>
         </div>
     `;
 
-    positionsContainer = strip.querySelector('#positions-table-view');
-    ordersContainer = strip.querySelector('#orders-table-view');
+    positionsContainer = panel.querySelector('#positions-table-view');
+    ordersContainer = panel.querySelector('#orders-table-view');
+    historyContainer = panel.querySelector('#history-table-view');
+    journalContainer = panel.querySelector('#journal-table-view');
 
-    const tabPos = strip.querySelector('#tab-positions-btn');
-    const tabOrd = strip.querySelector('#tab-orders-btn');
-    const minimizeBtn = strip.querySelector('#strip-minimize-btn');
+    // Insert immediately above the bottombar
+    bottombarEl.parentElement?.insertBefore(panel, bottombarEl);
 
-    tabPos?.addEventListener('click', () => {
-        if (positionsContainer && ordersContainer) {
-            positionsContainer.style.display = 'block';
-            ordersContainer.style.display = 'none';
-            tabPos.style.background = 'var(--vela-bg-chip, #292a2f)';
-            tabPos.style.color = 'var(--vela-text-primary, #eeeef1)';
-            (tabPos as HTMLElement).style.borderBottom = '2px solid var(--vela-up, #a7be94)';
-            if (tabOrd) {
-                tabOrd.style.background = 'transparent';
-                tabOrd.style.color = 'var(--vela-text-secondary, #757882)';
-                (tabOrd as HTMLElement).style.borderBottom = 'none';
-            }
+    // 2. Embed Navigation Tabs & Broker Status directly inside the Range Bar
+    const spacer = bottombarEl.querySelector('.vela-bb-spacer');
+    if (spacer) {
+        spacer.innerHTML = `
+            <div style="display: flex; align-items: center; width: 100%; height: 100%;">
+                <div style="width: 1px; height: 16px; background: var(--vela-border, #262629); margin: 0 8px; flex: none;"></div>
+                <div id="velo-dock-tabs" style="display: flex; gap: 2px; align-items: center; flex: none;">
+                    <button id="tab-positions-btn" style="background: transparent; color: var(--vela-text-secondary, #757882); border: none; font-size: 11px; font-weight: 600; padding: 4px 10px; cursor: pointer; border-radius: 4px; display: inline-flex; align-items: center; gap: 4px;">Positions (<span id="pos-count">0</span>)</button>
+                    <button id="tab-orders-btn" style="background: transparent; color: var(--vela-text-secondary, #757882); border: none; font-size: 11px; font-weight: 600; padding: 4px 10px; cursor: pointer; border-radius: 4px; display: inline-flex; align-items: center; gap: 4px;">Orders (<span id="ord-count">0</span>)</button>
+                    <button id="tab-history-btn" style="background: transparent; color: var(--vela-text-secondary, #757882); border: none; font-size: 11px; font-weight: 600; padding: 4px 10px; cursor: pointer; border-radius: 4px;">Order History</button>
+                    <button id="tab-journal-btn" style="background: transparent; color: var(--vela-text-secondary, #757882); border: none; font-size: 11px; font-weight: 600; padding: 4px 10px; cursor: pointer; border-radius: 4px;">Trade Journal</button>
+                </div>
+                <div style="flex: 1 1 auto;"></div>
+                <div style="display: flex; align-items: center; gap: 8px; flex: none; margin-right: 6px;">
+                    <span id="strip-env-badge" style="color: var(--vela-warning, #fde047); font-weight: 700; font-size: 10px; background: var(--vela-warning-bg, #29261a); padding: 2px 6px; border-radius: 4px;">BINANCE TESTNET</span>
+                    <span id="strip-avail-val" style="color: var(--vela-text-primary, #eeeef1); font-size: 11px; font-weight: 600;">$0.00</span>
+                    <button id="strip-toggle-btn" title="Toggle Account Panel" style="background: var(--vela-bg-chip, #292a2f); border: 1px solid var(--vela-border, #262629); color: var(--vela-text-secondary, #757882); font-size: 10px; font-weight: 600; padding: 2px 7px; border-radius: 4px; cursor: pointer; display: inline-flex; align-items: center; gap: 4px;">
+                        <span>Panel</span> <span id="strip-toggle-chevron">▲</span>
+                    </button>
+                </div>
+            </div>
+        `;
+    }
+
+    let activeTab: 'positions' | 'orders' | 'history' | 'journal' = 'positions';
+    let isPanelOpen = false;
+
+    const tabPos = document.getElementById('tab-positions-btn');
+    const tabOrd = document.getElementById('tab-orders-btn');
+    const tabHist = document.getElementById('tab-history-btn');
+    const tabJourn = document.getElementById('tab-journal-btn');
+    const toggleBtn = document.getElementById('strip-toggle-btn');
+    const toggleChevron = document.getElementById('strip-toggle-chevron');
+
+    const setTabActiveStyle = (btn: HTMLElement | null, isActive: boolean) => {
+        if (!btn) return;
+        if (isActive) {
+            btn.style.background = 'var(--vela-bg-chip, #292a2f)';
+            btn.style.color = 'var(--vela-text-primary, #eeeef1)';
+            btn.style.borderBottom = '2px solid var(--vela-up, #a7be94)';
+        } else {
+            btn.style.background = 'transparent';
+            btn.style.color = 'var(--vela-text-secondary, #757882)';
+            btn.style.borderBottom = 'none';
         }
-    });
+    };
 
-    tabOrd?.addEventListener('click', () => {
-        if (positionsContainer && ordersContainer) {
-            positionsContainer.style.display = 'none';
-            ordersContainer.style.display = 'block';
-            tabOrd.style.background = 'var(--vela-bg-chip, #292a2f)';
-            tabOrd.style.color = 'var(--vela-text-primary, #eeeef1)';
-            (tabOrd as HTMLElement).style.borderBottom = '2px solid var(--vela-up, #a7be94)';
-            if (tabPos) {
-                tabPos.style.background = 'transparent';
-                tabPos.style.color = 'var(--vela-text-secondary, #757882)';
-                (tabPos as HTMLElement).style.borderBottom = 'none';
-            }
-            fetchOrders(state.symbol);
+    const openPanel = () => {
+        isPanelOpen = true;
+        panel.style.display = 'flex';
+        panel.style.height = '220px';
+        if (toggleChevron) toggleChevron.textContent = '▼';
+    };
+
+    const closePanel = () => {
+        isPanelOpen = false;
+        panel.style.height = '0px';
+        panel.style.display = 'none';
+        if (toggleChevron) toggleChevron.textContent = '▲';
+        setTabActiveStyle(tabPos, false);
+        setTabActiveStyle(tabOrd, false);
+        setTabActiveStyle(tabHist, false);
+        setTabActiveStyle(tabJourn, false);
+    };
+
+    const switchTab = (tab: 'positions' | 'orders' | 'history' | 'journal') => {
+        if (isPanelOpen && activeTab === tab) {
+            closePanel();
+            return;
         }
+
+        activeTab = tab;
+        openPanel();
+
+        setTabActiveStyle(tabPos, tab === 'positions');
+        setTabActiveStyle(tabOrd, tab === 'orders');
+        setTabActiveStyle(tabHist, tab === 'history');
+        setTabActiveStyle(tabJourn, tab === 'journal');
+
+        if (positionsContainer) positionsContainer.style.display = tab === 'positions' ? 'block' : 'none';
+        if (ordersContainer) ordersContainer.style.display = tab === 'orders' ? 'block' : 'none';
+        if (historyContainer) historyContainer.style.display = tab === 'history' ? 'block' : 'none';
+        if (journalContainer) journalContainer.style.display = tab === 'journal' ? 'block' : 'none';
+
+        if (tab === 'positions') fetchAccount();
+        else if (tab === 'orders') fetchOrders(state.symbol);
+        else if (tab === 'history') fetchOrderHistory(state.symbol);
+        else if (tab === 'journal') fetchTradeHistory(state.symbol);
+    };
+
+    tabPos?.addEventListener('click', () => switchTab('positions'));
+    tabOrd?.addEventListener('click', () => switchTab('orders'));
+    tabHist?.addEventListener('click', () => switchTab('history'));
+    tabJourn?.addEventListener('click', () => switchTab('journal'));
+
+    toggleBtn?.addEventListener('click', () => {
+        if (isPanelOpen) closePanel();
+        else switchTab(activeTab);
     });
 
-    let minimized = true;
-    if (minimizeBtn) minimizeBtn.textContent = '▲';
-    minimizeBtn?.addEventListener('click', () => {
-        minimized = !minimized;
-        strip.style.height = minimized ? '28px' : '180px';
-        minimizeBtn.textContent = minimized ? '▲' : '▼';
-    });
-
-    // Clicking tabs automatically expands if minimized
-    tabPos?.addEventListener('click', () => {
-        if (minimized) {
-            minimized = false;
-            strip.style.height = '180px';
-            if (minimizeBtn) minimizeBtn.textContent = '▼';
-        }
-    });
-    tabOrd?.addEventListener('click', () => {
-        if (minimized) {
-            minimized = false;
-            strip.style.height = '180px';
-            if (minimizeBtn) minimizeBtn.textContent = '▼';
-        }
-    });
-
-    document.body.appendChild(strip);
-
-    // Initial fetches and background timer
+    // Initial fetches
     fetchAccount();
     fetchOrders(state.symbol);
+    fetchOrderHistory(state.symbol);
+    fetchTradeHistory(state.symbol);
 
     setInterval(() => {
         fetchAccount();

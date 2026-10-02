@@ -3,6 +3,8 @@ import {
     fetchDerivativesStats,
     getAccountInfo,
     getOpenOrders,
+    getOrderHistory,
+    getUserTrades,
     placeOrder,
     cancelOrder,
     cancelAllOrders,
@@ -70,6 +72,17 @@ export function binanceApiPlugin(): Plugin {
                         const orders = await getOpenOrders(symbol, testnet);
                         return sendJson(res, orders);
                     }
+
+                    if (url.pathname === '/api/binance/order-history') {
+                        const history = await getOrderHistory(symbol, testnet);
+                        return sendJson(res, history);
+                    }
+
+                    if (url.pathname === '/api/binance/trade-history') {
+                        const trades = await getUserTrades(symbol, testnet);
+                        return sendJson(res, trades);
+                    }
+
 
                     if (url.pathname === '/api/binance/order' && req.method === 'POST') {
                         const body = await readJsonBody(req);

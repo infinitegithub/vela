@@ -244,3 +244,17 @@ export async function changeLeverage(symbol: string, leverage: number, isTestnet
         leverage
     }, apiKey, secretKey);
 }
+
+export async function getOrderHistory(symbol?: string, isTestnet: boolean = true, apiKey?: string, secretKey?: string, limit: number = 50) {
+    const baseUrl = getBaseUrl(isTestnet);
+    const query: Record<string, any> = { limit };
+    if (symbol) query.symbol = symbol.replace(/\.P$/i, "").toUpperCase();
+    return request(baseUrl, "/fapi/v1/allOrders", "GET", query, apiKey, secretKey);
+}
+
+export async function getUserTrades(symbol?: string, isTestnet: boolean = true, apiKey?: string, secretKey?: string, limit: number = 50) {
+    const baseUrl = getBaseUrl(isTestnet);
+    const query: Record<string, any> = { limit };
+    if (symbol) query.symbol = symbol.replace(/\.P$/i, "").toUpperCase();
+    return request(baseUrl, "/fapi/v1/userTrades", "GET", query, apiKey, secretKey);
+}
