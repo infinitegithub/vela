@@ -1,10 +1,18 @@
 import crypto from 'node:crypto';
+import https from 'node:https';
+import { HttpsProxyAgent } from 'https-proxy-agent';
 
 const PROD_URL = 'https://fapi.binance.com';
 const TEST_URL = 'https://testnet.binancefuture.com';
 
-const DEFAULT_API_KEY = (typeof process !== 'undefined' && process.env?.BINANCE_API_KEY) || 'nXaBUieS5JU1zRTnosAn756scXf1rpUvzj2sJOyZwVBfGVenWjWiYhomaHC8Dfgs';
-const DEFAULT_SECRET_KEY = (typeof process !== 'undefined' && process.env?.BINANCE_SECRET_KEY) || 'MOSjJJT5wVZB7KntzS7afPM1ZxmnZ6UbpdsTSajcmxW6JnOFTSwrYsh7g5IjN8te';
+const TEST_API_KEY = (typeof process !== 'undefined' && process.env?.BINANCE_TESTNET_API_KEY) || 'nXaBUieS5JU1zRTnosAn756scXf1rpUvzj2sJOyZwVBfGVenWjWiYhomaHC8Dfgs';
+const TEST_SECRET_KEY = (typeof process !== 'undefined' && process.env?.BINANCE_TESTNET_API_SECRET) || 'MOSjJJT5wVZB7KntzS7afPM1ZxmnZ6UbpdsTSajcmxW6JnOFTSwrYsh7g5IjN8te';
+
+const PROD_API_KEY = (typeof process !== 'undefined' && process.env?.BINANCE_PRODUCTION_API_KEY) || '';
+const PROD_SECRET_KEY = (typeof process !== 'undefined' && process.env?.BINANCE_PRODUCTION_API_SECRET) || '';
+
+const OCI_PROXY_URL = (typeof process !== 'undefined' && process.env?.BINANCE_OCI_PROXY) || '';
+const ociAgent = OCI_PROXY_URL ? new HttpsProxyAgent(OCI_PROXY_URL) : undefined;
 
 function getBaseUrl(isTestnet: boolean): string {
     return isTestnet ? TEST_URL : PROD_URL;
@@ -22,37 +30,63 @@ function signQuery(queryObj: Record<string, any>, secret: string): string {
     return `${qs}&signature=${signature}`;
 }
 
-async function request(baseUrl: string, endpoint: string, method: string = 'GET', data: Record<string, any> = {}, apiKey: string = DEFAULT_API_KEY, secretKey: string = DEFAULT_SECRET_KEY) {
-    const url = `${baseUrl}${endpoint}`;
+async function request(baseUrl: string, endpoint: string, method: string = 'GET', data: Record<string, any> = {}, apiKey?: string, secretKey?: string) {
+    const isTestnet = baseUrl.includes('testnet');
+    const key = apiKey || (isTestnet ? TEST_API_KEY : PROD_API_KEY);
+    const sec = secretKey || (isTestnet ? TEST_SECRET_KEY : PROD_SECRET_KEY);
+
     const timestamp = Date.now();
     const payload = { ...data, timestamp };
-    const signedQuery = signQuery(payload, secretKey);
+    const signedQuery = signQuery(payload, sec);
 
-    const headers: Record<string, string> = {
-        'X-MBX-APIKEY': apiKey,
-        'Content-Type': 'application/x-www-form-urlencoded'
-    };
-
-    let fetchUrl = url;
+    const url = new URL(`${baseUrl}${endpoint}`);
+    let path = url.pathname;
     let body: string | undefined = undefined;
 
     if (method === 'GET' || method === 'DELETE') {
-        fetchUrl = `${url}?${signedQuery}`;
+        path = `${url.pathname}?${signedQuery}`;
     } else {
         body = signedQuery;
     }
 
-    const res = await fetch(fetchUrl, {
-        method,
-        headers,
-        body
-    });
-
-    const json = await res.json();
-    if (!res.ok) {
-        throw new Error(json.msg || `Binance HTTP ${res.status}: ${JSON.stringify(json)}`);
+    const headers: Record<string, string> = {
+        'X-MBX-APIKEY': key,
+        'Content-Type': 'application/x-www-form-urlencoded'
+    };
+    if (body) {
+        headers['Content-Length'] = String(Buffer.byteLength(body));
     }
-    return json;
+
+    return new Promise((resolve, reject) => {
+        const req = https.request({
+            host: url.hostname,
+            path,
+            method,
+            headers,
+            agent: isTestnet ? undefined : ociAgent
+        }, (res) => {
+            let resBody = '';
+            res.on('data', chunk => resBody += chunk);
+            res.on('end', () => {
+                try {
+                    const json = JSON.parse(resBody);
+                    if (res.statusCode && res.statusCode >= 400 || (json.code && json.code < 0)) {
+                        return reject(new Error(json.msg || `Binance HTTP ${res.statusCode}: ${resBody}`));
+                    }
+                    resolve(json);
+                } catch (e) {
+                    if (res.statusCode && res.statusCode >= 400) {
+                        return reject(new Error(`Binance HTTP ${res.statusCode}: ${resBody}`));
+                    }
+                    resolve(resBody);
+                }
+            });
+        });
+
+        req.on('error', reject);
+        if (body) req.write(body);
+        req.end();
+    });
 }
 
 export async function fetchDerivativesStats(symbol: string) {
@@ -93,8 +127,8 @@ export async function fetchDerivativesStats(symbol: string) {
 
 export async function getAccountInfo(isTestnet: boolean, apiKey?: string, secretKey?: string) {
     const baseUrl = getBaseUrl(isTestnet);
-    const key = apiKey || DEFAULT_API_KEY;
-    const sec = secretKey || DEFAULT_SECRET_KEY;
+    const key = apiKey || (isTestnet ? TEST_API_KEY : PROD_API_KEY);
+    const sec = secretKey || (isTestnet ? TEST_SECRET_KEY : PROD_SECRET_KEY);
 
     const [account, positionsRisk] = await Promise.all([
         request(baseUrl, '/fapi/v2/account', 'GET', {}, key, sec),

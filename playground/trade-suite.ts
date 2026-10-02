@@ -1206,6 +1206,43 @@ export function mountBottomAccountStrip(ws: VelaWorkspace) {
     tabHist?.addEventListener('click', () => switchTab('history'));
     tabJourn?.addEventListener('click', () => switchTab('journal'));
 
+        const envBadge = document.getElementById('strip-env-badge');
+    if (envBadge) {
+        envBadge.style.cursor = 'pointer';
+        envBadge.title = 'Click to toggle Testnet / Production';
+        envBadge.addEventListener('click', () => {
+            if (state.isTestnet) {
+                const prodBtn = document.getElementById('env-prod-btn');
+                if (prodBtn) {
+                    prodBtn.click();
+                } else {
+                    state.isTestnet = false;
+                    envBadge.textContent = 'BINANCE PRODUCTION';
+                    envBadge.style.color = 'var(--vela-up, #a7be94)';
+                    envBadge.style.background = 'var(--vela-up-selected-bg, #363a38)';
+                    fetchAccount();
+                    fetchOrders(state.symbol);
+                    fetchOrderHistory(state.symbol);
+                    fetchTradeHistory(state.symbol);
+                }
+            } else {
+                const testBtn = document.getElementById('env-testnet-btn');
+                if (testBtn) {
+                    testBtn.click();
+                } else {
+                    state.isTestnet = true;
+                    envBadge.textContent = 'BINANCE TESTNET';
+                    envBadge.style.color = 'var(--vela-warning, #fde047)';
+                    envBadge.style.background = 'var(--vela-warning-bg, #29261a)';
+                    fetchAccount();
+                    fetchOrders(state.symbol);
+                    fetchOrderHistory(state.symbol);
+                    fetchTradeHistory(state.symbol);
+                }
+            }
+        });
+    }
+
     toggleBtn?.addEventListener('click', () => {
         if (isPanelOpen) closePanel();
         else switchTab(activeTab);
