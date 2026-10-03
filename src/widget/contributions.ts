@@ -585,6 +585,25 @@ export function registerSymbolRanking(hook: SymbolRankingHook): () => void {
 }
 
 /** The registered ranking, if any — what the shells' symbol picker consults. */
+
+export type SymbolFavoriteHook = {
+    isFavorite: (ticker: string) => boolean;
+    toggleFavorite: (ticker: string, descriptor?: any) => void;
+};
+
+let symbolFavoriteHook: SymbolFavoriteHook | undefined;
+
+export function registerSymbolFavorite(hook: SymbolFavoriteHook): () => void {
+    symbolFavoriteHook = hook;
+    return () => {
+        if (symbolFavoriteHook === hook) symbolFavoriteHook = undefined;
+    };
+}
+
+export function symbolFavorite(): SymbolFavoriteHook | undefined {
+    return symbolFavoriteHook;
+}
+
 export function symbolRanking(): SymbolRankingHook | undefined {
     return symbolRankingHook;
 }

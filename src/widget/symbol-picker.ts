@@ -6,7 +6,7 @@ import { Dialog } from '../ui/components/dialog';
 import { injectStyles } from '../ui/styles';
 import { iconEl } from '../ui/icons';
 import { tickerIconEl, baseOf } from './symbol-icon';
-import { symbolRanking } from './contributions';
+import { symbolRanking, symbolFavorite } from './contributions';
 import { isGroupRow, groupKeyOf, groupMembers, defaultMemberOf } from '../data/symbol-groups';
 
 /** First occurrence wins, keyed by venue+ticker — a ranking hook may inject an entry
@@ -236,6 +236,30 @@ const CSS = `
     color: var(--vela-fg-muted);
 }
 .vela-sp-expander:hover { background: var(--vela-surface-elev); color: var(--vela-fg); }
+.vela-sp-star {
+    all: unset;
+    flex: none;
+    width: 24px;
+    height: 24px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 4px;
+    color: var(--vela-fg-muted);
+    cursor: pointer;
+    opacity: 0.3;
+    transition: opacity 0.15s ease, color 0.15s ease;
+}
+.vela-sp-row:hover .vela-sp-star, .vela-sp-star[data-on="1"] {
+    opacity: 1;
+}
+.vela-sp-star[data-on="1"] {
+    color: #e5a00d;
+}
+.vela-sp-star:hover {
+    color: #ffd166;
+}
+
 .vela-sp-row[data-member] { padding-left: 34px; }
 `;
 
@@ -369,8 +393,21 @@ export class SymbolPicker {
             if (!row) return;
             const s = this.rows[Number(row.dataset.i)];
             if (!s) return;
-            if (target.closest('.vela-sp-expander')) this.toggleExpand(s);
-            else this.pick(s);
+            if (target.closest('.vela-sp-star')) {
+                const fav = symbolFavorite();
+                if (fav) {
+                    fav.toggleFavorite(s.ticker, s);
+                    const btn = target.closest<HTMLElement>('.vela-sp-star')!;
+                    const nowFav = fav.isFavorite(s.ticker);
+                    btn.replaceChildren(iconEl(nowFav ? 'star-filled' : 'star', this.list.ownerDocument));
+                    if (nowFav) btn.dataset.on = '1';
+                    else delete btn.dataset.on;
+                }
+            } else if (target.closest('.vela-sp-expander')) {
+                this.toggleExpand(s);
+            } else {
+                this.pick(s);
+            }
         });
     }
 
@@ -578,6 +615,18 @@ export class SymbolPicker {
             badge.textContent = venue;
             row.appendChild(badge);
         }
+
+        const fav = symbolFavorite();
+        if (fav) {
+            const star = doc.createElement('button');
+            star.className = 'vela-sp-star';
+            const isFav = fav.isFavorite(s.ticker);
+            star.appendChild(iconEl(isFav ? 'star-filled' : 'star', doc));
+            if (isFav) star.dataset.on = '1';
+            star.title = isFav ? 'Remove from Wishlist' : 'Add to Wishlist';
+            row.appendChild(star);
+        }
+
         return row;
     }
 }

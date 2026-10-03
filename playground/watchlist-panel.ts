@@ -1,4 +1,4 @@
-import { registerSidePanel, registerIcon, registerStatePersistence } from '../src/plugin';
+import { registerSidePanel, registerIcon, registerStatePersistence, registerSymbolFavorite } from '../src/plugin';
 import type { VelaWorkspace } from '../src/workspace';
 
 // Register custom icons
@@ -264,6 +264,56 @@ registerStatePersistence({
             if (renderWatchlistRowsFn) renderWatchlistRowsFn();
         }
     },
+});
+
+
+// Helper to check and toggle watchlist membership for symbol picker
+export function isSymbolInWatchlist(sym: string): boolean {
+    const raw = sym.toUpperCase().replace(/^BINANCE:/i, '').replace(/^COINBASE:/i, '').replace(/^HYPERLIQUID:/i, '');
+    const clean = raw.replace('-', '').replace('/', '');
+    return watchlistItems.some(x => {
+        const xNorm = x.binanceSymbol.toUpperCase().replace('-', '').replace('/', '');
+        return xNorm === clean || xNorm === raw || x.symbol.toUpperCase() === raw;
+    });
+}
+
+export function toggleWatchlistSymbol(rawSym: string, descriptor?: any): boolean {
+    const raw = rawSym.toUpperCase().replace(/^BINANCE:/i, '').replace(/^COINBASE:/i, '').replace(/^HYPERLIQUID:/i, '');
+    const clean = raw.replace('-', '').replace('/', '');
+    const existingIndex = watchlistItems.findIndex(x => {
+        const xNorm = x.binanceSymbol.toUpperCase().replace('-', '').replace('/', '');
+        return xNorm === clean || xNorm === raw || x.symbol.toUpperCase() === raw;
+    });
+
+    if (existingIndex >= 0) {
+        watchlistItems.splice(existingIndex, 1);
+        saveWatchlistStore();
+        renderWatchlistRowsFn?.();
+        return false;
+    } else {
+        const isFutures = raw.endsWith('.P');
+        const baseName = descriptor?.description?.split('/')?.[0]?.trim() || raw.replace('.P', '').replace('USDT', '').replace('USD', '');
+        const display = `${raw.replace('USDT', '')}-USD`;
+        watchlistItems.unshift({
+            symbol: display,
+            binanceSymbol: raw,
+            name: baseName,
+            price: 1.0,
+            change: 0.0,
+            changePercent: 0.0,
+            volume: 1000,
+            iconSvg: `<svg viewBox="0 0 24 24" width="20" height="20"><circle cx="12" cy="12" r="11" fill="#363c4e"/><text x="12" y="16" font-size="11" fill="#fff" text-anchor="middle" font-weight="bold">${baseName.charAt(0)}</text></svg>`
+        });
+        saveWatchlistStore();
+        renderWatchlistRowsFn?.();
+        return true;
+    }
+}
+
+// Connect star in symbol search to watchlist
+registerSymbolFavorite({
+    isFavorite: (ticker) => isSymbolInWatchlist(ticker),
+    toggleFavorite: (ticker, desc) => toggleWatchlistSymbol(ticker, desc),
 });
 
 export function registerWatchlistSidePanel() {
@@ -555,12 +605,13 @@ export function registerWatchlistSidePanel() {
                 }
             });
 
-            // Table Header: Symbol | Price | Chg | Chg% | Vol | [Del]
+            // Table Header: Grip | Symbol | Price | Chg | Chg% | Vol | [Del]
             const wlTableHead = document.createElement('div');
             wlTableHead.style.cssText = `
                 display: grid;
-                grid-template-columns: 2fr 1.4fr 1.1fr 1.1fr 1fr 20px;
-                padding: 6px 12px;
+                grid-template-columns: 16px 2fr 1.3fr 1.1fr 1.1fr 0.9fr 20px;
+                gap: 4px;
+                padding: 6px 10px;
                 font-size: 10px;
                 color: var(--vela-text-secondary, #757882);
                 text-transform: uppercase;
@@ -568,6 +619,7 @@ export function registerWatchlistSidePanel() {
                 user-select: none;
             `;
             wlTableHead.innerHTML = `
+                <div></div>
                 <div style="text-align: left;">Symbol</div>
                 <div style="text-align: right;">Price</div>
                 <div style="text-align: right;">Chg</div>
@@ -587,23 +639,90 @@ export function registerWatchlistSidePanel() {
                 return v.toFixed(0);
             };
 
+            let draggedIdx: number | null = null;
+
             const renderWatchlistRows = () => {
                 wlList.innerHTML = '';
-                for (const item of watchlistItems) {
+                for (let i = 0; i < watchlistItems.length; i++) {
+                    const item = watchlistItems[i];
+                    const itemIdx = i;
                     const isSelected = item.binanceSymbol === activeSymbol;
                     const row = document.createElement('div');
                     row.className = 'wl-row';
+                    row.draggable = true;
+                    row.dataset.idx = String(i);
                     row.style.cssText = `
                         display: grid;
-                        grid-template-columns: 2fr 1.4fr 1.1fr 1.1fr 1fr 20px;
-                        padding: 8px 12px;
+                        grid-template-columns: 16px 2fr 1.3fr 1.1fr 1.1fr 0.9fr 20px;
+                        gap: 4px;
+                        padding: 7px 10px;
                         font-size: 12px;
                         border-bottom: 1px solid var(--vela-border, #262629);
                         cursor: pointer;
                         align-items: center;
                         background: ${isSelected ? 'var(--vela-bg-chip, #292a2f)' : 'transparent'};
-                        transition: background 0.15s ease;
+                        transition: background 0.15s ease, border-top 0.15s ease, border-bottom 0.15s ease;
+                        user-select: none;
                     `;
+
+                    // Drag events
+                    row.addEventListener('dragstart', (e) => {
+                        draggedIdx = itemIdx;
+                        row.style.opacity = '0.4';
+                        if (e.dataTransfer) {
+                            e.dataTransfer.effectAllowed = 'move';
+                            e.dataTransfer.setData('text/plain', String(itemIdx));
+                        }
+                    });
+
+                    row.addEventListener('dragend', () => {
+                        draggedIdx = null;
+                        row.style.opacity = '1';
+                        wlList.querySelectorAll('.wl-row').forEach((r: any) => {
+                            r.style.borderTop = '';
+                            r.style.borderBottom = '1px solid var(--vela-border, #262629)';
+                        });
+                    });
+
+                    row.addEventListener('dragover', (e) => {
+                        e.preventDefault();
+                        if (draggedIdx === null || draggedIdx === itemIdx) return;
+                        if (e.dataTransfer) e.dataTransfer.dropEffect = 'move';
+                        const rect = row.getBoundingClientRect();
+                        const midY = rect.top + rect.height / 2;
+                        if (e.clientY < midY) {
+                            row.style.borderTop = '2px solid var(--vela-primary, #3b82f6)';
+                            row.style.borderBottom = '1px solid var(--vela-border, #262629)';
+                        } else {
+                            row.style.borderTop = '';
+                            row.style.borderBottom = '2px solid var(--vela-primary, #3b82f6)';
+                        }
+                    });
+
+                    row.addEventListener('dragleave', () => {
+                        row.style.borderTop = '';
+                        row.style.borderBottom = '1px solid var(--vela-border, #262629)';
+                    });
+
+                    row.addEventListener('drop', (e) => {
+                        e.preventDefault();
+                        row.style.borderTop = '';
+                        row.style.borderBottom = '1px solid var(--vela-border, #262629)';
+                        if (draggedIdx === null || draggedIdx === itemIdx) return;
+
+                        const rect = row.getBoundingClientRect();
+                        const midY = rect.top + rect.height / 2;
+                        const placeAfter = e.clientY >= midY;
+
+                        const [moved] = watchlistItems.splice(draggedIdx, 1);
+                        let targetIdx = itemIdx;
+                        if (draggedIdx < itemIdx && !placeAfter) targetIdx -= 1;
+                        if (draggedIdx > itemIdx && placeAfter) targetIdx += 1;
+
+                        watchlistItems.splice(targetIdx, 0, moved);
+                        saveWatchlistStore();
+                        renderWatchlistRows();
+                    });
 
                     const delBtn = document.createElement('button');
                     delBtn.title = 'Remove from watchlist';
@@ -655,7 +774,8 @@ export function registerWatchlistSidePanel() {
                     const sign = isUp ? '+' : '';
 
                     row.innerHTML = `
-                        <div style="display: flex; align-items: center; gap: 8px; min-width: 0;">
+                        <div style="display: flex; align-items: center; justify-content: center; font-size: 12px; color: var(--vela-text-secondary, #757882); opacity: 0.4; cursor: grab;" title="Drag to reorder">⋮⋮</div>
+                        <div style="display: flex; align-items: center; gap: 6px; min-width: 0;">
                             <div style="flex: none; display: flex; align-items: center;">${item.iconSvg}</div>
                             <span style="font-weight: 700; color: var(--vela-text-primary, #eeeef1); overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">${item.symbol}</span>
                         </div>
