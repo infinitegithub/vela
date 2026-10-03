@@ -180,12 +180,19 @@ export class BinanceProvider implements DataProvider {
 
         const priceFilter = s.filters?.find((f) => f.filterType === 'PRICE_FILTER');
         const tickSize = priceFilter ? parseFloat(priceFilter.tickSize ?? '0.01') : 0.01;
+        let instrumentType = isFutures ? 'futures' : 'crypto';
+        if (isFutures && s.contractType === 'TRADIFI_PERPETUAL') {
+            const u = (s.underlyingType ?? '').toUpperCase();
+            if (u === 'COMMODITY') instrumentType = 'commodity';
+            else if (['SPY', 'QQQ', 'IWM'].includes(s.baseAsset)) instrumentType = 'etf';
+            else if (u.includes('EQUITY')) instrumentType = 'stock';
+        }
         return {
             ticker, // keep the original, incl. any .P (as Pine Script expects)
             tickerid: `BINANCE:${ticker}`,
             prefix: 'BINANCE',
             description: `${s.baseAsset} / ${s.quoteAsset}${isFutures ? ' Perpetual' : ''}`,
-            type: isFutures ? 'futures' : 'crypto',
+            type: instrumentType,
             basecurrency: s.baseAsset,
             currency: s.quoteAsset,
             mintick: tickSize,
@@ -318,8 +325,21 @@ export class BinanceProvider implements DataProvider {
     private async listFutures(): Promise<SymbolDescriptor[]> {
         const data = (await this.json(`${FUTURES_BASE}/exchangeInfo`)) as { symbols?: BinanceSymbol[] };
         return (data.symbols ?? [])
-            .filter((s) => s.contractType === 'PERPETUAL' && s.status === 'TRADING')
-            .map((s) => ({ ticker: `${s.symbol}.P`, description: `${s.baseAsset} / ${s.quoteAsset} Perpetual`, type: 'futures' }));
+            .filter((s) => (s.contractType === 'PERPETUAL' || s.contractType === 'TRADIFI_PERPETUAL') && s.status === 'TRADING')
+            .map((s) => {
+                let type = 'futures';
+                if (s.contractType === 'TRADIFI_PERPETUAL') {
+                    const u = (s.underlyingType ?? '').toUpperCase();
+                    if (u === 'COMMODITY') type = 'commodity';
+                    else if (['SPY', 'QQQ', 'IWM'].includes(s.baseAsset)) type = 'etf';
+                    else if (u.includes('EQUITY')) type = 'stock';
+                }
+                return {
+                    ticker: `${s.symbol}.P`,
+                    description: `${s.baseAsset} / ${s.quoteAsset} Perpetual`,
+                    type,
+                };
+            });
     }
 
     /** Fetch klines, paginating past Binance's 1000-row cap. */
@@ -433,5 +453,6 @@ interface BinanceSymbol {
     baseAsset: string;
     quoteAsset: string;
     contractType?: string;
+    underlyingType?: string;
     filters?: Array<{ filterType: string; tickSize?: string }>;
 }
