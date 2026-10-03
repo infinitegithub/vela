@@ -23,6 +23,7 @@ import {
     setWorkspaceInstance,
     mountBottomAccountStrip,
     setActiveSymbol,
+    refreshWorkspaceIndicators,
 } from './trade-suite';
 import {
     registerTemplateManager,
@@ -73,6 +74,15 @@ const ws = new VelaWorkspace('#workspace', {
     persist: true,
     storage: playgroundStorage(),
     settings: { hidden: ['advanced'] },
+    indicators: async () => {
+        try {
+            const res = await fetch('/api/indicators');
+            if (res.ok) return await res.json();
+        } catch (e) {
+            console.warn('[indicators] Failed to load from /api/indicators:', e);
+        }
+        return [];
+    },
 
     // ── Synchronization across all grid cells ─────────────────────────────
     sync: {
@@ -143,3 +153,4 @@ ws.on('cell:created', ({ id }) => {
 
 // Expose on window for browser console access
 (window as unknown as { __ws: VelaWorkspace }).__ws = ws;
+(window as unknown as { __refreshIndicators: () => Promise<void> }).__refreshIndicators = () => refreshWorkspaceIndicators(ws);

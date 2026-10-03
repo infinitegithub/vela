@@ -44,19 +44,26 @@ export function templateSyncPlugin(): Plugin {
             const dataDir = path.resolve(process.cwd(), 'data');
             const templatesDir = path.resolve(dataDir, 'templates');
             const workspacesDir = path.resolve(dataDir, 'workspaces');
+            const indicatorsDir = path.resolve(dataDir, 'indicators');
 
             fs.mkdirSync(templatesDir, { recursive: true });
             fs.mkdirSync(workspacesDir, { recursive: true });
+            fs.mkdirSync(indicatorsDir, { recursive: true });
 
             // Seed default starter templates if empty
             seedDefaultTemplates(templatesDir);
+            seedDefaultIndicators(indicatorsDir);
 
             server.middlewares.use(async (req, res, next) => {
                 const url = new URL(req.url || '/', 'http://localhost');
 
                 // Handle CORS preflight
                 if (req.method === 'OPTIONS') {
-                    if (url.pathname.startsWith('/api/templates') || url.pathname.startsWith('/api/workspace')) {
+                    if (
+                        url.pathname.startsWith('/api/templates') ||
+                        url.pathname.startsWith('/api/workspace') ||
+                        url.pathname.startsWith('/api/indicators')
+                    ) {
                         res.statusCode = 204;
                         res.setHeader('Access-Control-Allow-Origin', '*');
                         res.setHeader('Access-Control-Allow-Headers', '*');
@@ -105,6 +112,85 @@ export function templateSyncPlugin(): Plugin {
                                 fs.unlinkSync(filePath);
                             }
                             return sendJson(res, { success: true, key });
+                        }
+                    }
+
+                    // ── Indicators Endpoints (/api/indicators) ───────────────────────────
+                    if (url.pathname === '/api/indicators' || url.pathname === '/api/indicators/') {
+                        if (req.method === 'GET') {
+                            const files = fs.readdirSync(indicatorsDir).filter(f => f.endsWith('.json'));
+                            const list = files.map(file => {
+                                try {
+                                    const raw = fs.readFileSync(path.join(indicatorsDir, file), 'utf-8');
+                                    const data = JSON.parse(raw);
+                                    return {
+                                        id: data.id || file.replace('.json', ''),
+                                        name: data.name || file.replace('.json', ''),
+                                        description: data.description || '',
+                                        script: data.script || '',
+                                        language: data.language || 'pine',
+                                        category: data.category || 'Custom Indicators',
+                                        enabled: false,
+                                        updatedAt: data.updatedAt || fs.statSync(path.join(indicatorsDir, file)).mtimeMs
+                                    };
+                                } catch (e) {
+                                    return null;
+                                }
+                            }).filter(Boolean);
+
+                            list.sort((a: any, b: any) => (b.updatedAt || 0) - (a.updatedAt || 0));
+                            return sendJson(res, list);
+                        }
+
+                        if (req.method === 'POST') {
+                            const body = await readJsonBody(req);
+                            if (!body.name || !body.script) {
+                                return sendJson(res, { error: 'Indicator name and script are required' }, 400);
+                            }
+
+                            const safeId = slugify(body.id || body.name);
+                            const record = {
+                                id: safeId,
+                                name: body.name.trim(),
+                                description: body.description || '',
+                                script: body.script,
+                                language: body.language || 'pine',
+                                category: body.category || 'Custom Indicators',
+                                enabled: false,
+                                updatedAt: Date.now()
+                            };
+
+                            const filePath = path.join(indicatorsDir, `${safeId}.json`);
+                            fs.writeFileSync(filePath, JSON.stringify(record, null, 2), 'utf-8');
+                            return sendJson(res, { success: true, indicator: record });
+                        }
+                    }
+
+                    // Single Indicator Endpoint: /api/indicators/:id
+                    if (url.pathname.startsWith('/api/indicators/')) {
+                        const id = decodeURIComponent(url.pathname.replace('/api/indicators/', ''));
+                        const safeId = slugify(id);
+                        const filePath = path.join(indicatorsDir, `${safeId}.json`);
+
+                        if (req.method === 'GET') {
+                            if (fs.existsSync(filePath)) {
+                                const content = fs.readFileSync(filePath, 'utf-8');
+                                res.statusCode = 200;
+                                res.setHeader('Content-Type', 'application/json');
+                                res.setHeader('Access-Control-Allow-Origin', '*');
+                                return res.end(content);
+                            } else {
+                                return sendJson(res, { error: 'Indicator not found', id }, 404);
+                            }
+                        }
+
+                        if (req.method === 'DELETE') {
+                            if (fs.existsSync(filePath)) {
+                                fs.unlinkSync(filePath);
+                                return sendJson(res, { success: true, id });
+                            } else {
+                                return sendJson(res, { error: 'Indicator not found', id }, 404);
+                            }
                         }
                     }
 
@@ -195,6 +281,39 @@ export function templateSyncPlugin(): Plugin {
             });
         }
     };
+}
+
+function seedDefaultIndicators(indicatorsDir: string) {
+    const defaultIndicator = {
+        id: 'ema-ribbon-cloud',
+        name: 'EMA Ribbon & Trend Cloud',
+        description: 'Multi-period EMA ribbon with dynamic cloud fill',
+        script: `//@version=5
+indicator("EMA Ribbon & Trend Cloud", overlay=true)
+
+fast = ta.ema(close, 9)
+med = ta.ema(close, 21)
+slow = ta.ema(close, 55)
+
+plot(fast, "EMA 9", color=#00e676, linewidth=2)
+plot(med, "EMA 21", color=#ffeb3b, linewidth=2)
+plot(slow, "EMA 55", color=#ff5252, linewidth=2)
+
+fill(plot(fast), plot(med), color=fast > med ? color.new(#00e676, 80) : color.new(#ff5252, 80))
+`,
+        language: 'pine',
+        category: 'Custom Indicators',
+        enabled: false,
+        updatedAt: Date.now()
+    };
+    const filePath = path.join(indicatorsDir, `${defaultIndicator.id}.json`);
+    if (!fs.existsSync(filePath)) {
+        try {
+            fs.writeFileSync(filePath, JSON.stringify(defaultIndicator, null, 2), 'utf-8');
+        } catch (e) {
+            console.error('Failed to write default indicator:', e);
+        }
+    }
 }
 
 function seedDefaultTemplates(templatesDir: string) {

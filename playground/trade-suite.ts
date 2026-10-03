@@ -743,11 +743,41 @@ export function registerTradeButton() {
     });
 }
 
+// ── Workspace Instance & Indicator Refresh ────────────────────────────────────
+let wsInstance: VelaWorkspace | null = null;
+export function setWorkspaceInstance(ws: VelaWorkspace) {
+    wsInstance = ws;
+}
+
+export async function refreshWorkspaceIndicators(ws: VelaWorkspace | null = wsInstance): Promise<void> {
+    if (!ws) return;
+    try {
+        const res = await fetch('/api/indicators');
+        if (!res.ok) return;
+        const list = await res.json();
+        (ws as any).manifest = list;
+        for (const cell of ws.cells()) {
+            cell.setManifest(list, false);
+        }
+        const picker = (ws as any).indicatorPicker;
+        if (picker && typeof picker.sync === 'function') {
+            picker.sync();
+        }
+    } catch (err) {
+        console.warn('[indicators] Failed to refresh workspace indicators:', err);
+    }
+}
+
 // ── Pine Script Runtime Editor Dialog ─────────────────────────────────────────
 let pineDialog: Dialog | null = null;
 let pineEditorArea: HTMLTextAreaElement | null = null;
+let pineNameInput: HTMLInputElement | null = null;
+let pineSavedSelect: HTMLSelectElement | null = null;
 let pineStatus: HTMLElement | null = null;
 let pineRunBtn: HTMLButtonElement | null = null;
+let pineSaveBtn: HTMLButtonElement | null = null;
+let pineDeleteBtn: HTMLButtonElement | null = null;
+let savedIndicatorsCache: Array<{ id: string; name: string; script: string }> = [];
 
 const DEFAULT_PINE_SCRIPT = `//@version=5
 indicator("EMA Ribbon & Trend Cloud", overlay=true)
@@ -763,6 +793,30 @@ plot(slow, "EMA 55", color=#ff5252, linewidth=2)
 fill(plot(fast), plot(med), color=fast > med ? color.new(#00e676, 80) : color.new(#ff5252, 80))
 `;
 
+async function updateSavedDropdown(): Promise<void> {
+    if (!pineSavedSelect) return;
+    try {
+        const res = await fetch('/api/indicators');
+        if (res.ok) {
+            savedIndicatorsCache = await res.json();
+        }
+    } catch {
+        /* fallback */
+    }
+    pineSavedSelect.replaceChildren();
+    const defaultOpt = document.createElement('option');
+    defaultOpt.value = '';
+    defaultOpt.textContent = '-- Load Saved Indicator --';
+    pineSavedSelect.appendChild(defaultOpt);
+
+    for (const ind of savedIndicatorsCache) {
+        const opt = document.createElement('option');
+        opt.value = ind.id;
+        opt.textContent = ind.name;
+        pineSavedSelect.appendChild(opt);
+    }
+}
+
 export function registerPineEditor() {
     registerWidgetAction({
         id: 'pine.editor',
@@ -774,15 +828,113 @@ export function registerPineEditor() {
         run: (ctx) => {
             if (!pineDialog) {
                 const container = document.createElement('div');
-                container.style.cssText = 'display: flex; flex-direction: column; gap: 10px; width: 560px; max-width: 85vw;';
+                container.style.cssText = 'display: flex; flex-direction: column; gap: 10px; width: 580px; max-width: 85vw;';
 
+                // Top Controls: Name input, Saved Selector, Delete
+                const topControls = document.createElement('div');
+                topControls.style.cssText = 'display: flex; gap: 8px; align-items: center; width: 100%;';
+
+                pineNameInput = document.createElement('input');
+                pineNameInput.type = 'text';
+                pineNameInput.placeholder = 'Indicator Name (e.g. EMA Ribbon)';
+                pineNameInput.style.cssText = `
+                    flex: 1;
+                    background: var(--vela-bg-main, #202126);
+                    color: var(--vela-text-primary, #eeeef1);
+                    border: 1px solid var(--vela-border, #262629);
+                    border-radius: 4px;
+                    padding: 6px 10px;
+                    font-size: 12px;
+                    outline: none;
+                `;
+
+                pineSavedSelect = document.createElement('select');
+                pineSavedSelect.style.cssText = `
+                    width: 200px;
+                    background: var(--vela-bg-panel, #18191e);
+                    color: var(--vela-text-primary, #eeeef1);
+                    border: 1px solid var(--vela-border, #262629);
+                    border-radius: 4px;
+                    padding: 6px 8px;
+                    font-size: 12px;
+                    outline: none;
+                    cursor: pointer;
+                `;
+
+                pineDeleteBtn = document.createElement('button');
+                pineDeleteBtn.textContent = '✕';
+                pineDeleteBtn.title = 'Delete saved indicator';
+                pineDeleteBtn.style.cssText = `
+                    background: transparent;
+                    color: var(--vela-down, #af6870);
+                    border: 1px solid var(--vela-border, #262629);
+                    border-radius: 4px;
+                    padding: 6px 10px;
+                    font-size: 12px;
+                    cursor: pointer;
+                    display: none;
+                `;
+
+                pineSavedSelect.addEventListener('change', () => {
+                    const selectedId = pineSavedSelect!.value;
+                    if (!selectedId) {
+                        if (pineDeleteBtn) pineDeleteBtn.style.display = 'none';
+                        return;
+                    }
+                    const item = savedIndicatorsCache.find(i => i.id === selectedId);
+                    if (item && pineEditorArea && pineNameInput) {
+                        pineEditorArea.value = item.script;
+                        pineNameInput.value = item.name;
+                        if (pineDeleteBtn) pineDeleteBtn.style.display = 'inline-block';
+                        if (pineStatus) {
+                            pineStatus.style.color = 'var(--vela-text-secondary, #757882)';
+                            pineStatus.textContent = `Loaded "${item.name}"`;
+                        }
+                    }
+                });
+
+                pineDeleteBtn.onclick = async () => {
+                    const selectedId = pineSavedSelect?.value;
+                    if (!selectedId) return;
+                    const item = savedIndicatorsCache.find(i => i.id === selectedId);
+                    if (!confirm(`Delete "${item?.name || selectedId}" from saved indicators?`)) return;
+
+                    try {
+                        const res = await fetch(`/api/indicators/${encodeURIComponent(selectedId)}`, { method: 'DELETE' });
+                        if (res.ok) {
+                            if (pineStatus) {
+                                pineStatus.style.color = 'var(--vela-up, #a7be94)';
+                                pineStatus.textContent = '✓ Deleted indicator';
+                            }
+                            pineDeleteBtn!.style.display = 'none';
+                            await updateSavedDropdown();
+                            await refreshWorkspaceIndicators(wsInstance);
+                        } else {
+                            if (pineStatus) {
+                                pineStatus.style.color = 'var(--vela-down, #af6870)';
+                                pineStatus.textContent = '✗ Failed to delete indicator';
+                            }
+                        }
+                    } catch (err: any) {
+                        if (pineStatus) {
+                            pineStatus.style.color = 'var(--vela-down, #af6870)';
+                            pineStatus.textContent = `✗ ${err.message}`;
+                        }
+                    }
+                };
+
+                topControls.appendChild(pineNameInput);
+                topControls.appendChild(pineSavedSelect);
+                topControls.appendChild(pineDeleteBtn);
+
+                // Code Editor Textarea
                 pineEditorArea = document.createElement('textarea');
                 pineEditorArea.value = DEFAULT_PINE_SCRIPT;
                 pineEditorArea.spellcheck = false;
                 pineEditorArea.style.cssText = `
                     width: 100%;
                     box-sizing: border-box;
-                    height: 240px;
+                    height: 250px;
                     background: var(--vela-bg-main, #202126);
                     color: var(--vela-text-primary, #eeeef1);
                     border: 1px solid var(--vela-border, #262629);
@@ -794,8 +946,12 @@ export function registerPineEditor() {
                     outline: none;
                 `;
 
+                // Bottom Action Buttons
                 const btnRow = document.createElement('div');
-                btnRow.style.cssText = 'display: flex; align-items: center; justify-content: space-between;';
+                btnRow.style.cssText = 'display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap;';
+
+                const leftBtns = document.createElement('div');
+                leftBtns.style.cssText = 'display: flex; gap: 8px; align-items: center;';
 
                 pineRunBtn = document.createElement('button');
                 pineRunBtn.textContent = 'Compile & Run on Chart';
@@ -804,17 +960,36 @@ export function registerPineEditor() {
                     color: var(--vela-bg-panel, #121215);
                     border: none;
                     border-radius: 4px;
-                    padding: 8px 16px;
+                    padding: 8px 14px;
                     font-size: 12px;
                     font-weight: 700;
                     cursor: pointer;
                 `;
 
-                pineStatus = document.createElement('div');
-                pineStatus.style.cssText = 'font-size: 12px; color: var(--vela-text-secondary, #757882);';
+                pineSaveBtn = document.createElement('button');
+                pineSaveBtn.textContent = '★ Save to Indicators';
+                pineSaveBtn.title = 'Save indicator so it appears in the Indicators dropdown catalog';
+                pineSaveBtn.style.cssText = `
+                    background: #4a7bb0;
+                    color: #fff;
+                    border: none;
+                    border-radius: 4px;
+                    padding: 8px 14px;
+                    font-size: 12px;
+                    font-weight: 700;
+                    cursor: pointer;
+                `;
 
-                btnRow.appendChild(pineRunBtn);
+                leftBtns.appendChild(pineRunBtn);
+                leftBtns.appendChild(pineSaveBtn);
+
+                pineStatus = document.createElement('div');
+                pineStatus.style.cssText = 'font-size: 12px; color: var(--vela-text-secondary, #757882); flex: 1; text-align: right; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;';
+
+                btnRow.appendChild(leftBtns);
                 btnRow.appendChild(pineStatus);
+
+                container.appendChild(topControls);
                 container.appendChild(pineEditorArea);
                 container.appendChild(btnRow);
 
@@ -826,6 +1001,7 @@ export function registerPineEditor() {
                 });
             }
 
+            // Run action
             pineRunBtn!.onclick = async () => {
                 if (!pineEditorArea || !pineStatus) return;
                 pineStatus.style.color = 'var(--vela-text-secondary, #757882)';
@@ -845,18 +1021,67 @@ export function registerPineEditor() {
                 }
             };
 
+            // Save action
+            pineSaveBtn!.onclick = async () => {
+                if (!pineEditorArea || !pineStatus) return;
+                const script = pineEditorArea.value.trim();
+                if (!script) {
+                    pineStatus.style.color = 'var(--vela-down, #af6870)';
+                    pineStatus.textContent = '✗ Script cannot be empty';
+                    return;
+                }
+
+                const nameRegex = new RegExp('(?:indicator|strategy)\\s*\\(\\s*["\x27]([^"\x27]+)["\x27]');
+                const match = script.match(nameRegex);
+                let name = pineNameInput?.value.trim() || (match ? match[1] : '');
+                if (!name) name = 'Custom Pine Indicator';
+
+                pineStatus.style.color = 'var(--vela-text-secondary, #757882)';
+                pineStatus.textContent = 'Saving to indicators catalog...';
+
+                try {
+                    const res = await fetch('/api/indicators', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                            id: pineSavedSelect?.value || undefined,
+                            name,
+                            script,
+                            language: 'pine',
+                            category: 'Custom Indicators'
+                        })
+                    });
+
+                    if (res.ok) {
+                        const data = await res.json();
+                        pineStatus.style.color = 'var(--vela-up, #a7be94)';
+                        pineStatus.textContent = `✓ Saved "${name}" to Indicators catalog!`;
+                        await updateSavedDropdown();
+                        if (pineSavedSelect && data.indicator?.id) {
+                            pineSavedSelect.value = data.indicator.id;
+                            if (pineDeleteBtn) pineDeleteBtn.style.display = 'inline-block';
+                        }
+                        await refreshWorkspaceIndicators(wsInstance);
+                    } else {
+                        const errData = await res.json().catch(() => ({}));
+                        pineStatus.style.color = 'var(--vela-down, #af6870)';
+                        pineStatus.textContent = `✗ Save failed: ${errData.error || res.statusText}`;
+                    }
+                } catch (err: any) {
+                    pineStatus.style.color = 'var(--vela-down, #af6870)';
+                    pineStatus.textContent = `✗ ${err.message}`;
+                }
+            };
+
             pineStatus!.textContent = '';
+            void updateSavedDropdown();
             pineDialog.show();
             setTimeout(() => pineEditorArea?.focus(), 50);
         }
     });
 }
-
 // ── TradingView-Style Bar Replay ──────────────────────────────────────────────
-let wsInstance: VelaWorkspace | null = null;
-export function setWorkspaceInstance(ws: VelaWorkspace) {
-    wsInstance = ws;
-}
+
 
 export function registerReplayButton() {
     let replayDock: HTMLElement | null = null;
