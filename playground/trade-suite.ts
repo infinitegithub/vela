@@ -11,6 +11,16 @@ registerIcon('replay', '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 
 export interface TradeState {
     isTestnet: boolean;
     symbol: string;
+    currentPrice: number;
+    inputUnit: 'USDT_TOTAL' | 'USDT_MARGIN' | 'QTY';
+    constraints: {
+        stepSize: number;
+        precision: number;
+        minQty: number;
+        minNotional: number;
+        tickSize: number;
+        pricePrecision: number;
+    };
     leverage: number;
     marginMode: 'isolated' | 'cross';
     side: 'BUY' | 'SELL';
@@ -30,6 +40,16 @@ export interface TradeState {
 export const state: TradeState = {
     isTestnet: true,
     symbol: 'BTCUSDT',
+    currentPrice: 0,
+    inputUnit: 'USDT_TOTAL',
+    constraints: {
+        stepSize: 0.001,
+        precision: 3,
+        minQty: 0.001,
+        minNotional: 50,
+        tickSize: 0.1,
+        pricePrecision: 2
+    },
     leverage: 20,
     marginMode: 'isolated',
     side: 'BUY',
@@ -46,6 +66,28 @@ export const state: TradeState = {
     tradeHistory: []
 };
 
+let updateConversionUICallback: (() => void) | null = null;
+
+export async function fetchStats(symbol: string) {
+    try {
+        const res = await fetch(`/api/binance/stats?symbol=${encodeURIComponent(symbol)}`);
+        if (res.ok) {
+            const data = await res.json();
+            if (data) {
+                state.currentPrice = data.lastPrice || data.markPrice || 0;
+                if (data.constraints) {
+                    state.constraints = data.constraints;
+                }
+                if (updateConversionUICallback) {
+                    updateConversionUICallback();
+                }
+            }
+        }
+    } catch (e) {
+        // ignore
+    }
+}
+
 let updateTicketSymbolCallback: (() => void) | null = null;
 
 export function setActiveSymbol(symbol: string) {
@@ -55,6 +97,7 @@ export function setActiveSymbol(symbol: string) {
     if (updateTicketSymbolCallback) {
         updateTicketSymbolCallback();
     }
+    fetchStats(clean);
     fetchOrders(clean);
     fetchOrderHistory(clean);
     fetchTradeHistory(clean);
@@ -487,13 +530,25 @@ export function registerTradingSidePanel() {
                         <input id="input-order-price" type="number" step="any" placeholder="Price" style="width: 100%; box-sizing: border-box; background: var(--vela-bg-card, #232429); color: var(--vela-text-primary, #eeeef1); border: 1px solid var(--vela-border, #262629); border-radius: 4px; padding: 8px 10px; font-size: 12px; outline: none;" />
                     </div>
 
-                    <!-- Quantity Input -->
-                    <div style="margin-bottom: 10px;">
-                        <div style="display: flex; justify-content: space-between; margin-bottom: 4px;">
-                            <span style="font-size: 11px; color: var(--vela-text-secondary, #757882);">Amount</span>
+                    <!-- Quantity Input with Unit Toggle & Live Conversion -->
+                    <div style="margin-bottom: 12px;">
+                        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px;">
+                            <span style="font-size: 11px; color: var(--vela-text-secondary, #757882); font-weight: 600;">Order Amount</span>
                             <span style="font-size: 11px; color: var(--vela-text-secondary, #757882);">Avail: <strong id="trade-panel-avail" style="color: var(--vela-text-primary, #eeeef1);">--</strong></span>
                         </div>
-                        <input id="input-order-qty" type="number" step="any" placeholder="Size (e.g. 0.05)" style="width: 100%; box-sizing: border-box; background: var(--vela-bg-card, #232429); color: var(--vela-text-primary, #eeeef1); border: 1px solid var(--vela-border, #262629); border-radius: 4px; padding: 8px 10px; font-size: 12px; outline: none;" />
+                        <div style="display: flex; gap: 6px;">
+                            <input id="input-order-qty" type="number" step="any" placeholder="100" style="flex: 1; min-width: 0; box-sizing: border-box; background: var(--vela-bg-card, #232429); color: var(--vela-text-primary, #eeeef1); border: 1px solid var(--vela-border, #262629); border-radius: 4px; padding: 8px 10px; font-size: 12px; outline: none;" />
+                            <select id="select-order-unit" style="width: 124px; background: var(--vela-bg-card, #232429); color: var(--vela-text-primary, #eeeef1); border: 1px solid var(--vela-border, #262629); border-radius: 4px; padding: 6px 8px; font-size: 11px; font-weight: 700; cursor: pointer;">
+                                <option value="USDT_TOTAL" selected>USDT (Total)</option>
+                                <option value="USDT_MARGIN">USDT (Margin)</option>
+                                <option value="QTY">Coin (Qty)</option>
+                            </select>
+                        </div>
+                        <!-- Live Calculation Card -->
+                        <div id="trade-calc-card" style="margin-top: 6px; padding: 6px 8px; background: var(--vela-bg-card, #232429); border: 1px solid var(--vela-border, #262629); border-radius: 4px; font-size: 11px; display: flex; justify-content: space-between; color: var(--vela-text-secondary, #757882);">
+                            <span>Position: <strong id="calc-notional" style="color: var(--vela-text-primary, #eeeef1);">--</strong></span>
+                            <span>Margin: <strong id="calc-margin" style="color: var(--vela-up, #a7be94);">--</strong></span>
+                        </div>
                     </div>
 
                     <!-- Quick % Allocation Buttons -->
@@ -645,23 +700,176 @@ export function registerTradingSidePanel() {
                 state.stopLoss = chkSl.checked ? inputSl.value : '';
             });
 
+            const calcNotional = body.querySelector('#calc-notional') as HTMLElement | null;
+            const calcMargin = body.querySelector('#calc-margin') as HTMLElement | null;
+            const unitSelect = body.querySelector('#select-order-unit') as HTMLSelectElement | null;
+            const leverageSelect = body.querySelector('#trade-leverage') as HTMLSelectElement | null;
+            const marginModeSelect = body.querySelector('#trade-margin-mode') as HTMLSelectElement | null;
+
+            const updateConversionUI = () => {
+                if (!calcNotional || !calcMargin || !inputQty) return;
+                const val = parseFloat(inputQty.value || '0');
+                const price = (state.orderType === 'LIMIT' || state.orderType === 'STOP_MARKET') && parseFloat(inputPrice.value || '0') > 0
+                    ? parseFloat(inputPrice.value)
+                    : (state.currentPrice > 0 ? state.currentPrice : 85000);
+
+                const baseAsset = state.symbol.replace(/USDT$/i, '');
+                const lev = Math.max(1, state.leverage || 20);
+
+                if (val <= 0 || price <= 0) {
+                    calcNotional.textContent = '--';
+                    calcMargin.textContent = `-- (@ ${lev}x)`;
+                    return;
+                }
+
+                let notional = 0;
+                let margin = 0;
+                let coinQty = 0;
+
+                if (state.inputUnit === 'USDT_TOTAL') {
+                    notional = val;
+                    margin = notional / lev;
+                    coinQty = notional / price;
+                } else if (state.inputUnit === 'USDT_MARGIN') {
+                    margin = val;
+                    notional = margin * lev;
+                    coinQty = notional / price;
+                } else {
+                    coinQty = val;
+                    notional = coinQty * price;
+                    margin = notional / lev;
+                }
+
+                const prec = state.constraints.precision ?? 3;
+                const step = state.constraints.stepSize || 0.001;
+                const alignedCoins = (Math.floor(coinQty / step) * step).toFixed(prec);
+
+                calcNotional.textContent = `$${notional.toFixed(2)} (~${alignedCoins} ${baseAsset})`;
+                calcMargin.textContent = `$${margin.toFixed(2)} (@ ${lev}x)`;
+            };
+
+            updateConversionUICallback = updateConversionUI;
+            inputQty?.addEventListener('input', updateConversionUI);
+            inputPrice?.addEventListener('input', updateConversionUI);
+
+            unitSelect?.addEventListener('change', () => {
+                state.inputUnit = unitSelect.value as any;
+                if (state.inputUnit === 'USDT_TOTAL') {
+                    inputQty.placeholder = '100 (USDT)';
+                } else if (state.inputUnit === 'USDT_MARGIN') {
+                    inputQty.placeholder = '5 (USDT Margin)';
+                } else {
+                    inputQty.placeholder = '0.05 (Coins)';
+                }
+                updateConversionUI();
+            });
+
+            leverageSelect?.addEventListener('change', async () => {
+                state.leverage = parseInt(leverageSelect.value) || 20;
+                updateConversionUI();
+                try {
+                    const res = await fetch('/api/binance/leverage', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                            symbol: state.symbol,
+                            leverage: state.leverage,
+                            testnet: state.isTestnet
+                        })
+                    });
+                    const data = await res.json();
+                    if (res.ok && !data.error) {
+                        ctx.toast(`Leverage set to ${state.leverage}x for ${state.symbol}`, 'info');
+                    } else {
+                        ctx.toast(`Leverage update: ${data.error || 'Set'}`, 'info');
+                    }
+                } catch (err: any) {
+                    console.warn('Leverage change error:', err);
+                }
+            });
+
+            marginModeSelect?.addEventListener('change', async () => {
+                state.marginMode = (marginModeSelect.value as 'isolated' | 'cross') || 'isolated';
+                try {
+                    const marginType = state.marginMode === 'cross' ? 'CROSSED' : 'ISOLATED';
+                    const res = await fetch('/api/binance/margin-type', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                            symbol: state.symbol,
+                            marginType,
+                            testnet: state.isTestnet
+                        })
+                    });
+                    const data = await res.json();
+                    if (res.ok && !data.error) {
+                        ctx.toast(`Margin mode set to ${marginType} for ${state.symbol}`, 'info');
+                    } else {
+                        ctx.toast(`Margin mode: ${data.error || data.msg || 'OK'}`, 'info');
+                    }
+                } catch (err: any) {
+                    console.warn('Margin mode change error:', err);
+                }
+            });
+
             body.querySelectorAll('.pct-btn').forEach(btn => {
                 btn.addEventListener('click', (e: any) => {
                     const pct = parseFloat(e.target.getAttribute('data-pct'));
                     if (state.availableBalance > 0) {
-                        const notional = state.availableBalance * pct * state.leverage;
-                        // Approximate BTC price for sizing if stats not fetched
-                        const approxPrice = 85000;
-                        const qty = (notional / approxPrice).toFixed(3);
-                        inputQty.value = qty;
+                        const price = (state.orderType === 'LIMIT' || state.orderType === 'STOP_MARKET') && parseFloat(inputPrice.value || '0') > 0
+                            ? parseFloat(inputPrice.value)
+                            : (state.currentPrice > 0 ? state.currentPrice : 85000);
+
+                        if (state.inputUnit === 'USDT_TOTAL') {
+                            const notional = state.availableBalance * pct * state.leverage;
+                            inputQty.value = notional.toFixed(2);
+                        } else if (state.inputUnit === 'USDT_MARGIN') {
+                            const margin = state.availableBalance * pct;
+                            inputQty.value = margin.toFixed(2);
+                        } else {
+                            const notional = state.availableBalance * pct * state.leverage;
+                            const prec = state.constraints.precision ?? 3;
+                            inputQty.value = (notional / price).toFixed(prec);
+                        }
+                        updateConversionUI();
                     }
                 });
             });
 
             placeBtn?.addEventListener('click', async () => {
-                const qty = parseFloat(inputQty.value || '0');
-                if (qty <= 0) {
-                    if (tradeMsg) tradeMsg.textContent = 'Please enter a valid quantity';
+                const inputVal = parseFloat(inputQty.value || '0');
+                if (inputVal <= 0) {
+                    if (tradeMsg) tradeMsg.textContent = 'Please enter a valid amount';
+                    return;
+                }
+
+                const price = (state.orderType === 'LIMIT' || state.orderType === 'STOP_MARKET') && parseFloat(inputPrice.value || '0') > 0
+                    ? parseFloat(inputPrice.value)
+                    : (state.currentPrice > 0 ? state.currentPrice : 85000);
+
+                let calculatedCoins = inputVal;
+                if (state.inputUnit === 'USDT_TOTAL') {
+                    calculatedCoins = inputVal / price;
+                } else if (state.inputUnit === 'USDT_MARGIN') {
+                    calculatedCoins = (inputVal * state.leverage) / price;
+                }
+
+                const step = state.constraints.stepSize || 0.001;
+                const prec = state.constraints.precision ?? 3;
+                let finalQty = parseFloat((Math.floor(calculatedCoins / step) * step).toFixed(prec));
+
+                if (finalQty < (state.constraints.minQty || 0.001)) {
+                    finalQty = state.constraints.minQty || 0.001;
+                }
+
+                if (finalQty <= 0) {
+                    if (tradeMsg) tradeMsg.textContent = 'Calculated quantity is too small for exchange filters';
+                    return;
+                }
+
+                const notionalValue = finalQty * price;
+                if (state.constraints.minNotional && notionalValue < state.constraints.minNotional) {
+                    if (tradeMsg) tradeMsg.textContent = `Order value ($${notionalValue.toFixed(2)}) is below exchange minimum ($${state.constraints.minNotional})`;
                     return;
                 }
 
@@ -671,7 +879,7 @@ export function registerTradingSidePanel() {
                         symbol: state.symbol,
                         side: state.side,
                         type: state.orderType,
-                        quantity: qty,
+                        quantity: finalQty,
                         testnet: state.isTestnet
                     };
 
@@ -699,7 +907,7 @@ export function registerTradingSidePanel() {
                         throw new Error(json.error || 'Failed to place order');
                     }
 
-                    ctx.toast(`Order placed: ${state.side} ${qty} ${state.symbol}`, 'info');
+                    ctx.toast(`Order placed: ${state.side} ${finalQty} ${state.symbol} (~$${notionalValue.toFixed(2)} USDT)`, 'info');
                     if (tradeMsg) tradeMsg.textContent = `Order placed: #${json.main?.orderId || 'OK'}`;
                     fetchAccount();
                     fetchOrders(state.symbol);
@@ -719,6 +927,7 @@ export function registerTradingSidePanel() {
                     }
                 },
                 onOpen: () => {
+                    fetchStats(state.symbol);
                     fetchAccount();
                     fetchOrders(state.symbol);
                 },

@@ -9,7 +9,7 @@ import {
     cancelOrder,
     cancelAllOrders,
     closePositionMarket,
-    changeLeverage
+    changeLeverage, changeMarginType
 } from './binance-service';
 
 function readJsonBody(req: any): Promise<any> {
@@ -105,6 +105,12 @@ export function binanceApiPlugin(): Plugin {
                     if (url.pathname === '/api/binance/position/close' && req.method === 'POST') {
                         const body = await readJsonBody(req);
                         const result = await closePositionMarket(body.symbol, body.side, body.quantity, body.testnet !== false);
+                        return sendJson(res, result);
+                    }
+
+                                        if (url.pathname === '/api/binance/margin-type' && req.method === 'POST') {
+                        const body = await readJsonBody(req);
+                        const result = await changeMarginType(body.symbol, body.marginType, body.testnet !== false);
                         return sendJson(res, result);
                     }
 

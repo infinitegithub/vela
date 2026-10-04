@@ -89,6 +89,61 @@ async function request(baseUrl: string, endpoint: string, method: string = 'GET'
     });
 }
 
+
+export interface SymbolConstraints {
+    stepSize: number;
+    precision: number;
+    minQty: number;
+    minNotional: number;
+    tickSize: number;
+    pricePrecision: number;
+}
+
+let exchangeInfoCache: Record<string, SymbolConstraints> = {};
+let lastExchangeInfoTime = 0;
+
+export async function getSymbolConstraints(symbol: string): Promise<SymbolConstraints> {
+    const canonical = symbol.replace(/\.P$/i, '').toUpperCase();
+    const now = Date.now();
+    if (Object.keys(exchangeInfoCache).length === 0 || now - lastExchangeInfoTime > 3600000) {
+        try {
+            const data = await fetch(`${PROD_URL}/fapi/v1/exchangeInfo`).then(r => r.json());
+            if (data?.symbols) {
+                const map: Record<string, SymbolConstraints> = {};
+                for (const s of data.symbols) {
+                    const lotFilter = s.filters?.find((f: any) => f.filterType === 'LOT_SIZE');
+                    const priceFilter = s.filters?.find((f: any) => f.filterType === 'PRICE_FILTER');
+                    const notionalFilter = s.filters?.find((f: any) => f.filterType === 'MIN_NOTIONAL');
+                    const stepSize = parseFloat(lotFilter?.stepSize || '0.001');
+                    const stepDecimals = lotFilter?.stepSize ? (lotFilter.stepSize.split('.')[1] || '').replace(/0+$/, '').length : 3;
+                    const tickSize = parseFloat(priceFilter?.tickSize || '0.1');
+                    const priceDecimals = priceFilter?.tickSize ? (priceFilter.tickSize.split('.')[1] || '').replace(/0+$/, '').length : 2;
+                    map[s.symbol] = {
+                        stepSize,
+                        precision: s.quantityPrecision ?? stepDecimals,
+                        minQty: parseFloat(lotFilter?.minQty || '0.001'),
+                        minNotional: parseFloat(notionalFilter?.notional || '5'),
+                        tickSize,
+                        pricePrecision: s.pricePrecision ?? priceDecimals
+                    };
+                }
+                exchangeInfoCache = map;
+                lastExchangeInfoTime = now;
+            }
+        } catch (e) {
+            console.warn('[binance-service] Failed to fetch exchangeInfo:', e);
+        }
+    }
+    return exchangeInfoCache[canonical] || {
+        stepSize: 0.001,
+        precision: 3,
+        minQty: 0.001,
+        minNotional: 5,
+        tickSize: 0.1,
+        pricePrecision: 2
+    };
+}
+
 export async function fetchDerivativesStats(symbol: string) {
     const canonical = symbol.replace(/\.P$/i, '').toUpperCase();
     try {
@@ -98,6 +153,7 @@ export async function fetchDerivativesStats(symbol: string) {
             fetch(`${PROD_URL}/fapi/v1/ticker/24hr?symbol=${canonical}`).then(r => r.json())
         ]);
 
+        const constraints = await getSymbolConstraints(canonical);
         return {
             symbol: canonical,
             markPrice: parseFloat(premiumRes.markPrice || '0'),
@@ -107,9 +163,11 @@ export async function fetchDerivativesStats(symbol: string) {
             openInterest: parseFloat(oiRes.openInterest || '0'),
             openInterestValue: parseFloat(oiRes.openInterest || '0') * parseFloat(premiumRes.markPrice || '0'),
             fundingRate: parseFloat(premiumRes.lastFundingRate || '0'),
-            nextFundingTime: parseInt(premiumRes.nextFundingTime || '0')
+            nextFundingTime: parseInt(premiumRes.nextFundingTime || '0'),
+            constraints
         };
     } catch (e: any) {
+        const constraints = await getSymbolConstraints(canonical);
         return {
             symbol: canonical,
             markPrice: 0,
@@ -120,6 +178,7 @@ export async function fetchDerivativesStats(symbol: string) {
             openInterestValue: 0,
             fundingRate: 0,
             nextFundingTime: 0,
+            constraints,
             error: e.message
         };
     }
@@ -291,4 +350,20 @@ export async function getUserTrades(symbol?: string, isTestnet: boolean = true, 
     const query: Record<string, any> = { limit };
     if (symbol) query.symbol = symbol.replace(/\.P$/i, "").toUpperCase();
     return request(baseUrl, "/fapi/v1/userTrades", "GET", query, apiKey, secretKey);
+}
+
+
+export async function changeMarginType(symbol: string, marginType: 'ISOLATED' | 'CROSSED', isTestnet: boolean = true, apiKey?: string, secretKey?: string) {
+    const baseUrl = getBaseUrl(isTestnet);
+    try {
+        return await request(baseUrl, '/fapi/v1/marginType', 'POST', {
+            symbol: symbol.replace(/\.P$/i, '').toUpperCase(),
+            marginType
+        }, apiKey, secretKey);
+    } catch (err: any) {
+        if (err.message && (err.message.includes('-4046') || err.message.includes('No need to change'))) {
+            return { code: 200, msg: `Margin type is already ${marginType}` };
+        }
+        throw err;
+    }
 }
