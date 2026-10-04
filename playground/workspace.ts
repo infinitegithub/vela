@@ -1,4 +1,5 @@
 import type { Vela } from '../src';
+import { registerSW } from 'virtual:pwa-register';
 import { VelaWorkspace } from '../src/workspace';
 import { BinanceProvider } from '../src/data/providers/binance';
 import { CoinbaseProvider } from '../src/data/providers/coinbase';
@@ -150,6 +151,31 @@ ws.on('cell:created', ({ id }) => {
     const cell = ws.cell(id);
     if (cell) seedMarks(cell.chart);
 });
+
+// 9. PWA Service Worker Registration & Storage Persistence
+if (typeof window !== 'undefined' && 'serviceWorker' in navigator) {
+    registerSW({
+        immediate: true,
+        onRegisteredSW(_swScriptUrl, registration) {
+            if (registration) {
+                // Periodic update check every 30 minutes
+                setInterval(() => {
+                    registration.update().catch(() => {});
+                }, 30 * 60 * 1000);
+            }
+        },
+        onRegisterError(error) {
+            console.warn('[PWA] Service worker registration failed:', error);
+        },
+    });
+
+    // Request persistent storage so drawings, indicators & templates aren't purged under disk pressure
+    if (navigator.storage && navigator.storage.persist) {
+        navigator.storage.persist().then((persistent) => {
+            console.log(`[PWA] Persistent storage granted: ${persistent}`);
+        }).catch(() => {});
+    }
+}
 
 // Expose on window for browser console access
 (window as unknown as { __ws: VelaWorkspace }).__ws = ws;

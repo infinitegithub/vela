@@ -2,8 +2,16 @@
 <html lang="en">
     <head>
         <meta charset="utf-8" />
-        <meta name="viewport" content="width=device-width, initial-scale=1" />
+        <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover" />
         <title>Velo Terminal — LuxAlgo Vela</title>
+        <meta name="description" content="LuxAlgo Vela Multi-Pane Financial Charting Workstation" />
+        <meta name="theme-color" content="#202126" />
+        <meta name="apple-mobile-web-app-capable" content="yes" />
+        <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+        <meta name="apple-mobile-web-app-title" content="Vela" />
+        <meta name="mobile-web-app-capable" content="yes" />
+        <link rel="apple-touch-icon" href="/icons/apple-touch-icon.png" />
+        <link rel="icon" type="image/png" sizes="192x192" href="/icons/icon-192.png" />
         <style>
             html,
             body {
@@ -13,6 +21,8 @@
                 overflow: hidden;
                 display: flex;
                 flex-direction: column;
+                -webkit-touch-callout: none;
+                user-select: none;
             }
             #workspace {
                 flex: 1;

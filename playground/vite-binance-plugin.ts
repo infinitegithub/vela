@@ -9,7 +9,8 @@ import {
     cancelOrder,
     cancelAllOrders,
     closePositionMarket,
-    changeLeverage, changeMarginType
+    changeLeverage,
+    changeMarginType
 } from './binance-service';
 
 function readJsonBody(req: any): Promise<any> {
@@ -54,6 +55,13 @@ export function binanceApiPlugin(): Plugin {
                     return res.end();
                 }
 
+                // Defense-in-depth: If request arrives via Cloudflare Zero Trust, verify authorized email
+                const cfEmail = req.headers['cf-access-authenticated-user-email'];
+                if (cfEmail && cfEmail !== 'es@viffey.com') {
+                    console.warn(`[binance-api] Blocked unauthorized CF Access operator: ${cfEmail}`);
+                    return sendJson(res, { error: 'Unauthorized operator' }, 403);
+                }
+
                 const testnet = url.searchParams.get('testnet') !== 'false';
                 const symbol = url.searchParams.get('symbol') || 'BTCUSDT';
 
@@ -83,7 +91,6 @@ export function binanceApiPlugin(): Plugin {
                         return sendJson(res, trades);
                     }
 
-
                     if (url.pathname === '/api/binance/order' && req.method === 'POST') {
                         const body = await readJsonBody(req);
                         const result = await placeOrder(body, body.testnet !== false);
@@ -108,7 +115,7 @@ export function binanceApiPlugin(): Plugin {
                         return sendJson(res, result);
                     }
 
-                                        if (url.pathname === '/api/binance/margin-type' && req.method === 'POST') {
+                    if (url.pathname === '/api/binance/margin-type' && req.method === 'POST') {
                         const body = await readJsonBody(req);
                         const result = await changeMarginType(body.symbol, body.marginType, body.testnet !== false);
                         return sendJson(res, result);
