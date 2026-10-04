@@ -179,14 +179,36 @@ Full documentation lives in [docs/](docs/index.md): user guides ([quickstart](do
 [architecture](docs/architecture/overview.md), and [contributing](docs/contributing/setup.md) guides
 including the [plugin SDK](docs/contributing/plugin-sdk.md).
 
-## Development
+## Development & Trading Workstation
+
+Run the full Vela workstation with Velo-style multi-pane charts, TradingView replay, footprint style, and live Binance Futures execution:
 
 ```bash
+# 1. Install dependencies
 npm install
-npm run playground   # vite playground on http://localhost:5190
-npm test             # vitest
-npm run build        # tsup → dist/
+
+# 2. Configure environment (Optional for testnet, required for live trading)
+cp .env.example .env
+
+# 3. Launch workstation
+npm run playground   # launches interactive workstation on http://localhost:3000
 ```
+
+### Binance Futures Setup
+- **Testnet**: Ready out of the box with default testnet credentials. Use the bottom account drawer or environment toggle to trade risk-free.
+- **Production**: To connect your live Binance account:
+  1. Add your Binance API credentials to `.env`:
+     ```env
+     BINANCE_PRODUCTION_API_KEY=your_api_key
+     BINANCE_PRODUCTION_API_SECRET=your_api_secret
+     ```
+  2. **Direct vs Proxy Connection**: If you have direct access to Binance, leave `BINANCE_OCI_PROXY` blank (direct HTTPS connection). If you require a static egress IP or proxy, set `BINANCE_OCI_PROXY=http://proxy-host:port`.
+- **Tests & Production Build**:
+  ```bash
+  npm test             # run vitest unit tests
+  npm run build        # build library distribution via tsup
+  npm run typecheck    # verify TypeScript types
+  ```
 
 ## License and attribution
 

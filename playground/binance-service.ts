@@ -5,13 +5,13 @@ import { HttpsProxyAgent } from 'https-proxy-agent';
 const PROD_URL = 'https://fapi.binance.com';
 const TEST_URL = 'https://testnet.binancefuture.com';
 
-const TEST_API_KEY = (typeof process !== 'undefined' && process.env?.BINANCE_TESTNET_API_KEY) || 'nXaBUieS5JU1zRTnosAn756scXf1rpUvzj2sJOyZwVBfGVenWjWiYhomaHC8Dfgs';
-const TEST_SECRET_KEY = (typeof process !== 'undefined' && process.env?.BINANCE_TESTNET_API_SECRET) || 'MOSjJJT5wVZB7KntzS7afPM1ZxmnZ6UbpdsTSajcmxW6JnOFTSwrYsh7g5IjN8te';
+const TEST_API_KEY = (typeof process !== 'undefined' && (process.env?.BINANCE_TESTNET_API_KEY || process.env?.BINANCE_TESTNET_KEY)) || 'nXaBUieS5JU1zRTnosAn756scXf1rpUvzj2sJOyZwVBfGVenWjWiYhomaHC8Dfgs';
+const TEST_SECRET_KEY = (typeof process !== 'undefined' && (process.env?.BINANCE_TESTNET_API_SECRET || process.env?.BINANCE_TESTNET_SECRET)) || 'MOSjJJT5wVZB7KntzS7afPM1ZxmnZ6UbpdsTSajcmxW6JnOFTSwrYsh7g5IjN8te';
 
-const PROD_API_KEY = (typeof process !== 'undefined' && process.env?.BINANCE_PRODUCTION_API_KEY) || '';
-const PROD_SECRET_KEY = (typeof process !== 'undefined' && process.env?.BINANCE_PRODUCTION_API_SECRET) || '';
+const PROD_API_KEY = (typeof process !== 'undefined' && (process.env?.BINANCE_PRODUCTION_API_KEY || process.env?.BINANCE_PROD_API_KEY)) || '';
+const PROD_SECRET_KEY = (typeof process !== 'undefined' && (process.env?.BINANCE_PRODUCTION_API_SECRET || process.env?.BINANCE_PROD_API_SECRET)) || '';
 
-const OCI_PROXY_URL = (typeof process !== 'undefined' && process.env?.BINANCE_OCI_PROXY) || '';
+const OCI_PROXY_URL = (typeof process !== 'undefined' && (process.env?.BINANCE_OCI_PROXY || process.env?.BINANCE_PROXY || process.env?.BINANCE_PROD_PROXY_URL)) || '';
 const ociAgent = OCI_PROXY_URL ? new HttpsProxyAgent(OCI_PROXY_URL) : undefined;
 
 function getBaseUrl(isTestnet: boolean): string {
@@ -34,6 +34,10 @@ async function request(baseUrl: string, endpoint: string, method: string = 'GET'
     const isTestnet = baseUrl.includes('testnet');
     const key = apiKey || (isTestnet ? TEST_API_KEY : PROD_API_KEY);
     const sec = secretKey || (isTestnet ? TEST_SECRET_KEY : PROD_SECRET_KEY);
+
+    if (!isTestnet && (!key || !sec)) {
+        throw new Error('Binance production API credentials are not configured. Please set BINANCE_PRODUCTION_API_KEY and BINANCE_PRODUCTION_API_SECRET in your .env file.');
+    }
 
     const timestamp = Date.now();
     const payload = { ...data, timestamp };
