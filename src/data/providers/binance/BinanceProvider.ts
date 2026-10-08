@@ -6,10 +6,22 @@ import type { Unsubscribe } from '../../../core/util/types';
 
 const SPOT_BASE = 'https://api.binance.com/api/v3';
 const SPOT_BASE_US = 'https://api.binance.us/api/v3';
-const FUTURES_BASE = 'https://fapi.binance.com/fapi/v1';
 const SPOT_WS = 'wss://stream.binance.com:9443';
 const SPOT_WS_US = 'wss://stream.binance.us:9443';
-const FUTURES_WS = 'wss://fstream.binance.com';
+
+function isTestnet(): boolean {
+    if (typeof window === 'undefined') return false;
+    const search = window.location.search;
+    if (search.includes('testnet=true')) return true;
+    if (search.includes('testnet=false')) return false;
+    const env = window.localStorage?.getItem('vela-binance-env');
+    if (env === 'testnet') return true;
+    if (env === 'prod') return false;
+    return window.localStorage?.getItem('vela-testnet') === 'true';
+}
+
+const getFuturesBase = () => isTestnet() ? 'https://testnet.binancefuture.com/fapi/v1' : 'https://fapi.binance.com/fapi/v1';
+const getFuturesWs = () => isTestnet() ? 'wss://stream.binancefuture.com' : 'wss://fstream.binance.com';
 /**
  * If a kline socket opens but delivers no candle within this window, treat it as
  * non-delivering and fall back to polling. Covers a socket that connects but stays
@@ -52,11 +64,17 @@ export function normalizeTf(tf: string): string {
     return TF_NORMALIZE[tf] ?? TF_NORMALIZE[tf.toLowerCase()] ?? tf;
 }
 
-/** Split a Vela ticker into the Binance API symbol + whether it's a perpetual future (`.P`). */
+/** Split a Vela ticker into the Binance API symbol + whether it's a perpetual future. */
 export function parseTicker(ticker: string): { apiSymbol: string; isFutures: boolean } {
     const t = ticker.trim().toUpperCase();
+    if (t.startsWith('SPOT:')) return { apiSymbol: t.slice(5).replace(/\.P$/i, ''), isFutures: false };
     if (t.endsWith('.P')) return { apiSymbol: t.slice(0, -2), isFutures: true };
-    return { apiSymbol: t, isFutures: false };
+    if (/^(SPY|XAU|QQQ|IWM|NVDA|TSLA|AAPL|AMZN|MSFT|GOLD)/i.test(t)) {
+        return { apiSymbol: t.endsWith('USDT') ? t : `${t}USDT`, isFutures: true };
+    }
+    // All Binance instruments in this trading workstation default to USD-M Futures
+    // to match trade-suite's futures execution and avoid spot-futures basis mismatch
+    return { apiSymbol: t, isFutures: true };
 }
 
 /** Map raw Binance klines to neutral OHLCV (open-time in epoch ms). */
@@ -125,6 +143,29 @@ export class BinanceProvider implements DataProvider {
     private spotBaseProbe: Promise<string> | null = null;
     /** Cached symbol enumeration (exchangeInfo is large; fetch once). */
     private symbolsPromise: Promise<SymbolDescriptor[]> | null = null;
+    /** Cached futures symbols for getSymbolInfo and listFutures */
+    private futuresSymbolsCache: { time: number; testnet: boolean; symbols: BinanceSymbol[] } | null = null;
+    private futuresSymbolsPromise: Promise<BinanceSymbol[]> | null = null;
+
+    private async getFuturesSymbols(): Promise<BinanceSymbol[]> {
+        const testnet = isTestnet();
+        if (this.futuresSymbolsCache && this.futuresSymbolsCache.testnet === testnet && Date.now() - this.futuresSymbolsCache.time < 300_000) {
+            return this.futuresSymbolsCache.symbols;
+        }
+        if (!this.futuresSymbolsPromise) {
+            this.futuresSymbolsPromise = (async () => {
+                try {
+                    const data = (await this.json(`${getFuturesBase()}/exchangeInfo`).catch(() => null)) as { symbols?: BinanceSymbol[] } | null;
+                    const symbols = data?.symbols ?? [];
+                    this.futuresSymbolsCache = { time: Date.now(), testnet, symbols };
+                    return symbols;
+                } finally {
+                    this.futuresSymbolsPromise = null;
+                }
+            })();
+        }
+        return this.futuresSymbolsPromise;
+    }
 
     info(): ProviderInfo {
         return {
@@ -139,7 +180,7 @@ export class BinanceProvider implements DataProvider {
     async getBars(ticker: string, timeframe: string, range: BarRange): Promise<OHLCV[]> {
         try {
             const { apiSymbol, isFutures } = parseTicker(ticker);
-            const base = isFutures ? FUTURES_BASE : await this.spotBase();
+            const base = isFutures ? getFuturesBase() : await this.spotBase();
             const tf = normalizeTf(timeframe);
 
             const nativeInterval = TF_TO_INTERVAL[tf];
@@ -170,12 +211,15 @@ export class BinanceProvider implements DataProvider {
 
     async getSymbolInfo(ticker: string): Promise<SymbolInfo | undefined> {
         const { apiSymbol, isFutures } = parseTicker(ticker);
-        const base = isFutures ? FUTURES_BASE : await this.spotBase();
-        // Spot accepts ?symbol=; the futures exchangeInfo returns all symbols.
-        const url = isFutures ? `${base}/exchangeInfo` : `${base}/exchangeInfo?symbol=${apiSymbol}`;
-        const data = (await this.json(url).catch(() => null)) as { symbols?: BinanceSymbol[] } | null;
-        const symbols: BinanceSymbol[] = data?.symbols ?? [];
-        const s = isFutures ? symbols.find((x) => x.symbol === apiSymbol) : symbols[0];
+        let s: BinanceSymbol | undefined;
+        if (isFutures) {
+            const symbols = await this.getFuturesSymbols();
+            s = symbols.find((x) => x.symbol === apiSymbol);
+        } else {
+            const base = await this.spotBase();
+            const data = (await this.json(`${base}/exchangeInfo?symbol=${apiSymbol}`).catch(() => null)) as { symbols?: BinanceSymbol[] } | null;
+            s = data?.symbols?.[0];
+        }
         if (!s) return undefined;
 
         const priceFilter = s.filters?.find((f) => f.filterType === 'PRICE_FILTER');
@@ -267,7 +311,7 @@ export class BinanceProvider implements DataProvider {
 
         const open = async (): Promise<void> => {
             if (closed) return;
-            const base = isFutures ? FUTURES_WS : await this.spotWsBase();
+            const base = isFutures ? getFuturesWs() : await this.spotWsBase();
             if (closed) return; // unsubscribed during the host probe
             ws = new WebSocket(`${base}/ws/${stream}`);
             stall = setTimeout(fallToPolling, STREAM_STALL_MS); // watchdog: data must arrive
@@ -323,8 +367,8 @@ export class BinanceProvider implements DataProvider {
     }
 
     private async listFutures(): Promise<SymbolDescriptor[]> {
-        const data = (await this.json(`${FUTURES_BASE}/exchangeInfo`)) as { symbols?: BinanceSymbol[] };
-        return (data.symbols ?? [])
+        const symbols = await this.getFuturesSymbols();
+        return symbols
             .filter((s) => (s.contractType === 'PERPETUAL' || s.contractType === 'TRADIFI_PERPETUAL') && s.status === 'TRADING')
             .map((s) => {
                 let type = 'futures';
@@ -335,7 +379,7 @@ export class BinanceProvider implements DataProvider {
                     else if (u.includes('EQUITY')) type = 'stock';
                 }
                 return {
-                    ticker: `${s.symbol}.P`,
+                    ticker: s.symbol,
                     description: `${s.baseAsset} / ${s.quoteAsset} Perpetual`,
                     type,
                 };

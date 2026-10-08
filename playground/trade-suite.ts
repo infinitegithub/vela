@@ -37,8 +37,9 @@ export interface TradeState {
     tradeHistory: any[];
 }
 
+const savedEnv = typeof localStorage !== "undefined" ? localStorage.getItem("vela-binance-env") : null;
 export const state: TradeState = {
-    isTestnet: true,
+    isTestnet: savedEnv ? savedEnv === "testnet" : true,
     symbol: 'BTCUSDT',
     currentPrice: 0,
     inputUnit: 'USDT_TOTAL',
@@ -88,10 +89,87 @@ export async function fetchStats(symbol: string) {
     }
 }
 
+export function setEnvironment(isTestnet: boolean) {
+    state.isTestnet = isTestnet;
+    try {
+        localStorage.setItem("vela-binance-env", isTestnet ? "testnet" : "prod");
+        localStorage.setItem("vela-testnet", isTestnet ? "true" : "false");
+    } catch {}
+
+    state.openOrders = [];
+    state.activePositions = [];
+    state.orderHistory = [];
+    state.tradeHistory = [];
+    state.takeProfit = "";
+    state.stopLoss = "";
+
+    const chkTp = document.querySelector("#chk-tp") as HTMLInputElement | null;
+    const inputTp = document.querySelector("#input-tp") as HTMLInputElement | null;
+    if (chkTp && inputTp) { chkTp.checked = false; inputTp.disabled = true; inputTp.value = ""; }
+
+    const chkSl = document.querySelector("#chk-sl") as HTMLInputElement | null;
+    const inputSl = document.querySelector("#input-sl") as HTMLInputElement | null;
+    if (chkSl && inputSl) { chkSl.checked = false; inputSl.disabled = true; inputSl.value = ""; }
+
+    updatePositionsUI();
+    updateOrdersUI();
+    updateAccountBalanceUI();
+
+    const envTestnet = document.getElementById("env-testnet-btn");
+    const envProd = document.getElementById("env-prod-btn");
+    const badge = document.getElementById("strip-env-badge");
+
+    if (envTestnet && envProd) {
+        if (isTestnet) {
+            envTestnet.style.border = "1px solid var(--vela-warning, #fde047)";
+            envTestnet.style.background = "var(--vela-warning-bg, #29261a)";
+            envTestnet.style.color = "var(--vela-warning, #fde047)";
+            envProd.style.border = "1px solid var(--vela-border, #262629)";
+            envProd.style.background = "var(--vela-bg-card, #232429)";
+            envProd.style.color = "var(--vela-text-secondary, #757882)";
+        } else {
+            envProd.style.border = "1px solid var(--vela-up, #a7be94)";
+            envProd.style.background = "var(--vela-up-selected-bg, #363a38)";
+            envProd.style.color = "var(--vela-up, #a7be94)";
+            envTestnet.style.border = "1px solid var(--vela-border, #262629)";
+            envTestnet.style.background = "var(--vela-bg-card, #232429)";
+            envTestnet.style.color = "var(--vela-text-secondary, #757882)";
+        }
+    }
+
+    if (badge) {
+        if (isTestnet) {
+            badge.textContent = "BINANCE TESTNET";
+            badge.style.color = "var(--vela-warning, #fde047)";
+            badge.style.background = "var(--vela-warning-bg, #29261a)";
+        } else {
+            badge.textContent = "BINANCE PRODUCTION";
+            badge.style.color = "var(--vela-up, #a7be94)";
+            badge.style.background = "var(--vela-up-selected-bg, #363a38)";
+        }
+    }
+
+    if (typeof window !== 'undefined') {
+        window.dispatchEvent(new CustomEvent('vela:env-changed', { detail: { isTestnet } }));
+    }
+
+    fetchAccount();
+    fetchOrders(state.symbol);
+    fetchOrderHistory(state.symbol);
+    fetchTradeHistory(state.symbol);
+}
+
 let updateTicketSymbolCallback: (() => void) | null = null;
 
 export function setActiveSymbol(symbol: string) {
-    const clean = symbol.replace(/.*:/, '').toUpperCase();
+    if (!symbol) return;
+    let clean = symbol.replace(/.*:/, '').toUpperCase().trim();
+    clean = clean.replace(/\.P$/i, '');
+    if (clean.endsWith('-USD')) {
+        clean = clean.replace(/-USD$/, 'USDT');
+    }
+    clean = clean.replace(/[^A-Z0-9]/g, '');
+    if (!clean) return;
     if (state.symbol === clean) return;
     state.symbol = clean;
     if (updateTicketSymbolCallback) {
@@ -103,27 +181,206 @@ export function setActiveSymbol(symbol: string) {
     fetchTradeHistory(clean);
 }
 
+const closedCooldowns = new Map<string, number>();
+
+export function isSymbolInCloseCooldown(sym: string): boolean {
+    if (!sym) return false;
+    const canonical = sym.replace(/.*:/, '').replace(/\.P$/i, '').replace(/[-_]/g, '').toUpperCase();
+    const expiry = closedCooldowns.get(canonical);
+    if (!expiry) return false;
+    if (Date.now() > expiry) {
+        closedCooldowns.delete(canonical);
+        return false;
+    }
+    return true;
+}
+
+export function markSymbolClosed(sym: string) {
+    if (!sym) return;
+    const canonical = sym.replace(/.*:/, '').replace(/\.P$/i, '').replace(/[-_]/g, '').toUpperCase();
+    closedCooldowns.set(canonical, Date.now() + 6000);
+}
+
+export async function closePosition(symbol: string, side?: string, size?: number) {
+    const canonical = symbol.replace(/.*:/, '').replace(/\.P$/i, '').replace(/[-_]/g, '').toUpperCase();
+    
+    // Find current position in state if side or size not passed
+    const existing = state.activePositions.find((p: any) => p && p.symbol === canonical);
+    const posSide = side || existing?.side || 'LONG';
+    const posSize = size ?? existing?.size ?? 0;
+
+    // 1. Mark cooldown for 6 seconds to suppress stale Binance replica echoes
+    markSymbolClosed(canonical);
+
+    // 2. IMMEDIATE OPTIMISTIC CLEANUP (0ms UI latency):
+    state.activePositions = (state.activePositions || []).filter((p: any) => p && p.symbol !== canonical);
+    state.openOrders = (state.openOrders || []).filter((o: any) => o && o.symbol !== canonical);
+
+    // If currently viewing this symbol in ticket, clear SL/TP fields
+    if (state.symbol === canonical) {
+        state.takeProfit = '';
+        state.stopLoss = '';
+        const chkTp = document.querySelector('#chk-tp') as HTMLInputElement | null;
+        const inputTp = document.querySelector('#input-tp') as HTMLInputElement | null;
+        if (chkTp && inputTp) { chkTp.checked = false; inputTp.disabled = true; inputTp.value = ''; }
+        const chkSl = document.querySelector('#chk-sl') as HTMLInputElement | null;
+        const inputSl = document.querySelector('#input-sl') as HTMLInputElement | null;
+        if (chkSl && inputSl) { chkSl.checked = false; inputSl.disabled = true; inputSl.value = ''; }
+    }
+
+    // 3. Immediately notify UI, DOM overlay & chart canvas
+    updatePositionsUI();
+    updateOrdersUI();
+    if (typeof window !== 'undefined') {
+        window.dispatchEvent(new CustomEvent('vela:position-closed', { detail: { symbol: canonical } }));
+        window.dispatchEvent(new CustomEvent('vela:repaint-lines'));
+    }
+
+    // 4. Send API request to Binance
+    if (posSize > 0) {
+        try {
+            toast(`Closing ${canonical} position...`, 'info');
+            const res = await fetch('/api/binance/position/close', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ symbol: canonical, side: posSide, quantity: posSize, testnet: state.isTestnet })
+            });
+            const json = await res.json().catch(() => ({}));
+            if (json.alreadyClosed) {
+                toast(`✓ Position already closed on exchange`, 'info');
+            } else if (res.ok) {
+                toast(`✓ ${canonical} position closed`, 'success');
+            } else {
+                throw new Error(json.error || `HTTP ${res.status}`);
+            }
+        } catch (err: any) {
+            console.error('[closePosition] Error closing position on exchange:', err);
+            toast(`Close error: ${err.message}`, 'error');
+            // If actual failure, remove cooldown and refresh from exchange
+            closedCooldowns.delete(canonical);
+            await Promise.all([fetchAccount(), fetchOrders()]);
+            return;
+        }
+    }
+
+    // Brief deferred refresh to catch updated margin / balance
+    setTimeout(() => {
+        fetchAccount();
+        fetchOrders();
+    }, 1200);
+}
+
+let previousActiveSymbols = new Set<string>();
+
 export async function fetchAccount() {
     try {
-        const res = await fetch(`/api/binance/account?testnet=${state.isTestnet}`);
+        let res: Response;
+        if (typeof AbortController !== 'undefined') {
+            const controller = new AbortController();
+            const timer = setTimeout(() => controller.abort(), 4000);
+            try {
+                res = await fetch(`/api/binance/account?testnet=${state.isTestnet}&_t=${Date.now()}`, {
+                    signal: controller.signal
+                });
+            } finally {
+                clearTimeout(timer);
+            }
+        } else {
+            res = await fetch(`/api/binance/account?testnet=${state.isTestnet}&_t=${Date.now()}`);
+        }
+
         if (res.ok) {
             const data = await res.json();
             state.availableBalance = data.availableBalance || 0;
-            state.activePositions = data.positions || [];
+            const rawPositions = data.positions || [];
+
+            // Filter out any positions currently in closed cooldown to avoid slow-replica ghosts
+            const currentPositions = rawPositions.filter((p: any) => {
+                if (!p || !p.symbol) return false;
+                return !isSymbolInCloseCooldown(p.symbol);
+            });
+            state.activePositions = currentPositions;
+
+            const currentActiveSymbols = new Set<string>(
+                currentPositions.map((p: any) => p && p.symbol).filter(Boolean)
+            );
+
+            // Detect if any position closed (e.g. SL or TP triggered on Binance, or closed externally)
+            for (const sym of previousActiveSymbols) {
+                if (!currentActiveSymbols.has(sym)) {
+                    if (typeof window !== 'undefined') {
+                        window.dispatchEvent(new CustomEvent('vela:position-closed', { detail: { symbol: sym } }));
+                    }
+                    // Cancel orphan bracket orders on Binance so remaining TP or SL doesn't linger
+                    fetch('/api/binance/order/cancel-all', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ symbol: sym, testnet: state.isTestnet })
+                    }).then(() => fetchOrders()).catch(() => {});
+                }
+            }
+            previousActiveSymbols = currentActiveSymbols;
+
             updatePositionsUI();
             updateAccountBalanceUI();
+
+            if (typeof window !== 'undefined') {
+                window.dispatchEvent(new CustomEvent('vela:repaint-lines'));
+            }
         }
     } catch (e) {
         console.error('Failed to fetch account', e);
     }
 }
 
-export async function fetchOrders(symbol: string) {
+let lastGlobalOrdersPoll = 0;
+
+export async function fetchOrders(symbol?: string) {
     try {
-        const res = await fetch(`/api/binance/orders?symbol=${encodeURIComponent(symbol)}&testnet=${state.isTestnet}`);
+        const targetSymbol = symbol ? symbol.replace(/.*:/, '').replace(/\.P$/i, '').toUpperCase().trim() : '';
+        const now = Date.now();
+        // Weight optimization: An unfiltered openOrders query costs weight 40 on Binance Futures.
+        // If symbol is omitted, only do a full sweep at most once every 60s.
+        // Otherwise, target state.symbol (weight 1).
+        const doFullSweep = !targetSymbol && (now - lastGlobalOrdersPoll > 60_000);
+        if (doFullSweep) lastGlobalOrdersPoll = now;
+
+        const effectiveSymbol = doFullSweep ? '' : (targetSymbol || state.symbol || '');
+        const queryParam = effectiveSymbol ? `symbol=${encodeURIComponent(effectiveSymbol)}&` : '';
+
+        let res: Response;
+        if (typeof AbortController !== 'undefined') {
+            const controller = new AbortController();
+            const timer = setTimeout(() => controller.abort(), 4000);
+            try {
+                res = await fetch(`/api/binance/orders?${queryParam}testnet=${state.isTestnet}&_t=${now}`, {
+                    signal: controller.signal
+                });
+            } finally {
+                clearTimeout(timer);
+            }
+        } else {
+            res = await fetch(`/api/binance/orders?${queryParam}testnet=${state.isTestnet}&_t=${now}`);
+        }
+
         if (res.ok) {
-            state.openOrders = await res.json();
-            updateOrdersUI();
+            const rawOrders = await res.json();
+            if (Array.isArray(rawOrders)) {
+                const fresh = rawOrders.filter((o: any) => o && o.symbol && !isSymbolInCloseCooldown(o.symbol));
+                if (doFullSweep || !effectiveSymbol) {
+                    state.openOrders = fresh;
+                } else {
+                    const cleanTarget = effectiveSymbol.replace(/\.P$/i, '').toUpperCase();
+                    const preserved = (state.openOrders || []).filter(
+                        (o: any) => o && o.symbol && o.symbol.toUpperCase() !== cleanTarget
+                    );
+                    state.openOrders = [...preserved, ...fresh];
+                }
+                updateOrdersUI();
+                if (typeof window !== 'undefined') {
+                    window.dispatchEvent(new CustomEvent('vela:repaint-lines'));
+                }
+            }
         }
     } catch (e) {
         console.error('Failed to fetch orders', e);
@@ -230,17 +487,12 @@ function updatePositionsUI() {
     `;
 
     positionsContainer.querySelectorAll('.close-pos-btn').forEach(btn => {
-        btn.addEventListener('click', async (e: any) => {
+        btn.addEventListener('click', (e: any) => {
             const sym = e.target.getAttribute('data-sym');
             const side = e.target.getAttribute('data-side');
-            const size = parseFloat(e.target.getAttribute('data-size'));
+            const size = parseFloat(e.target.getAttribute('data-size') || '0');
             e.target.textContent = 'Closing...';
-            await fetch('/api/binance/position/close', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ symbol: sym, side, quantity: size, testnet: state.isTestnet })
-            });
-            await fetchAccount();
+            closePosition(sym, side, size);
         });
     });
 }
@@ -265,7 +517,7 @@ function updateOrdersUI() {
                     <span style="color: ${isBuy ? 'var(--vela-up, #a7be94)' : 'var(--vela-down, #af6870)'}; font-weight: 700;">${o.side}</span>
                 </td>
                 <td style="padding: 8px 10px; color: var(--vela-text-secondary, #757882);">${o.type}</td>
-                <td style="padding: 8px 10px; color: var(--vela-text-secondary, #757882);">${parseFloat(o.price || '0').toFixed(2)}</td>
+                <td style="padding: 8px 10px; color: var(--vela-text-secondary, #757882);">${(parseFloat(o.stopPrice || o.triggerPrice || '0') || parseFloat(o.price || '0')).toFixed(2)}</td>
                 <td style="padding: 8px 10px; color: var(--vela-text-secondary, #757882);">${parseFloat(o.origQty || '0')}</td>
                 <td style="padding: 8px 10px; text-align: right;">
                     <button class="cancel-ord-btn" data-sym="${o.symbol}" data-id="${o.orderId}" style="background: var(--vela-bg-card, #232429); border: 1px solid var(--vela-border, #262629); color: var(--vela-down, #af6870); font-size: 11px; padding: 3px 8px; border-radius: 4px; cursor: pointer;">Cancel</button>
@@ -472,23 +724,86 @@ function updateJournalUI() {
     });
 }
 
-// ── Register Native Side Panel (The Order Ticket) ───────────────────────────────
-export function registerTradingSidePanel() {
-    registerSidePanel({
-        id: 'trade.panel',
-        title: 'Binance Perpetual',
-        icon: 'trade',
-        order: 5,
-        width: 330,
-        resizable: true,
-        minWidth: 280,
-        maxWidth: 450,
-        button: false, // Suppress redundant panel button; opened exclusively via [⇄ Trade] button
-        mount: (ctx, body, header) => {
-            header.setTitle('Order Ticket');
+let wsInstance: VelaWorkspace | null = null;
+let orderTicketPanelEl: HTMLElement | null = null;
+let isOrderTicketOpen = false;
+let orderTicketWidth = 330;
 
-            body.innerHTML = `
-                <div style="padding: 12px; font-family: -apple-system, system-ui, sans-serif; font-size: 12px; color: var(--vela-text-secondary, #757882); background: var(--vela-bg-panel, #121215);">
+function toast(message: string, kind: 'info' | 'success' | 'error' = 'info') {
+    if (wsInstance?.toast) {
+        wsInstance.toast(message, kind);
+    } else {
+        console.log(`[toast ${kind}]`, message);
+    }
+}
+
+export function updateTradeButtonActiveState(active: boolean) {
+    const actionBtn = document.querySelector<HTMLButtonElement>("[data-action-id='trade.toggle']");
+    if (actionBtn) {
+        actionBtn.dataset.active = active ? '1' : '';
+    }
+}
+
+export function toggleTradingTicket(open?: boolean) {
+    if (!orderTicketPanelEl) return;
+    const nextState = open !== undefined ? open : !isOrderTicketOpen;
+    isOrderTicketOpen = nextState;
+
+    if (isOrderTicketOpen) {
+        orderTicketPanelEl.style.display = 'flex';
+        requestAnimationFrame(() => {
+            if (orderTicketPanelEl) {
+                orderTicketPanelEl.classList.add('open');
+                orderTicketPanelEl.style.width = `${orderTicketWidth}px`;
+            }
+        });
+        const currentSym = wsInstance?.active?.symbol || state.symbol;
+        if (currentSym) {
+            setActiveSymbol(currentSym);
+        }
+        fetchStats(state.symbol);
+        fetchAccount();
+        fetchOrders(state.symbol);
+    } else {
+        orderTicketPanelEl.classList.remove('open');
+        orderTicketPanelEl.style.width = '0px';
+        setTimeout(() => {
+            if (!isOrderTicketOpen && orderTicketPanelEl) {
+                orderTicketPanelEl.style.display = 'none';
+            }
+        }, 200);
+    }
+
+    updateTradeButtonActiveState(isOrderTicketOpen);
+    setTimeout(() => wsInstance?.resize?.(), 50);
+}
+
+export function registerTradingSidePanel() {
+    // Retained for backward compatibility
+}
+
+export function mountIndependentOrderTicket(ws: VelaWorkspace) {
+    if (orderTicketPanelEl) return;
+    const mainHost = (ws.root?.querySelector('.vela-ws-main') || document.querySelector('.vela-ws-main')) as HTMLElement | null;
+    if (!mainHost) return;
+
+    const panel = document.createElement('div');
+    panel.id = 'vela-order-ticket';
+    panel.className = 'vela-order-ticket-panel';
+    panel.style.width = '0px';
+    panel.style.display = 'none';
+
+    panel.innerHTML = `
+        <div class="vela-order-ticket-resizer" title="Drag to resize"></div>
+        <div class="vela-order-ticket-header">
+            <div style="display: flex; align-items: center; gap: 8px;">
+                <span class="vela-order-ticket-title">Order Ticket</span>
+            </div>
+            <div style="flex: 1 1 auto;"></div>
+            <button class="vela-order-ticket-close" title="Close Order Ticket">✕</button>
+        </div>
+        <div class="vela-order-ticket-body">
+            <div style="padding: 12px; font-family: -apple-system, system-ui, sans-serif; font-size: 12px; color: var(--vela-text-secondary, #757882); background: var(--vela-bg-panel, #121215);">
                     <!-- Environment switcher -->
                     <div style="display: flex; gap: 6px; margin-bottom: 12px;">
                         <button id="env-testnet-btn" style="flex: 1; padding: 6px; font-size: 11px; font-weight: 700; border-radius: 4px; border: 1px solid ${state.isTestnet ? 'var(--vela-warning, #fde047)' : 'var(--vela-border, #262629)'}; background: ${state.isTestnet ? 'var(--vela-warning-bg, #29261a)' : 'var(--vela-bg-card, #232429)'}; color: ${state.isTestnet ? 'var(--vela-warning, #fde047)' : 'var(--vela-text-secondary, #757882)'}; cursor: pointer;">TESTNET</button>
@@ -580,10 +895,58 @@ export function registerTradingSidePanel() {
 
                     <div id="trade-msg" style="margin-top: 8px; font-size: 11px; text-align: center; color: var(--vela-text-muted, #46474b);"></div>
                 </div>
-            `;
+            </div>
+    `;
 
-            // Wire UI events
-            const envTestnet = body.querySelector('#env-testnet-btn');
+    mainHost.appendChild(panel);
+    orderTicketPanelEl = panel;
+
+    const closeBtn = panel.querySelector('.vela-order-ticket-close');
+    closeBtn?.addEventListener('click', () => {
+        toggleTradingTicket(false);
+    });
+
+    const resizer = panel.querySelector('.vela-order-ticket-resizer') as HTMLElement;
+    if (resizer) {
+        let isResizing = false;
+        let startX = 0;
+        let startWidth = orderTicketWidth;
+
+        resizer.addEventListener('pointerdown', (e) => {
+            isResizing = true;
+            startX = e.clientX;
+            startWidth = orderTicketWidth;
+            resizer.classList.add('dragging');
+            document.body.style.cursor = 'col-resize';
+            document.body.style.userSelect = 'none';
+
+            const onPointerMove = (ev: PointerEvent) => {
+                if (!isResizing) return;
+                const delta = startX - ev.clientX;
+                const newW = Math.max(280, Math.min(500, startWidth + delta));
+                orderTicketWidth = newW;
+                panel.style.width = `${newW}px`;
+                ws.resize?.();
+            };
+
+            const onPointerUp = () => {
+                isResizing = false;
+                resizer.classList.remove('dragging');
+                document.body.style.cursor = '';
+                document.body.style.userSelect = '';
+                window.removeEventListener('pointermove', onPointerMove);
+                window.removeEventListener('pointerup', onPointerUp);
+            };
+
+            window.addEventListener('pointermove', onPointerMove);
+            window.addEventListener('pointerup', onPointerUp);
+        });
+    }
+
+    const body = panel.querySelector('.vela-order-ticket-body') as HTMLElement;
+
+    // Wire UI events
+    const envTestnet = body.querySelector('#env-testnet-btn');
             const envProd = body.querySelector('#env-prod-btn');
             const sideBuy = body.querySelector('#btn-side-buy');
             const sideSell = body.querySelector('#btn-side-sell');
@@ -618,43 +981,11 @@ export function registerTradingSidePanel() {
             };
 
             envTestnet?.addEventListener('click', () => {
-                state.isTestnet = true;
-                envTestnet.style.border = '1px solid var(--vela-warning, #fde047)';
-                envTestnet.style.background = 'var(--vela-warning-bg, #29261a)';
-                envTestnet.style.color = 'var(--vela-warning, #fde047)';
-                if (envProd) {
-                    envProd.style.border = '1px solid var(--vela-border, #262629)';
-                    envProd.style.background = 'var(--vela-bg-card, #232429)';
-                    envProd.style.color = 'var(--vela-text-secondary, #757882)';
-                }
-                const badge = document.getElementById('strip-env-badge');
-                if (badge) {
-                    badge.textContent = 'BINANCE TESTNET';
-                    badge.style.color = 'var(--vela-warning, #fde047)';
-                    badge.style.background = 'var(--vela-warning-bg, #29261a)';
-                }
-                fetchAccount();
-                fetchOrders(state.symbol);
+                setEnvironment(true);
             });
 
             envProd?.addEventListener('click', () => {
-                state.isTestnet = false;
-                envProd.style.border = '1px solid var(--vela-up, #a7be94)';
-                envProd.style.background = 'var(--vela-up-selected-bg, #363a38)';
-                envProd.style.color = 'var(--vela-up, #a7be94)';
-                if (envTestnet) {
-                    envTestnet.style.border = '1px solid var(--vela-border, #262629)';
-                    envTestnet.style.background = 'var(--vela-bg-card, #232429)';
-                    envTestnet.style.color = 'var(--vela-text-secondary, #757882)';
-                }
-                const badge = document.getElementById('strip-env-badge');
-                if (badge) {
-                    badge.textContent = 'BINANCE PRODUCTION';
-                    badge.style.color = 'var(--vela-up, #a7be94)';
-                    badge.style.background = 'var(--vela-up-selected-bg, #363a38)';
-                }
-                fetchAccount();
-                fetchOrders(state.symbol);
+                setEnvironment(false);
             });
 
             sideBuy?.addEventListener('click', () => { state.side = 'BUY'; refreshSideAndButton(); });
@@ -779,9 +1110,9 @@ export function registerTradingSidePanel() {
                     });
                     const data = await res.json();
                     if (res.ok && !data.error) {
-                        ctx.toast(`Leverage set to ${state.leverage}x for ${state.symbol}`, 'info');
+                        toast(`Leverage set to ${state.leverage}x for ${state.symbol}`, 'info');
                     } else {
-                        ctx.toast(`Leverage update: ${data.error || 'Set'}`, 'info');
+                        toast(`Leverage update: ${data.error || 'Set'}`, 'info');
                     }
                 } catch (err: any) {
                     console.warn('Leverage change error:', err);
@@ -803,9 +1134,9 @@ export function registerTradingSidePanel() {
                     });
                     const data = await res.json();
                     if (res.ok && !data.error) {
-                        ctx.toast(`Margin mode set to ${marginType} for ${state.symbol}`, 'info');
+                        toast(`Margin mode set to ${marginType} for ${state.symbol}`, 'info');
                     } else {
-                        ctx.toast(`Margin mode: ${data.error || data.msg || 'OK'}`, 'info');
+                        toast(`Margin mode: ${data.error || data.msg || 'OK'}`, 'info');
                     }
                 } catch (err: any) {
                     console.warn('Margin mode change error:', err);
@@ -907,34 +1238,21 @@ export function registerTradingSidePanel() {
                         throw new Error(json.error || 'Failed to place order');
                     }
 
-                    ctx.toast(`Order placed: ${state.side} ${finalQty} ${state.symbol} (~$${notionalValue.toFixed(2)} USDT)`, 'info');
+                    toast(`Order placed: ${state.side} ${finalQty} ${state.symbol} (~$${notionalValue.toFixed(2)} USDT)`, 'info');
                     if (tradeMsg) tradeMsg.textContent = `Order placed: #${json.main?.orderId || 'OK'}`;
-                    fetchAccount();
-                    fetchOrders(state.symbol);
+                    await Promise.all([fetchAccount(), fetchOrders()]);
+                    if (typeof window !== 'undefined') {
+                        window.dispatchEvent(new CustomEvent('vela:repaint-lines'));
+                    }
                 } catch (e: any) {
-                    ctx.toast(`Order failed: ${e.message}`, 'error');
+                    toast(`Order failed: ${e.message}`, 'error');
                     if (tradeMsg) tradeMsg.textContent = `Error: ${e.message}`;
                 } finally {
                     refreshSideAndButton();
                 }
             });
 
-            return {
-                onChart: (chart) => {
-                    const s = ctx.symbol;
-                    if (s) {
-                        setActiveSymbol(s);
-                    }
-                },
-                onOpen: () => {
-                    fetchStats(state.symbol);
-                    fetchAccount();
-                    fetchOrders(state.symbol);
-                },
-                destroy: () => {}
-            };
-        }
-    });
+            refreshSideAndButton();
 }
 
 // ── Top Bar Action [ ⇄ Trade ] Button ───────────────────────────────────────────
@@ -946,16 +1264,20 @@ export function registerTradeButton() {
         order: 5,
         label: 'Trade',
         icon: 'trade',
-        run: (ctx) => {
-            ctx.togglePanel('trade.panel');
+        run: () => {
+            toggleTradingTicket();
         }
     });
 }
 
 // ── Workspace Instance & Indicator Refresh ────────────────────────────────────
-let wsInstance: VelaWorkspace | null = null;
 export function setWorkspaceInstance(ws: VelaWorkspace) {
     wsInstance = ws;
+    mountIndependentOrderTicket(ws);
+}
+
+export function getWorkspaceInstance(): VelaWorkspace | null {
+    return wsInstance;
 }
 
 export async function refreshWorkspaceIndicators(ws: VelaWorkspace | null = wsInstance): Promise<void> {
@@ -1559,7 +1881,7 @@ export function mountBottomAccountStrip(ws: VelaWorkspace) {
                 </div>
                 <div style="flex: 1 1 auto;"></div>
                 <div style="display: flex; align-items: center; gap: 8px; flex: none; margin-right: 6px;">
-                    <span id="strip-env-badge" style="color: var(--vela-warning, #fde047); font-weight: 700; font-size: 10px; background: var(--vela-warning-bg, #29261a); padding: 2px 6px; border-radius: 4px;">BINANCE TESTNET</span>
+                    <span id="strip-env-badge" style="color: ${state.isTestnet ? 'var(--vela-warning, #fde047)' : 'var(--vela-up, #a7be94)'}; font-weight: 700; font-size: 10px; background: ${state.isTestnet ? 'var(--vela-warning-bg, #29261a)' : 'var(--vela-up-selected-bg, #363a38)'}; padding: 2px 6px; border-radius: 4px;">${state.isTestnet ? 'BINANCE TESTNET' : 'BINANCE PRODUCTION'}</span>
                     <span id="strip-avail-val" style="color: var(--vela-text-primary, #eeeef1); font-size: 11px; font-weight: 600;">$0.00</span>
                     <button id="strip-toggle-btn" title="Toggle Account Panel" style="background: var(--vela-bg-chip, #292a2f); border: 1px solid var(--vela-border, #262629); color: var(--vela-text-secondary, #757882); font-size: 10px; font-weight: 600; padding: 2px 7px; border-radius: 4px; cursor: pointer; display: inline-flex; align-items: center; gap: 4px;">
                         <span>Panel</span> <span id="strip-toggle-chevron">▲</span>
@@ -1640,40 +1962,12 @@ export function mountBottomAccountStrip(ws: VelaWorkspace) {
     tabHist?.addEventListener('click', () => switchTab('history'));
     tabJourn?.addEventListener('click', () => switchTab('journal'));
 
-        const envBadge = document.getElementById('strip-env-badge');
+    const envBadge = document.getElementById('strip-env-badge');
     if (envBadge) {
         envBadge.style.cursor = 'pointer';
         envBadge.title = 'Click to toggle Testnet / Production';
         envBadge.addEventListener('click', () => {
-            if (state.isTestnet) {
-                const prodBtn = document.getElementById('env-prod-btn');
-                if (prodBtn) {
-                    prodBtn.click();
-                } else {
-                    state.isTestnet = false;
-                    envBadge.textContent = 'BINANCE PRODUCTION';
-                    envBadge.style.color = 'var(--vela-up, #a7be94)';
-                    envBadge.style.background = 'var(--vela-up-selected-bg, #363a38)';
-                    fetchAccount();
-                    fetchOrders(state.symbol);
-                    fetchOrderHistory(state.symbol);
-                    fetchTradeHistory(state.symbol);
-                }
-            } else {
-                const testBtn = document.getElementById('env-testnet-btn');
-                if (testBtn) {
-                    testBtn.click();
-                } else {
-                    state.isTestnet = true;
-                    envBadge.textContent = 'BINANCE TESTNET';
-                    envBadge.style.color = 'var(--vela-warning, #fde047)';
-                    envBadge.style.background = 'var(--vela-warning-bg, #29261a)';
-                    fetchAccount();
-                    fetchOrders(state.symbol);
-                    fetchOrderHistory(state.symbol);
-                    fetchTradeHistory(state.symbol);
-                }
-            }
+            setEnvironment(!state.isTestnet);
         });
     }
 
@@ -1682,13 +1976,35 @@ export function mountBottomAccountStrip(ws: VelaWorkspace) {
         else switchTab(activeTab);
     });
 
-    // Initial fetches
+    // Initial panel data population
     fetchAccount();
-    fetchOrders(state.symbol);
+    fetchOrders();
     fetchOrderHistory(state.symbol);
     fetchTradeHistory(state.symbol);
-
-    setInterval(() => {
-        fetchAccount();
-    }, 2500);
+    startAccountPolling();
 }
+
+let pollingStarted = false;
+export function startAccountPolling() {
+    if (pollingStarted) return;
+    pollingStarted = true;
+
+    let isPolling = false;
+    const pollLoop = async () => {
+        if (isPolling) return;
+        isPolling = true;
+        try {
+            await Promise.all([fetchAccount(), fetchOrders()]);
+        } catch (err) {
+            console.error('[polling] Background poll tick error:', err);
+        } finally {
+            isPolling = false;
+            const hasActivity = (state.activePositions && state.activePositions.length > 0) || (state.openOrders && state.openOrders.length > 0);
+            setTimeout(pollLoop, hasActivity ? 1200 : 2500);
+        }
+    };
+    setTimeout(pollLoop, 1500);
+}
+
+// Automatically start background polling as soon as module loads
+startAccountPolling();

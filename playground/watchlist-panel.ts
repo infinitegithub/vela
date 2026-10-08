@@ -1,3 +1,4 @@
+import { setActiveSymbol } from './trade-suite';
 import { registerSidePanel, registerIcon, registerStatePersistence, registerSymbolFavorite } from '../src/plugin';
 import type { VelaWorkspace } from '../src/workspace';
 
@@ -136,6 +137,26 @@ const DEFAULT_WATCHLIST: WatchlistItem[] = [
         changePercent: 2.22,
         volume: 65120000,
         iconSvg: `<svg viewBox="0 0 24 24" width="20" height="20"><circle cx="12" cy="12" r="11" fill="#C2A633"/><path d="M8.5 7h4c2.8 0 4.5 1.8 4.5 5s-1.7 5-4.5 5h-4V7zm2.2 8h1.6c1.6 0 2.5-1.1 2.5-3s-.9-3-2.5-3h-1.6v6zm-4.2-2.5h5.5v-1H6.5v1z" fill="#FFF"/></svg>`
+    },
+    {
+        symbol: 'SPY-USD',
+        binanceSymbol: 'SPYUSDT',
+        name: 'SPDR S&P 500 ETF',
+        price: 575.20,
+        change: 3.40,
+        changePercent: 0.59,
+        volume: 852000,
+        iconSvg: `<svg viewBox="0 0 24 24" width="20" height="20"><circle cx="12" cy="12" r="11" fill="#1E3A8A"/><text x="12" y="15" font-family="sans-serif" font-size="9" font-weight="bold" fill="#FFF" text-anchor="middle">SPY</text></svg>`
+    },
+    {
+        symbol: 'XAU-USD',
+        binanceSymbol: 'XAUUSDT',
+        name: 'Gold Perpetual',
+        price: 2650.50,
+        change: 12.80,
+        changePercent: 0.49,
+        volume: 320000,
+        iconSvg: `<svg viewBox="0 0 24 24" width="20" height="20"><circle cx="12" cy="12" r="11" fill="#EAB308"/><text x="12" y="15" font-family="sans-serif" font-size="9" font-weight="bold" fill="#000" text-anchor="middle">XAU</text></svg>`
     },
     {
         symbol: 'ADA-USD',
@@ -759,6 +780,7 @@ export function registerWatchlistSidePanel() {
 
                     row.addEventListener('click', () => {
                         setWatchlistActiveSymbol(item.binanceSymbol);
+                        setActiveSymbol(item.binanceSymbol);
                         if (wsInstance) {
                             try {
                                 wsInstance.active.setSymbol(item.binanceSymbol);

@@ -67,6 +67,7 @@ async function request(baseUrl: string, endpoint: string, method: string = 'GET'
             path,
             method,
             headers,
+            timeout: 5000,
             agent: isTestnet ? undefined : ociAgent
         }, (res) => {
             let resBody = '';
@@ -87,6 +88,9 @@ async function request(baseUrl: string, endpoint: string, method: string = 'GET'
             });
         });
 
+        req.on('timeout', () => {
+            req.destroy(new Error(`Binance request timed out after 5000ms: ${endpoint}`));
+        });
         req.on('error', reject);
         if (body) req.write(body);
         req.end();
@@ -232,11 +236,41 @@ export async function getAccountInfo(isTestnet: boolean, apiKey?: string, secret
     };
 }
 
+let cachedGlobalOrders: { time: number; isTestnet: boolean; data: any[] } | null = null;
+
 export async function getOpenOrders(symbol?: string, isTestnet: boolean = true, apiKey?: string, secretKey?: string) {
     const baseUrl = getBaseUrl(isTestnet);
     const query: Record<string, any> = {};
     if (symbol) query.symbol = symbol.replace(/\.P$/i, '').toUpperCase();
-    return request(baseUrl, '/fapi/v1/openOrders', 'GET', query, apiKey, secretKey);
+
+    // Cache guard: When symbol is omitted, Binance charges 40 weight. Throttle repeated global queries to at least 10s.
+    if (!symbol && cachedGlobalOrders && cachedGlobalOrders.isTestnet === isTestnet && Date.now() - cachedGlobalOrders.time < 10_000) {
+        return cachedGlobalOrders.data;
+    }
+
+    const [regularOrders, algoOrders] = await Promise.all([
+        request(baseUrl, '/fapi/v1/openOrders', 'GET', query, apiKey, secretKey).catch(() => []),
+        request(baseUrl, '/fapi/v1/openAlgoOrders', 'GET', query, apiKey, secretKey).catch(() => [])
+    ]);
+
+    const normalizedAlgo = (Array.isArray(algoOrders) ? algoOrders : []).map((ao: any) => ({
+        orderId: ao.algoId,
+        algoId: ao.algoId,
+        symbol: ao.symbol,
+        side: ao.side,
+        type: ao.orderType || ao.type,
+        price: ao.price || '0',
+        stopPrice: ao.triggerPrice || ao.stopPrice,
+        origQty: ao.quantity || ao.origQty || '0',
+        closePosition: ao.closePosition,
+        isAlgo: true
+    }));
+
+    const combined = [...(Array.isArray(regularOrders) ? regularOrders : []), ...normalizedAlgo];
+    if (!symbol) {
+        cachedGlobalOrders = { time: Date.now(), isTestnet, data: combined };
+    }
+    return combined;
 }
 
 export async function placeOrder(order: {
@@ -264,27 +298,38 @@ export async function placeOrder(order: {
         params.price = order.price;
         params.timeInForce = 'GTC';
     } else if (order.type === 'STOP_MARKET') {
-        params.stopPrice = order.stopPrice;
+        params.algoType = 'CONDITIONAL';
+        params.triggerPrice = order.stopPrice;
+        delete params.stopPrice;
     }
 
     if (order.reduceOnly) {
         params.reduceOnly = 'true';
     }
 
-    const mainOrder = await request(baseUrl, '/fapi/v1/order', 'POST', params, apiKey, secretKey);
+    const endpoint = (order.type === 'STOP_MARKET' || order.type === 'TAKE_PROFIT_MARKET' as any) ? '/fapi/v1/algoOrder' : '/fapi/v1/order';
+    const mainOrder = await request(baseUrl, endpoint, 'POST', params, apiKey, secretKey);
+    if (mainOrder && mainOrder.algoId && !mainOrder.orderId) {
+        mainOrder.orderId = mainOrder.algoId;
+    }
 
     const bracketResults: any = { main: mainOrder };
 
     const oppSide = order.side === 'BUY' ? 'SELL' : 'BUY';
     if (order.takeProfitPrice && order.takeProfitPrice > 0) {
         try {
-            bracketResults.tp = await request(baseUrl, '/fapi/v1/order', 'POST', {
+            const tpRes = await request(baseUrl, '/fapi/v1/algoOrder', 'POST', {
                 symbol: canonical,
                 side: oppSide,
                 type: 'TAKE_PROFIT_MARKET',
-                stopPrice: order.takeProfitPrice,
+                algoType: 'CONDITIONAL',
+                triggerPrice: order.takeProfitPrice,
                 closePosition: 'true'
             }, apiKey, secretKey);
+            if (tpRes && tpRes.algoId && !tpRes.orderId) {
+                tpRes.orderId = tpRes.algoId;
+            }
+            bracketResults.tp = tpRes;
         } catch (e: any) {
             bracketResults.tpError = e.message;
         }
@@ -292,13 +337,18 @@ export async function placeOrder(order: {
 
     if (order.stopLossPrice && order.stopLossPrice > 0) {
         try {
-            bracketResults.sl = await request(baseUrl, '/fapi/v1/order', 'POST', {
+            const slRes = await request(baseUrl, '/fapi/v1/algoOrder', 'POST', {
                 symbol: canonical,
                 side: oppSide,
                 type: 'STOP_MARKET',
-                stopPrice: order.stopLossPrice,
+                algoType: 'CONDITIONAL',
+                triggerPrice: order.stopLossPrice,
                 closePosition: 'true'
             }, apiKey, secretKey);
+            if (slRes && slRes.algoId && !slRes.orderId) {
+                slRes.orderId = slRes.algoId;
+            }
+            bracketResults.sl = slRes;
         } catch (e: any) {
             bracketResults.slError = e.message;
         }
@@ -309,29 +359,76 @@ export async function placeOrder(order: {
 
 export async function cancelOrder(symbol: string, orderId: number | string, isTestnet: boolean = true, apiKey?: string, secretKey?: string) {
     const baseUrl = getBaseUrl(isTestnet);
-    return request(baseUrl, '/fapi/v1/order', 'DELETE', {
-        symbol: symbol.replace(/\.P$/i, '').toUpperCase(),
-        orderId
-    }, apiKey, secretKey);
+    const canonical = symbol.replace(/\.P$/i, '').toUpperCase();
+    try {
+        return await request(baseUrl, '/fapi/v1/order', 'DELETE', {
+            symbol: canonical,
+            orderId
+        }, apiKey, secretKey);
+    } catch (e: any) {
+        try {
+            return await request(baseUrl, '/fapi/v1/algoOrder', 'DELETE', {
+                symbol: canonical,
+                algoId: orderId
+            }, apiKey, secretKey);
+        } catch (algoErr: any) {
+            throw e;
+        }
+    }
 }
 
 export async function cancelAllOrders(symbol: string, isTestnet: boolean = true, apiKey?: string, secretKey?: string) {
     const baseUrl = getBaseUrl(isTestnet);
-    return request(baseUrl, '/fapi/v1/allOpenOrders', 'DELETE', {
-        symbol: symbol.replace(/\.P$/i, '').toUpperCase()
-    }, apiKey, secretKey);
+    const canonical = symbol.replace(/\.P$/i, '').toUpperCase();
+    const regularResult = await request(baseUrl, '/fapi/v1/allOpenOrders', 'DELETE', {
+        symbol: canonical
+    }, apiKey, secretKey).catch((e: any) => ({ error: e.message }));
+
+    try {
+        const algoOrders = await request(baseUrl, '/fapi/v1/openAlgoOrders', 'GET', { symbol: canonical }, apiKey, secretKey).catch(() => []);
+        if (Array.isArray(algoOrders) && algoOrders.length > 0) {
+            await Promise.all(algoOrders.map((ao: any) => {
+                const aId = ao.algoId || ao.orderId;
+                if (!aId) return Promise.resolve();
+                return request(baseUrl, '/fapi/v1/algoOrder', 'DELETE', { symbol: canonical, algoId: aId }, apiKey, secretKey).catch(() => {});
+            }));
+        }
+    } catch {}
+
+    return regularResult;
 }
 
 export async function closePositionMarket(symbol: string, side: 'LONG' | 'SHORT', quantity: number, isTestnet: boolean = true, apiKey?: string, secretKey?: string) {
     const baseUrl = getBaseUrl(isTestnet);
+    const canonical = symbol.replace(/\.P$/i, '').toUpperCase();
     const oppSide = side === 'LONG' ? 'SELL' : 'BUY';
-    return request(baseUrl, '/fapi/v1/order', 'POST', {
-        symbol: symbol.replace(/\.P$/i, '').toUpperCase(),
-        side: oppSide,
-        type: 'MARKET',
-        quantity,
-        reduceOnly: 'true'
-    }, apiKey, secretKey);
+    let closeRes: any = null;
+    try {
+        closeRes = await request(baseUrl, '/fapi/v1/order', 'POST', {
+            symbol: canonical,
+            side: oppSide,
+            type: 'MARKET',
+            quantity,
+            reduceOnly: 'true'
+        }, apiKey, secretKey);
+    } catch (err: any) {
+        // If Binance rejects because position is already 0 (e.g. closed by Take Profit or Stop Loss), proceed cleanly
+        if (err.message && err.message.includes('ReduceOnly Order is rejected')) {
+            console.log(`[binance-service] Position ${canonical} was already closed on exchange (${err.message}). Proceeding with bracket cancellation.`);
+            closeRes = { success: true, alreadyClosed: true };
+        } else {
+            throw err;
+        }
+    }
+
+    // When closing a position, cancel all pending bracket/algo orders so they never remain as orphans
+    try {
+        await cancelAllOrders(canonical, isTestnet, apiKey, secretKey);
+    } catch (e: any) {
+        console.warn(`[binance-service] cancelAllOrders on closePositionMarket notice:`, e.message);
+    }
+
+    return closeRes;
 }
 
 export async function changeLeverage(symbol: string, leverage: number, isTestnet: boolean = true, apiKey?: string, secretKey?: string) {
@@ -369,5 +466,83 @@ export async function changeMarginType(symbol: string, marginType: 'ISOLATED' | 
             return { code: 200, msg: `Margin type is already ${marginType}` };
         }
         throw err;
+    }
+}
+
+
+export async function replaceBracketOrder(params: {
+    symbol: string;
+    side: 'BUY' | 'SELL';
+    orderType: 'STOP_MARKET' | 'TAKE_PROFIT_MARKET';
+    oldOrderId?: number | string;
+    oldPrice?: number;
+    newPrice: number;
+    isTestnet?: boolean;
+    apiKey?: string;
+    secretKey?: string;
+}) {
+    const isTestnet = params.isTestnet !== false;
+    const baseUrl = getBaseUrl(isTestnet);
+    const canonical = params.symbol.replace(/\.P$/i, '').toUpperCase();
+    const constraints = await getSymbolConstraints(canonical);
+
+    const formattedPrice = Number(params.newPrice.toFixed(constraints.pricePrecision));
+
+    // 1. If an existing bracket order is being adjusted, cancel it first
+    if (params.oldOrderId) {
+        try {
+            await cancelOrder(canonical, params.oldOrderId, isTestnet, params.apiKey, params.secretKey);
+        } catch (cancelErr: any) {
+            console.warn(`[binance-service] Notice: Cancel old order ${params.oldOrderId}:`, cancelErr.message);
+        }
+    }
+
+    // 2. Submit the replacement or new bracket order
+    try {
+        const newOrder = await request(baseUrl, '/fapi/v1/algoOrder', 'POST', {
+            symbol: canonical,
+            side: params.side,
+            type: params.orderType,
+            algoType: 'CONDITIONAL',
+            triggerPrice: formattedPrice,
+            closePosition: 'true'
+        }, params.apiKey, params.secretKey);
+
+        if (newOrder && newOrder.algoId && !newOrder.orderId) {
+            newOrder.orderId = newOrder.algoId;
+        }
+
+        return { success: true, order: newOrder };
+    } catch (placeErr: any) {
+        console.error(`[binance-service] Failed to place replacement bracket order:`, placeErr.message);
+
+        // Emergency recovery: If cancel succeeded but placing new order failed, restore previous order
+        if (params.oldOrderId && params.oldPrice && params.oldPrice > 0) {
+            try {
+                console.warn(`[binance-service] Emergency recovery: restoring previous order at ${params.oldPrice}`);
+                const restored = await request(baseUrl, '/fapi/v1/algoOrder', 'POST', {
+                    symbol: canonical,
+                    side: params.side,
+                    type: params.orderType,
+                    algoType: 'CONDITIONAL',
+                    triggerPrice: Number(params.oldPrice.toFixed(constraints.pricePrecision)),
+                    closePosition: 'true'
+                }, params.apiKey, params.secretKey);
+                
+                if (restored && restored.algoId && !restored.orderId) {
+                    restored.orderId = restored.algoId;
+                }
+                
+                return {
+                    success: false,
+                    error: placeErr.message,
+                    restored: true,
+                    order: restored
+                };
+            } catch (restoreErr: any) {
+                console.error(`[binance-service] Critical: emergency restore failed:`, restoreErr.message);
+            }
+        }
+        throw placeErr;
     }
 }

@@ -1,4 +1,5 @@
 import { describe, it, expect, afterAll } from 'vitest';
+import { BEARISH, BULLISH, NEUTRAL } from '../src/core/palette';
 import type { OHLCV } from '../src/core/model/ohlcv';
 import type { InputValue } from '../src/core/model/inputs';
 import type { SeriesPoint, SeriesSpec } from '../src/core/model/series';
@@ -395,14 +396,14 @@ describe('classic descriptor adapter', () => {
 
         // Upper bands lean bearish, lower bands bullish, both at 40% transparency.
         const inkOf = (s: SeriesSpec): string | undefined => (isLineLikeSeries(s) ? s.style.color : undefined);
-        expect(inkOf(out.series![1]!)).toBe('#f2364599');
-        expect(inkOf(out.series![2]!)).toBe('#08998199');
+        expect(inkOf(out.series![1]!)).toBe(`${BEARISH}99`);
+        expect(inkOf(out.series![2]!)).toBe(`${BULLISH}99`);
 
         // Only band 1 is on by default; each visible pair gets one fill, and the toggle kills them all.
         expect(runOnce(spec, bars).series).toHaveLength(3);
         expect(out.fills).toHaveLength(2);
         expect(runOnce(spec, bars, { fill: false }).fills).toHaveLength(0);
-        expect(out.fills![0]!.color).toBe('#787b860d');
+        expect(out.fills![0]!.color).toBe(`${NEUTRAL}0d`);
     });
 
     it('reads VWAP source through the shared source vocabulary', () => {

@@ -16,8 +16,7 @@ export default defineConfig(({ mode }) => {
                 registerType: 'autoUpdate',
                 injectRegister: 'auto',
                 devOptions: {
-                    enabled: true,
-                    type: 'module',
+                    enabled: false,
                 },
                 workbox: {
                     globPatterns: ['**/*.{js,css,html,ico,png,svg,woff2}'],
@@ -86,6 +85,17 @@ export default defineConfig(({ mode }) => {
             port: 3000,
             host: '0.0.0.0',
             allowedHosts: ['vela.viffey.com', '.viffey.com', 'localhost', '127.0.0.1'],
+            hmr: {
+                clientPort: 443,
+            },
+        },
+        build: {
+            rollupOptions: {
+                input: {
+                    main: 'index.html',
+                    workspace: 'workspace.html',
+                },
+            },
         },
     };
 });

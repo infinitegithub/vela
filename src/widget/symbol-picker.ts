@@ -254,10 +254,10 @@ const CSS = `
     opacity: 1;
 }
 .vela-sp-star[data-on="1"] {
-    color: #e5a00d;
+    color: #e5a00d; /* palette-exempt: favorite star active */
 }
 .vela-sp-star:hover {
-    color: #ffd166;
+    color: #ffd166; /* palette-exempt: favorite star hover */
 }
 
 .vela-sp-row[data-member] { padding-left: 34px; }

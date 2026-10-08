@@ -865,7 +865,7 @@ export class NativeRenderer implements IChartRenderer {
         const explicitTextColor = typeof patchTextColor === 'string' && patchTextColor.trim().length > 0;
         const prevTheme = this.theme;
         let inks = { textColor: next.layout.textColor, gridColor: prevTheme.gridColor, borderColor: prevTheme.borderColor };
-        if (!explicitTextColor && isDarkColor(next.layout.textColor) === isDarkColor(next.layout.background)) {
+        if (!explicitTextColor && isDarkColor(prevTheme.background) !== isDarkColor(next.layout.background)) {
             const rebase = isDarkColor(next.layout.background) ? DARK_THEME : LIGHT_THEME;
             inks = { textColor: rebase.textColor, gridColor: rebase.gridColor, borderColor: rebase.borderColor };
         }

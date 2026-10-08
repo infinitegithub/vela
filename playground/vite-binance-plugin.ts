@@ -10,7 +10,8 @@ import {
     cancelAllOrders,
     closePositionMarket,
     changeLeverage,
-    changeMarginType
+    changeMarginType,
+    replaceBracketOrder
 } from './binance-service';
 
 function readJsonBody(req: any): Promise<any> {
@@ -31,6 +32,9 @@ function readJsonBody(req: any): Promise<any> {
 function sendJson(res: any, data: any, status: number = 200) {
     res.statusCode = status;
     res.setHeader('Content-Type', 'application/json');
+    res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
+    res.setHeader('Pragma', 'no-cache');
+    res.setHeader('Expires', '0');
     res.setHeader('Access-Control-Allow-Origin', '*');
     res.setHeader('Access-Control-Allow-Headers', '*');
     res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
@@ -63,7 +67,7 @@ export function binanceApiPlugin(): Plugin {
                 }
 
                 const testnet = url.searchParams.get('testnet') !== 'false';
-                const symbol = url.searchParams.get('symbol') || 'BTCUSDT';
+                const symbol = url.searchParams.get('symbol') || undefined;
 
                 try {
                     if (url.pathname === '/api/binance/stats') {
@@ -89,6 +93,20 @@ export function binanceApiPlugin(): Plugin {
                     if (url.pathname === '/api/binance/trade-history') {
                         const trades = await getUserTrades(symbol, testnet);
                         return sendJson(res, trades);
+                    }
+
+                                        if (url.pathname === '/api/binance/order/replace-bracket' && req.method === 'POST') {
+                        const body = await readJsonBody(req);
+                        const result = await replaceBracketOrder({
+                            symbol: body.symbol,
+                            side: body.side,
+                            orderType: body.orderType,
+                            oldOrderId: body.oldOrderId,
+                            oldPrice: body.oldPrice,
+                            newPrice: body.newPrice,
+                            isTestnet: body.testnet !== false
+                        });
+                        return sendJson(res, result);
                     }
 
                     if (url.pathname === '/api/binance/order' && req.method === 'POST') {

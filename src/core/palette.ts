@@ -13,6 +13,10 @@ export const ACCENT = '#2962ff';
  *  {@link ACCENT} so a switch reads clearly enabled. */
 export const ACCENT_BRIGHT = '#38c0fd';
 
+/** Built-in volume column colors: quiet muted surfaces matching reference design. */
+export const VOLUME_UP = '#3a403c';
+export const VOLUME_DOWN = '#3d2f34';
+
 /** Bullish/bearish reference pair — muted desaturated candles matching reference design. */
 export const BULLISH = '#a7be94';
 export const BEARISH = '#af6870';

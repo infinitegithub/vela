@@ -2,14 +2,14 @@
 <html lang="en">
     <head>
         <meta charset="utf-8" />
-        <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover" />
+        <meta name="viewport" content="width=device-width, initial-scale=1" />
         <title>Velo Terminal — LuxAlgo Vela</title>
         <meta name="description" content="LuxAlgo Vela Multi-Pane Financial Charting Workstation" />
         <meta name="theme-color" content="#202126" />
         <meta name="apple-mobile-web-app-capable" content="yes" />
-        <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
         <meta name="apple-mobile-web-app-title" content="Vela" />
         <meta name="mobile-web-app-capable" content="yes" />
+        <link rel="manifest" href="/manifest.webmanifest" />
         <link rel="apple-touch-icon" href="/icons/apple-touch-icon.png" />
         <link rel="icon" type="image/png" sizes="192x192" href="/icons/icon-192.png" />
         <style>
@@ -34,6 +34,82 @@
             button.vela-widget-panel-trade\.panel,
             [class*="vela-widget-panel-trade.panel"] {
                 display: none !important;
+            }
+
+            /* Independent Order Ticket Panel */
+            .vela-order-ticket-panel {
+                position: relative;
+                width: 0;
+                min-width: 0;
+                flex: none;
+                border-left: 1px solid var(--vela-border, #262629);
+                display: none;
+                flex-direction: column;
+                color: var(--vela-fg, #eeeef1);
+                font-size: 13px;
+                box-sizing: border-box;
+                background: var(--vela-bg-panel, #121215);
+                z-index: 20;
+                overflow: hidden;
+                transition: width 0.18s cubic-bezier(0.16, 1, 0.3, 1);
+            }
+            .vela-order-ticket-panel.open {
+                display: flex;
+            }
+            .vela-order-ticket-header {
+                display: flex;
+                align-items: center;
+                gap: 8px;
+                padding: 10px 10px 10px 14px;
+                border-bottom: 1px solid var(--vela-border, #262629);
+                font-size: 14px;
+                font-weight: 600;
+                color: var(--vela-fg-bright, #eeeef1);
+                flex: none;
+                background: var(--vela-bg-panel, #121215);
+            }
+            .vela-order-ticket-title {
+                font-size: 14px;
+                font-weight: 600;
+                color: var(--vela-fg-bright, #eeeef1);
+            }
+            .vela-order-ticket-close {
+                all: unset;
+                cursor: pointer;
+                width: 26px;
+                height: 26px;
+                display: inline-flex;
+                align-items: center;
+                justify-content: center;
+                border-radius: 4px;
+                color: var(--vela-fg-muted, #757882);
+                font-size: 15px;
+                transition: all 0.12s ease;
+            }
+            .vela-order-ticket-close:hover {
+                background: var(--vela-hover, #232429);
+                color: var(--vela-fg-bright, #eeeef1);
+            }
+            .vela-order-ticket-body {
+                flex: 1;
+                overflow-y: auto;
+                overflow-x: hidden;
+                min-width: 280px;
+                background: var(--vela-bg-panel, #121215);
+            }
+            .vela-order-ticket-resizer {
+                position: absolute;
+                top: 0;
+                bottom: 0;
+                left: -3px;
+                width: 7px;
+                cursor: col-resize;
+                touch-action: none;
+                z-index: 25;
+            }
+            .vela-order-ticket-resizer:hover,
+            .vela-order-ticket-resizer.dragging {
+                background: var(--vela-separator-hover-line, #3b82f6);
             }
         </style>
     </head>

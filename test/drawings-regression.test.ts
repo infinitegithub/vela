@@ -1,4 +1,5 @@
 import { describe, it, expect } from 'vitest';
+import { BULLISH, BEARISH, NEUTRAL } from '../src/core/palette';
 import { createDrawing, deserializeDrawing, getDrawingType, computeRegressionFit, RegressionChannel, type Projector } from '../src/core/drawings';
 
 const HR = 3600_000;
@@ -76,9 +77,9 @@ describe('drawings/RegressionChannel', () => {
 
     it('defaults: gray midline, green/red bands, R² shown', () => {
         const d = createDrawing('regressionchannel', { paneId: 'price', anchors: [{ time: 0, price: 0 }, { time: 4 * HR, price: 0 }] })! as RegressionChannel;
-        expect(d.reg.midColor).toBe('#787b86');
-        expect(d.reg.upperColor).toBe('#089981');
-        expect(d.reg.lowerColor).toBe('#f23645');
+        expect(d.reg.midColor).toBe(NEUTRAL);
+        expect(d.reg.upperColor).toBe(BULLISH);
+        expect(d.reg.lowerColor).toBe(BEARISH);
         expect(d.reg.showR2).toBe(true);
     });
 

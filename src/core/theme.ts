@@ -53,7 +53,7 @@ export const LIGHT_THEME: VelaTheme = {
     downColor: '#f23645',
     fontFamily: 'sans-serif',
     bgPanel: '#f8f9fa',
-    bgCard: '#ffffff',
+    bgCard: '#f1f3f5',
     bgBar: '#f1f3f5',
     bgChip: '#e9ecef',
     bgHover: '#dee2e6',

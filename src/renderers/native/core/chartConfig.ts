@@ -2,6 +2,7 @@ import type { LineStyle } from '../../../core/model/series';
 import { chartTypes, settingsRowValueKeys, type SettingsRowDescriptor } from '../../../chart-types/registry';
 import { withAlpha } from '../../../core/color';
 import { ACCENT, BEARISH, BULLISH, CHIP_PLATE, CROSSHAIR, SERIES_LINE, WARNING } from '../../../core/palette';
+import { DARK_THEME } from '../../../core/theme';
 import type { PriceStyle } from '../../../core/options';
 import type { ScaleMode } from './SceneGraph';
 
@@ -621,22 +622,22 @@ export function factoryResetConfig(factory: ChartConfig, priceStyle: PriceStyle 
     return { ...factory, chartTypes: bag, series: { ...factory.series, style: priceStyle } };
 }
 
-const LEGACY_UP_DEFAULTS = new Set(['#089981', '#26a69a', '#22c55e']);
-const LEGACY_DOWN_DEFAULTS = new Set(['#f23645', '#ef5350', '#ef4444']);
-const LEGACY_BG_DEFAULTS = new Set(['#000000e9', '#131722', '#141414']);
+const LEGACY_UP_DEFAULTS = new Set(['#089981', '#26a69a', '#22c55e']); // palette-exempt: legacy color migration
+const LEGACY_DOWN_DEFAULTS = new Set(['#f23645', '#ef5350', '#ef4444']); // palette-exempt: legacy color migration
+const LEGACY_BG_DEFAULTS = new Set(['#000000e9', '#131722', '#141414']); // palette-exempt: legacy color migration
 
 function sanitizeCandleColor(input: unknown, baseVal: string): string {
     if (!isColor(input)) return baseVal;
     const lower = input.toLowerCase().trim();
-    if (baseVal === '#a7be94' && LEGACY_UP_DEFAULTS.has(lower)) return baseVal;
-    if (baseVal === '#af6870' && LEGACY_DOWN_DEFAULTS.has(lower)) return baseVal;
+    if (baseVal === BULLISH && LEGACY_UP_DEFAULTS.has(lower)) return baseVal;
+    if (baseVal === BEARISH && LEGACY_DOWN_DEFAULTS.has(lower)) return baseVal;
     return input;
 }
 
 function sanitizeBgColor(input: unknown, baseVal: string): string {
     if (!isColor(input)) return baseVal;
     const lower = input.toLowerCase().trim();
-    if (baseVal === '#202126' && LEGACY_BG_DEFAULTS.has(lower)) return baseVal;
+    if (baseVal === DARK_THEME.background && LEGACY_BG_DEFAULTS.has(lower)) return baseVal;
     return input;
 }
 

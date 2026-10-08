@@ -22,7 +22,7 @@ const CSS = `
     gap: 3px;
     height: 40px;
     padding: 0 8px;
-    border-bottom: 1px solid var(--vela-border, #262629);
+    border-bottom: 1px solid var(--vela-border);
     background: var(--vela-bg-main, var(--vela-bg));
     color: var(--vela-fg);
     font-size: var(--vela-font-size-md);
@@ -37,7 +37,7 @@ const CSS = `
     padding: 0 8px;
     border-radius: 4px;
     cursor: pointer;
-    color: var(--vela-text-secondary, #757882);
+    color: var(--vela-text-secondary);
     font-size: 13px;
     font-weight: 550;
     white-space: nowrap;
@@ -46,25 +46,25 @@ const CSS = `
     all: unset;
     display: inline-flex;
     align-items: center;
-    color: var(--vela-text-primary, #eeeef1);
+    color: var(--vela-text-primary);
     font-size: 13px;
     font-weight: 600;
     letter-spacing: 0.2px;
     padding: 0 10px;
     height: 26px;
     border-radius: 4px;
-    background: var(--vela-bg-card, #232429);
-    border: 1px solid var(--vela-border, #262629);
+    background: var(--vela-bg-card);
+    border: 1px solid var(--vela-border);
     gap: 6px;
     cursor: pointer;
 }
 .vela-widget-symbol:hover {
-    background: var(--vela-bg-hover, #2b2d34);
-    color: var(--vela-text-primary, #eeeef1);
+    background: var(--vela-bg-hover);
+    color: var(--vela-text-primary);
 }
 .vela-widget-style:hover, .vela-widget-indicators:hover, .vela-widget-action-left:hover {
-    background: var(--vela-bg-hover, #2b2d34);
-    color: var(--vela-text-primary, #eeeef1);
+    background: var(--vela-bg-hover);
+    color: var(--vela-text-primary);
 }
 /* Timeframe cluster: compact top-bar pills with subtle lighter fill on active */
 .vela-widget-tf-group { display: inline-flex; align-items: center; gap: 3px; margin: 0 2px; }
@@ -81,17 +81,17 @@ const CSS = `
     border-radius: 4px;
     font-size: 12px;
     font-weight: 500;
-    color: var(--vela-text-secondary, #757882);
+    color: var(--vela-text-secondary);
     cursor: pointer;
     transition: background 60ms ease, color 60ms ease;
 }
 .vela-widget-tf:hover {
-    background: var(--vela-bg-hover, #2b2d34);
-    color: var(--vela-text-primary, #eeeef1);
+    background: var(--vela-bg-hover);
+    color: var(--vela-text-primary);
 }
 .vela-widget-tf[data-current='1'] {
-    background: var(--vela-bg-chip, #292a2f) !important;
-    color: var(--vela-text-primary, #eeeef1) !important;
+    background: var(--vela-bg-chip) !important;
+    color: var(--vela-text-primary) !important;
     font-weight: 600;
 }
 .vela-widget-tf-caret {
@@ -104,24 +104,24 @@ const CSS = `
     height: 24px;
     border-radius: 4px;
     cursor: pointer;
-    color: var(--vela-text-secondary, #757882);
+    color: var(--vela-text-secondary);
 }
 .vela-widget-tf-caret:hover {
-    background: var(--vela-bg-hover, #2b2d34);
-    color: var(--vela-text-primary, #eeeef1);
+    background: var(--vela-bg-hover);
+    color: var(--vela-text-primary);
 }
 .vela-widget-tf-caret[data-solo='1'] {
     width: auto;
     padding: 0 6px 0 8px;
     gap: 4px;
-    color: var(--vela-text-primary, #eeeef1);
+    color: var(--vela-text-primary);
     font-size: 12px;
     font-weight: 550;
     white-space: nowrap;
 }
 .vela-widget-topbar .vela-widget-tf-caret .vela-icon { font-size: 13px; width: 13px; height: 13px; }
 .vela-widget-topbar .vela-icon { color: inherit; font-size: 15px; width: 15px; height: 15px; }
-.vela-sep { height: 18px; margin: 0 4px; flex: none; background: var(--vela-border, #262629); }
+.vela-sep { height: 18px; margin: 0 4px; flex: none; background: var(--vela-border); }
 .vela-alerts-badge {
     position: absolute;
     top: 2px;
@@ -514,7 +514,7 @@ export class Topbar {
     private renderSymbol(symbol: string): void {
         const s = parseSymbol(symbol);
         const prefix = s.provider ? `${s.provider.toUpperCase()}.F` : 'BINANCE.F';
-        this.symbolEl.innerHTML = `<span style="color: var(--vela-text-muted, #757882); font-size: 10px; font-weight: 600; letter-spacing: 0.3px; margin-right: 3px;">${prefix}</span><span style="font-weight: 700; color: var(--vela-text-primary, #eeeef1);">${s.ticker}</span><span style="color: var(--vela-text-secondary, #757882); font-size: 10px; margin-left: 2px;">▾</span>`;
+        this.symbolEl.innerHTML = `<span style="color: var(--vela-text-muted); font-size: 10px; font-weight: 600; letter-spacing: 0.3px; margin-right: 3px;">${prefix}</span><span style="font-weight: 700; color: var(--vela-text-primary);">${s.ticker}</span><span style="color: var(--vela-text-secondary); font-size: 10px; margin-left: 2px;">▾</span>`;
     }
 
     setSymbol(symbol: string): void {

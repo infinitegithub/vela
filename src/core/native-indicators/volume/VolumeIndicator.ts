@@ -2,10 +2,10 @@ import type { InputSchema, InputValue } from '../../model/inputs';
 import type { VolumeLayerData } from '../../model/volume-layers';
 import type { NativeIndicator, NativeIndicatorContext, NativeIndicatorDescriptor } from '../NativeIndicator';
 import { registerNativeIndicator } from '../NativeIndicator';
-import { BEARISH, BULLISH } from '../../palette';
+import { VOLUME_UP, VOLUME_DOWN } from '../../palette';
 
-const DEFAULT_UP = '#3a403c';    // volume-up: quiet muted surface
-const DEFAULT_DOWN = '#3d2f34';  // volume-down: quiet muted surface
+const DEFAULT_UP = VOLUME_UP;
+const DEFAULT_DOWN = VOLUME_DOWN;
 const DEFAULT_HEIGHT_PCT = 20;
 
 function num(v: InputValue | undefined, fallback: number): number {

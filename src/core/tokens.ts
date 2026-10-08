@@ -100,7 +100,7 @@ export function themeTokens(t: VelaTheme): Record<string, string> {
         '--vela-accent-bright': ACCENT_BRIGHT,
         '--vela-highlight': HIGHLIGHT,
         '--vela-selected-bg': textPrimary,
-        '--vela-selected-fg': bgPanel,
+        '--vela-selected-fg': dark ? t.background : '#ffffff',
         '--vela-fg-on-fill': '#ffffff',
         '--vela-shadow': '0 8px 30px rgba(0,0,0,0.5)',
         '--vela-shadow-dialog': '0 20px 60px rgba(0,0,0,0.5)',

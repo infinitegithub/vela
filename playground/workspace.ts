@@ -112,14 +112,49 @@ setThemeWorkspaceInstance(ws);
 // 4. Mount bottom account drawer (starts collapsed at 28px)
 mountBottomAccountStrip(ws);
 
-// 5. Hook active cell changes so order ticket & watchlist follow user chart clicks
+// 5. Hook active cell & market changes so order ticket & watchlist follow user chart clicks and symbol changes
+const syncActiveSymbol = (sym: string) => {
+    if (!sym) return;
+    setActiveSymbol(sym);
+    setWatchlistActiveSymbol(sym);
+};
+
 ws.on('cell:active', ({ id }) => {
     const cell = ws.cell(id);
     if (cell && cell.symbol) {
-        setActiveSymbol(cell.symbol);
-        setWatchlistActiveSymbol(cell.symbol);
+        syncActiveSymbol(cell.symbol);
     }
 });
+
+const hookCellMarket = (cell: any) => {
+    cell.chart.on('market:changed', ({ symbol }: { symbol: string }) => {
+        if (ws.active?.id === cell.id && symbol) {
+            syncActiveSymbol(symbol);
+        }
+    });
+};
+for (const cell of ws.cells()) {
+    hookCellMarket(cell);
+}
+ws.on('cell:created', ({ id }) => {
+    const cell = ws.cell(id);
+    if (cell) hookCellMarket(cell);
+});
+
+if (ws.active?.symbol) {
+    syncActiveSymbol(ws.active.symbol);
+}
+
+// 6. Reload chart feeds when toggling between Testnet and Production
+if (typeof window !== 'undefined') {
+    window.addEventListener('vela:env-changed', () => {
+        for (const cell of ws.cells()) {
+            if (cell.symbol && cell.chart?.setMarket) {
+                void cell.chart.setMarket({ symbol: cell.symbol });
+            }
+        }
+    });
+}
 
 // 7. Initialize chart tools & drawing favorites (leave dock closed by default for clean full-screen view)
 void ws.cells()[0]?.chart.ready().then(() => {
@@ -153,7 +188,7 @@ ws.on('cell:created', ({ id }) => {
 });
 
 // 9. PWA Service Worker Registration & Storage Persistence
-if (typeof window !== 'undefined' && 'serviceWorker' in navigator) {
+if (typeof window !== 'undefined' && 'serviceWorker' in navigator && !import.meta.env.DEV) {
     registerSW({
         immediate: true,
         onRegisteredSW(_swScriptUrl, registration) {

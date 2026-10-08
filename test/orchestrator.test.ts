@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, afterEach } from 'vitest';
 import { Vela } from '../src/index';
-import { ACCENT, BEARISH, BULLISH } from '../src/core/palette';
+import { ACCENT, BEARISH, BULLISH, VOLUME_UP, VOLUME_DOWN } from '../src/core/palette';
+import { LIGHT_THEME } from '../src/core/theme';
 import type {
     IChartRenderer,
     RendererCapabilities,
@@ -403,8 +404,8 @@ describe('EngineOrchestrator', () => {
         expect(renderer.themes.map((t) => t.background)).toEqual(['#ffffff']);
         expect(seen).toEqual(['#ffffff']);
         // Candle hues are shared across themes — a theme swap never recolors the series.
-        expect(renderer.themes[0]!.upColor).toBe(BULLISH);
-        expect(renderer.themes[0]!.downColor).toBe(BEARISH);
+        expect(renderer.themes[0]!.upColor).toBe(LIGHT_THEME.upColor);
+        expect(renderer.themes[0]!.downColor).toBe(LIGHT_THEME.downColor);
         chart.setTheme('light'); // already active → no re-skin, no event (breaks host echo loops)
         expect(renderer.themes).toHaveLength(1);
         expect(seen).toHaveLength(1);
@@ -1842,7 +1843,7 @@ describe('EngineOrchestrator — built-in volume native indicators', () => {
         expect(model).toBeDefined(); // legend row mounted (no series — the layer draws outside the model)
         expect(model!.series).toHaveLength(0);
         expect(model!.paneId).toBe('price');
-        expect(renderer.volumePushes).toEqual([{ upColor: BULLISH, downColor: BEARISH, heightFrac: 0.2 }]);
+        expect(renderer.volumePushes).toEqual([{ upColor: VOLUME_UP, downColor: VOLUME_DOWN, heightFrac: 0.2 }]);
         const summary = chart.inspect().indicators.find((s) => s.nativeType === 'volume');
         expect(summary?.native).toBe(true);
         expect(summary?.inputs).toBe(3); // colors + height% drive the settings dialog
@@ -1867,7 +1868,7 @@ describe('EngineOrchestrator — built-in volume native indicators', () => {
         handle.setInputs({ upColor: '#112233', heightPct: 35 });
         await flush();
         const last = renderer.volumePushes[renderer.volumePushes.length - 1] as { upColor: string; downColor: string; heightFrac: number };
-        expect(last).toEqual({ upColor: '#112233', downColor: BEARISH, heightFrac: 0.35 });
+        expect(last).toEqual({ upColor: '#112233', downColor: VOLUME_DOWN, heightFrac: 0.35 });
     });
 
     it('the VPVR is not auto-added; adding it mounts a legend row and pushes its config', async () => {
