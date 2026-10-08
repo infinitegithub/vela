@@ -24,11 +24,11 @@ export default defineConfig(({ mode }) => {
                     navigateFallbackDenylist: [/^\/api\//],
                     runtimeCaching: [
                         {
-                            urlPattern: /^\/api\/binance\/.*/i,
+                            urlPattern: /^\/api\/(binance|templates).*/i,
                             handler: 'NetworkOnly',
                         },
                         {
-                            urlPattern: /^\/api\/(indicators|templates)\/.*/i,
+                            urlPattern: /^\/api\/indicators\/.*/i,
                             handler: 'StaleWhileRevalidate',
                             options: {
                                 cacheName: 'vela-api-cache',

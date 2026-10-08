@@ -260,14 +260,38 @@ function saveWatchlistStore() {
 registerStatePersistence({
     key: 'vela.watchlist',
     scope: 'global',
-    serialize: () => ({
-        activeList: currentListName,
-        lists: watchlistsStore,
-    }),
+    serialize: () => {
+        // Strip heavy dynamic tick metrics and inline SVGs to keep template payloads compact
+        const cleanLists: Record<string, any[]> = {};
+        for (const [listName, items] of Object.entries(watchlistsStore)) {
+            cleanLists[listName] = (items || []).map(x => ({
+                symbol: x.symbol,
+                binanceSymbol: x.binanceSymbol,
+                name: x.name,
+            }));
+        }
+        return {
+            activeList: currentListName,
+            lists: cleanLists,
+        };
+    },
     restore: (payload: any) => {
         if (payload && typeof payload === 'object') {
             if (payload.lists && typeof payload.lists === 'object' && Object.keys(payload.lists).length > 0) {
-                watchlistsStore = payload.lists;
+                const restoredStore: Record<string, WatchlistItem[]> = {};
+                for (const [k, list] of Object.entries(payload.lists as Record<string, any[]>)) {
+                    restoredStore[k] = (list || []).map(item => ({
+                        symbol: item.symbol || `${item.binanceSymbol}-USD`,
+                        binanceSymbol: item.binanceSymbol || item.symbol,
+                        name: item.name || item.binanceSymbol || 'Ticker',
+                        price: typeof item.price === 'number' ? item.price : 1.0,
+                        change: typeof item.change === 'number' ? item.change : 0.0,
+                        changePercent: typeof item.changePercent === 'number' ? item.changePercent : 0.0,
+                        volume: typeof item.volume === 'number' ? item.volume : 1000,
+                        iconSvg: item.iconSvg || `<svg viewBox="0 0 24 24" width="20" height="20"><circle cx="12" cy="12" r="11" fill="#363c4e"/><text x="12" y="16" font-size="11" fill="#fff" text-anchor="middle" font-weight="bold">${(item.name || item.symbol || '?').charAt(0)}</text></svg>`,
+                    }));
+                }
+                watchlistsStore = restoredStore;
             }
             if (payload.activeList && watchlistsStore[payload.activeList]) {
                 currentListName = payload.activeList;
@@ -288,21 +312,21 @@ registerStatePersistence({
 });
 
 
-// Helper to check and toggle watchlist membership for symbol picker
+// Helper to check and toggle watchlist membership for symbol picker (checks across all lists)
 export function isSymbolInWatchlist(sym: string): boolean {
     const raw = sym.toUpperCase().replace(/^BINANCE:/i, '').replace(/^COINBASE:/i, '').replace(/^HYPERLIQUID:/i, '');
     const clean = raw.replace('-', '').replace('/', '');
-    return watchlistItems.some(x => {
-        const xNorm = x.binanceSymbol.toUpperCase().replace('-', '').replace('/', '');
+    return Object.values(watchlistsStore).some(items => (items || []).some(x => {
+        const xNorm = (x.binanceSymbol || x.symbol).toUpperCase().replace('-', '').replace('/', '');
         return xNorm === clean || xNorm === raw || x.symbol.toUpperCase() === raw;
-    });
+    }));
 }
 
 export function toggleWatchlistSymbol(rawSym: string, descriptor?: any): boolean {
     const raw = rawSym.toUpperCase().replace(/^BINANCE:/i, '').replace(/^COINBASE:/i, '').replace(/^HYPERLIQUID:/i, '');
     const clean = raw.replace('-', '').replace('/', '');
     const existingIndex = watchlistItems.findIndex(x => {
-        const xNorm = x.binanceSymbol.toUpperCase().replace('-', '').replace('/', '');
+        const xNorm = (x.binanceSymbol || x.symbol).toUpperCase().replace('-', '').replace('/', '');
         return xNorm === clean || xNorm === raw || x.symbol.toUpperCase() === raw;
     });
 
@@ -314,7 +338,7 @@ export function toggleWatchlistSymbol(rawSym: string, descriptor?: any): boolean
     } else {
         const isFutures = raw.endsWith('.P');
         const baseName = descriptor?.description?.split('/')?.[0]?.trim() || raw.replace('.P', '').replace('USDT', '').replace('USD', '');
-        const display = `${raw.replace('USDT', '')}-USD`;
+        const display = raw.endsWith('USDT') ? `${raw.replace('USDT', '')}-USD` : (raw.includes('-') ? raw : `${raw}-USD`);
         watchlistItems.unshift({
             symbol: display,
             binanceSymbol: raw,

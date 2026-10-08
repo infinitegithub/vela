@@ -211,6 +211,12 @@ export function templateSyncPlugin(): Plugin {
                                         symbols: Array.isArray(data.state?.charts)
                                             ? data.state.charts.map((c: any) => c.symbol).filter(Boolean).slice(0, 4)
                                             : ['BTCUSDT'],
+                                        indicators: Array.isArray(data.state?.charts)
+                                            ? Array.from(new Set(data.state.charts.flatMap((c: any) => [
+                                                ...(Array.isArray(c.indicators?.natives) ? c.indicators.natives.map((n: any) => typeof n === 'string' ? n : n?.type) : []),
+                                                ...(Array.isArray(c.indicators?.manifest) ? c.indicators.manifest.map((m: any) => typeof m === 'string' ? m : m?.name) : [])
+                                            ]).filter(Boolean))).slice(0, 6)
+                                            : [],
                                         updatedAt: data.updatedAt || fs.statSync(path.join(templatesDir, file)).mtimeMs,
                                         isDefault: data.isDefault === true
                                     };
@@ -229,7 +235,7 @@ export function templateSyncPlugin(): Plugin {
                                 return sendJson(res, { error: 'Template name and state are required' }, 400);
                             }
 
-                            const id = body.id || `${slugify(body.name)}-${Date.now().toString(36)}`;
+                            const id = body.id ? slugify(body.id) : `${slugify(body.name)}-${Date.now().toString(36)}`;
                             const record = {
                                 id,
                                 name: body.name.trim(),
@@ -240,7 +246,13 @@ export function templateSyncPlugin(): Plugin {
                             };
 
                             const filePath = path.join(templatesDir, `${slugify(id)}.json`);
-                            fs.writeFileSync(filePath, JSON.stringify(record, null, 2), 'utf-8');
+                            const tempPath = path.join(templatesDir, `.${slugify(id)}.tmp.${Date.now()}`);
+                            try {
+                                fs.writeFileSync(tempPath, JSON.stringify(record, null, 2), 'utf-8');
+                                fs.renameSync(tempPath, filePath);
+                            } catch (e) {
+                                fs.writeFileSync(filePath, JSON.stringify(record, null, 2), 'utf-8');
+                            }
                             return sendJson(res, { success: true, id, name: record.name, updatedAt: record.updatedAt });
                         }
                     }
@@ -345,7 +357,7 @@ function seedDefaultTemplates(templatesDir: string) {
             id: 'single-chart-deep-dive',
             name: 'Single Chart Deep Dive',
             description: 'Full-screen single chart setup with maximum viewport space for detailed analysis.',
-            isDefault: false,
+            isDefault: true,
             updatedAt: Date.now() - 1000,
             state: {
                 version: 1,
@@ -364,7 +376,7 @@ function seedDefaultTemplates(templatesDir: string) {
             id: 'dual-split-btc-eth',
             name: 'Dual Split (BTC / ETH)',
             description: '2 side-by-side charts comparing Bitcoin and Ethereum market structures in real time.',
-            isDefault: false,
+            isDefault: true,
             updatedAt: Date.now() - 2000,
             state: {
                 version: 1,
@@ -385,7 +397,7 @@ function seedDefaultTemplates(templatesDir: string) {
             id: '8-cell-market-overview',
             name: '8-Cell Market Overview',
             description: '8 synchronized charts monitoring the top crypto market leaders simultaneously.',
-            isDefault: false,
+            isDefault: true,
             updatedAt: Date.now() - 3000,
             state: {
                 version: 1,
