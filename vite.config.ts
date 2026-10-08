@@ -13,8 +13,8 @@ export default defineConfig(({ mode }) => {
             binanceApiPlugin(),
             templateSyncPlugin(),
             VitePWA({
-                registerType: 'autoUpdate',
-                injectRegister: 'auto',
+                registerType: 'prompt',
+                injectRegister: false,
                 devOptions: {
                     enabled: false,
                 },
@@ -24,18 +24,8 @@ export default defineConfig(({ mode }) => {
                     navigateFallbackDenylist: [/^\/api\//],
                     runtimeCaching: [
                         {
-                            urlPattern: /^\/api\/(binance|templates).*/i,
+                            urlPattern: /^\/api\/.*/i,
                             handler: 'NetworkOnly',
-                        },
-                        {
-                            urlPattern: /^\/api\/indicators\/.*/i,
-                            handler: 'StaleWhileRevalidate',
-                            options: {
-                                cacheName: 'vela-api-cache',
-                                expiration: {
-                                    maxAgeSeconds: 86400,
-                                },
-                            },
                         },
                         {
                             urlPattern: /^https:\/\/fonts\.(googleapis|gstatic)\.com\/.*/i,
@@ -85,8 +75,12 @@ export default defineConfig(({ mode }) => {
             port: 3000,
             host: '0.0.0.0',
             allowedHosts: ['vela.viffey.com', '.viffey.com', 'localhost', '127.0.0.1'],
+            watch: {
+                ignored: ['**/data/**', '**/.git/**', '**/dist/**'],
+            },
             hmr: {
                 clientPort: 443,
+                overlay: false,
             },
         },
         build: {

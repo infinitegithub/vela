@@ -93,6 +93,14 @@ async function fetchLuxSourceCode(slug: string): Promise<{ name?: string; source
 export function templateSyncPlugin(): Plugin {
     return {
         name: 'template-sync-plugin',
+        transform(code, id) {
+            if (id.includes('client.mjs') || id.includes('@vite/client')) {
+                return code.replace(
+                    /await waitForSuccessfulPing\(url\.href\);\s*location\.reload\(\);/g,
+                    'await waitForSuccessfulPing(url.href); console.log("[vite] server connection restored (reload suppressed to protect active charts).");'
+                );
+            }
+        },
         configureServer(server) {
             const dataDir = path.resolve(process.cwd(), 'data');
             const templatesDir = path.resolve(dataDir, 'templates');
@@ -130,6 +138,14 @@ export function templateSyncPlugin(): Plugin {
                 }
 
                 try {
+                    // ── Heartbeat endpoint (/api/ping) ──────────────────────────────────
+                    if (url.pathname === '/api/ping') {
+                        res.statusCode = 204;
+                        res.setHeader('Access-Control-Allow-Origin', '*');
+                        res.setHeader('Cache-Control', 'no-cache, no-store');
+                        return res.end();
+                    }
+
                     // ── Workspace State Endpoints (/api/workspace/:key) ──────────────────
                     if (url.pathname.startsWith('/api/workspace/')) {
                         const key = decodeURIComponent(url.pathname.replace('/api/workspace/', ''));

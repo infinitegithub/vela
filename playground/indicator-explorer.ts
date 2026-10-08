@@ -120,24 +120,81 @@ const NATIVE_INDICATORS: CatalogIndicator[] = [
     },
 ];
 
+function catSvg(path: string): string {
+    return `<svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round">${path}</svg>`;
+}
+
+const DEFAULT_CAT_ICON = catSvg('<circle cx="8" cy="8" r="1.5" fill="currentColor"/>');
+
 const FAMILY_METADATA: Record<string, { label: string; icon: string }> = {
-    all: { label: 'All Indicators', icon: '🌐' },
-    saved: { label: 'Saved & Custom', icon: '⭐' },
-    native: { label: 'Native Studies', icon: '⚡' },
-    'smc-ict': { label: 'Smart Money (SMC / ICT)', icon: '🏛️' },
-    trend: { label: 'Trend Following', icon: '📈' },
-    'volume-orderflow': { label: 'Volume & Order Flow', icon: '📊' },
-    'market-structure': { label: 'Market Structure', icon: '📐' },
-    statistics: { label: 'Statistics & Quant', icon: '📉' },
-    levels: { label: 'Support & Resistance / Levels', icon: '🧱' },
-    momentum: { label: 'Momentum & Oscillators', icon: '⚡' },
-    patterns: { label: 'Patterns & Harmonics', icon: '🎯' },
-    'time-seasonality': { label: 'Time & Seasonality', icon: '⏱️' },
-    volatility: { label: 'Volatility & Envelopes', icon: '🌊' },
-    'machine-learning': { label: 'Machine Learning & AI', icon: '🤖' },
-    'sentiment-breadth': { label: 'Sentiment & Breadth', icon: '🧭' },
-    'risk-exits': { label: 'Risk & Trailing Exits', icon: '🛡️' },
-    other: { label: 'Community & Specialized', icon: '💡' },
+    all: {
+        label: 'All Indicators',
+        icon: catSvg('<rect x="2" y="2" width="5" height="5" rx="1"/><rect x="9" y="2" width="5" height="5" rx="1"/><rect x="2" y="9" width="5" height="5" rx="1"/><rect x="9" y="9" width="5" height="5" rx="1"/>'),
+    },
+    saved: {
+        label: 'Saved & Custom',
+        icon: catSvg('<path d="M8 2.5l1.6 3.8 4.1.4-3.1 2.8.9 4-3.5-2.1-3.5 2.1.9-4-3.1-2.8 4.1-.4z"/>'),
+    },
+    native: {
+        label: 'Native Studies',
+        icon: catSvg('<path d="M9 1.5L3.5 8.5H8L7 14.5L12.5 7.5H8L9 1.5z"/>'),
+    },
+    'smc-ict': {
+        label: 'Smart Money (SMC / ICT)',
+        icon: catSvg('<path d="M2 5.5l6-3.5 6 3.5M2.5 5.5h11M3.5 5.5v6M6.5 5.5v6M9.5 5.5v6M12.5 5.5v6M2 11.5h12M1.5 13.5h13"/>'),
+    },
+    trend: {
+        label: 'Trend Following',
+        icon: catSvg('<path d="M2 12.5l4-5 3 3 5-7M10.5 3.5H14v3.5"/>'),
+    },
+    'volume-orderflow': {
+        label: 'Volume & Order Flow',
+        icon: catSvg('<path d="M2.5 13.5v-4M6 13.5v-8M9.5 13.5v-10M13 13.5v-6"/>'),
+    },
+    'market-structure': {
+        label: 'Market Structure',
+        icon: catSvg('<path d="M1.5 11l3.5-7 4 8 4-6 1.5 2"/><circle cx="5" cy="4" r="1.2" fill="currentColor"/><circle cx="9" cy="12" r="1.2" fill="currentColor"/><circle cx="13" cy="6" r="1.2" fill="currentColor"/>'),
+    },
+    statistics: {
+        label: 'Statistics & Quant',
+        icon: catSvg('<path d="M1.5 13.5h13M2 11c3 0 3-8 6-8s3 8 6 8"/>'),
+    },
+    levels: {
+        label: 'Support & Resistance / Levels',
+        icon: catSvg('<path d="M2 4h12M2 8h12M2 12h12" stroke-dasharray="2 2"/><circle cx="5" cy="8" r="1.2" fill="currentColor"/><circle cx="11" cy="4" r="1.2" fill="currentColor"/>'),
+    },
+    momentum: {
+        label: 'Momentum & Oscillators',
+        icon: catSvg('<path d="M1.5 8c2-4 4-4 6.5 0s4.5 4 6.5 0M1.5 8h13" stroke-dasharray="1.5 1.5"/>'),
+    },
+    patterns: {
+        label: 'Patterns & Harmonics',
+        icon: catSvg('<polygon points="8 2.5 14 13.5 2 13.5"/><circle cx="8" cy="2.5" r="1.2" fill="currentColor"/><circle cx="14" cy="13.5" r="1.2" fill="currentColor"/><circle cx="2" cy="13.5" r="1.2" fill="currentColor"/>'),
+    },
+    'time-seasonality': {
+        label: 'Time & Seasonality',
+        icon: catSvg('<circle cx="8" cy="8" r="5.5"/><path d="M8 5v3.2l2.2 1.3"/>'),
+    },
+    volatility: {
+        label: 'Volatility & Envelopes',
+        icon: catSvg('<path d="M1.5 3.5c4 0 6 3 13 3M1.5 12.5c4 0 6-3 13-3M1.5 8h13" stroke-dasharray="2 2"/>'),
+    },
+    'machine-learning': {
+        label: 'Machine Learning & AI',
+        icon: catSvg('<circle cx="3.5" cy="5" r="1.3"/><circle cx="3.5" cy="11" r="1.3"/><circle cx="8" cy="8" r="1.3"/><circle cx="12.5" cy="5" r="1.3"/><circle cx="12.5" cy="11" r="1.3"/><path d="M4.8 5.6l2 1.8M4.8 10.4l2-1.8M9.2 7.4l2-1.8M9.2 8.6l2 1.8"/>'),
+    },
+    'sentiment-breadth': {
+        label: 'Sentiment & Breadth',
+        icon: catSvg('<circle cx="8" cy="8" r="5.5"/><polygon points="8 4 9.5 7.5 8 7 6.5 7.5" fill="currentColor"/><polygon points="8 12 9.5 8.5 8 9 6.5 8.5"/>'),
+    },
+    'risk-exits': {
+        label: 'Risk & Trailing Exits',
+        icon: catSvg('<path d="M8 2l5 2.2v4.3c0 3.3-2.3 6.3-5 7-2.7-.7-5-3.7-5-7V4.2L8 2z"/><path d="M6 8l1.5 1.5 3-3"/>'),
+    },
+    other: {
+        label: 'Community & Specialized',
+        icon: catSvg('<circle cx="8" cy="8" r="1.2" fill="currentColor"/><circle cx="3.5" cy="8" r="1.2" fill="currentColor"/><circle cx="12.5" cy="8" r="1.2" fill="currentColor"/>'),
+    },
 };
 
 let wsInstance: VelaWorkspace | null = null;
@@ -331,28 +388,41 @@ export async function openIndicatorExplorer() {
         gap: 12px;
     `;
 
+    const searchContainer = document.createElement('div');
+    searchContainer.style.cssText = `
+        flex: 1;
+        display: flex;
+        align-items: center;
+        background: var(--vela-bg-panel, #121215);
+        border: 1px solid var(--vela-border, #262629);
+        border-radius: 6px;
+        padding: 0 12px;
+        gap: 8px;
+        transition: border-color 0.2s;
+    `;
+    searchContainer.innerHTML = `<span style="display: flex; align-items: center; color: var(--vela-text-secondary, #757882); opacity: 0.6;"><svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"><circle cx="7" cy="7" r="4.5"/><path d="m10.5 10.5 3.5 3.5"/></svg></span>`;
+
     const searchInput = document.createElement('input');
     searchInput.type = 'text';
     searchInput.placeholder = 'Search 810+ indicators (e.g. "supertrend", "divergence", "order blocks", "vwap", "clustering")...';
     searchInput.value = searchQuery;
     searchInput.style.cssText = `
         flex: 1;
-        background: var(--vela-bg-panel, #121215);
-        border: 1px solid var(--vela-border, #262629);
+        background: transparent;
+        border: none;
         color: var(--vela-text-primary, #eeeef1);
-        padding: 9px 14px;
-        border-radius: 6px;
+        padding: 9px 0;
         font-size: 13px;
         outline: none;
-        transition: border-color 0.2s;
     `;
-    searchInput.onfocus = () => { searchInput.style.borderColor = 'var(--vela-accent, #3b82f6)'; };
-    searchInput.onblur = () => { searchInput.style.borderColor = 'var(--vela-border, #262629)'; };
+    searchInput.onfocus = () => { searchContainer.style.borderColor = 'var(--vela-accent, #3b82f6)'; };
+    searchInput.onblur = () => { searchContainer.style.borderColor = 'var(--vela-border, #262629)'; };
 
     const countBadge = document.createElement('div');
     countBadge.style.cssText = 'font-size: 12px; color: var(--vela-text-secondary, #757882); white-space: nowrap;';
 
-    searchBar.appendChild(searchInput);
+    searchContainer.appendChild(searchInput);
+    searchBar.appendChild(searchContainer);
     searchBar.appendChild(countBadge);
 
     // ── Body Container ────────────────────────────────────────────────────────
@@ -480,7 +550,7 @@ export async function openIndicatorExplorer() {
         ];
 
         for (const cat of categories) {
-            const meta = FAMILY_METADATA[cat] || { label: cat, icon: '•' };
+            const meta = FAMILY_METADATA[cat] || { label: cat, icon: DEFAULT_CAT_ICON };
             const btn = document.createElement('button');
             const isActive = currentCategory === cat;
 
@@ -512,7 +582,7 @@ export async function openIndicatorExplorer() {
 
             btn.innerHTML = `
                 <div style="display: flex; align-items: center; gap: 8px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">
-                    <span>${meta.icon}</span>
+                    <span style="display: inline-flex; align-items: center; justify-content: center; width: 14px; height: 14px; flex-shrink: 0; color: ${isActive ? 'var(--vela-up, #a7be94)' : 'var(--vela-text-secondary, #757882)'};">${meta.icon}</span>
                     <span style="overflow: hidden; text-overflow: ellipsis;">${meta.label}</span>
                 </div>
                 <span style="font-size: 10px; opacity: 0.7; margin-left: 4px;">${count}</span>
@@ -543,16 +613,18 @@ export async function openIndicatorExplorer() {
         if (!selectedIndicator) {
             previewPane.innerHTML = `
                 <div style="flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center; color: var(--vela-text-secondary, #757882); gap: 10px;">
-                    <div style="font-size: 32px; opacity: 0.4;">👁</div>
+                    <div style="display: flex; align-items: center; justify-content: center; width: 42px; height: 42px; border-radius: 50%; background: rgba(255,255,255,0.03); color: var(--vela-text-secondary, #757882); opacity: 0.5;">
+                        <svg viewBox="0 0 16 16" width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"><path d="M1.5 8s2.5-5.4 6.5-5.4S14.5 8 14.5 8 12 13.4 8 13.4 1.5 8 1.5 8z"/><circle cx="8" cy="8" r="2"/></svg>
+                    </div>
                     <div style="font-size: 13px; font-weight: 600;">Select an indicator to preview</div>
-                    <div style="font-size: 11px; max-width: 200px;">Click any study in the catalog to view formulas, screenshot previews, and instant execution.</div>
+                    <div style="font-size: 11px; max-width: 200px; line-height: 1.4;">Click any study in the catalog to view formulas, screenshot previews, and instant execution.</div>
                 </div>
             `;
             return;
         }
 
         const ind = selectedIndicator;
-        const meta = FAMILY_METADATA[ind.family] || { label: ind.family, icon: '•' };
+        const meta = FAMILY_METADATA[ind.family] || { label: ind.family, icon: DEFAULT_CAT_ICON };
 
         const content = document.createElement('div');
         content.style.cssText = 'display: flex; flex-direction: column; gap: 12px;';
@@ -574,7 +646,10 @@ export async function openIndicatorExplorer() {
                     <span style="font-size: 10px; background: rgba(167, 190, 148, 0.15); color: var(--vela-up, #a7be94); padding: 2px 6px; border-radius: 4px; font-weight: 700; text-transform: uppercase;">
                         ${ind.isNative ? 'Native WebGL' : 'Pine Script v5/v6'}
                     </span>
-                    <span style="font-size: 10px; color: var(--vela-text-secondary, #757882);">${meta.icon} ${meta.label}</span>
+                    <span style="display: inline-flex; align-items: center; gap: 4px; font-size: 10px; color: var(--vela-text-secondary, #757882);">
+                        <span style="display: inline-flex; align-items: center; width: 12px; height: 12px;">${meta.icon}</span>
+                        <span>${meta.label}</span>
+                    </span>
                 </div>
                 <div style="font-size: 16px; font-weight: 700; color: var(--vela-text-primary, #eeeef1); line-height: 1.3;">
                     ${ind.name}
@@ -614,8 +689,13 @@ export async function openIndicatorExplorer() {
                     font-size: 12px;
                     font-weight: 600;
                     cursor: pointer;
+                    display: flex;
+                    align-items: center;
+                    justify-content: center;
+                    gap: 6px;
                 ">
-                    ✏️ Inspect / Edit in Pine Editor
+                    <svg viewBox="0 0 16 16" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 2.5l2.5 2.5L4.5 14H2v-2.5L11 2.5z"/></svg>
+                    <span>Inspect / Edit in Pine Editor</span>
                 </button>
                 ` : ''}
 
@@ -726,27 +806,39 @@ export async function openIndicatorExplorer() {
                 throw new Error('Indicator script is empty');
             }
 
-            // Run on active chart via PineWorkerEngine
-            const result = await active.chart.runIndicator(script);
-            if (result && result.ok) {
+            // Run on active chart: prefer addExternalIndicator so it integrates into cell legend & state
+            if (typeof (active as any).addExternalIndicator === 'function') {
+                (active as any).addExternalIndicator({
+                    id: ind.slug,
+                    name: ind.name,
+                    script,
+                    language: 'pine',
+                });
                 showToast(`✓ Added "${ind.name}" to active chart!`);
-                if (btnElement) {
-                    btnElement.textContent = '✓ Added to Chart';
-                    btnElement.style.background = '#4a7bb0';
-                    setTimeout(() => {
-                        btnElement.disabled = false;
-                        btnElement.textContent = '+ Add to Active Chart';
-                        btnElement.style.background = 'var(--vela-up, #a7be94)';
-                    }, 2000);
-                }
             } else {
-                const msg = result?.error?.message || 'Script compilation failed';
-                showToast(`Compilation error: ${msg}`, true);
-                if (btnElement) {
-                    btnElement.disabled = false;
-                    btnElement.textContent = '✗ Error';
-                    setTimeout(() => { btnElement.textContent = '+ Add to Active Chart'; }, 2000);
+                const result = await active.chart.runIndicator(script);
+                if (result && result.ok) {
+                    showToast(`✓ Added "${ind.name}" to active chart!`);
+                } else {
+                    const msg = result?.error?.message || 'Script compilation failed';
+                    showToast(`Compilation error: ${msg}`, true);
+                    if (btnElement) {
+                        btnElement.disabled = false;
+                        btnElement.textContent = '✗ Error';
+                        setTimeout(() => { btnElement.textContent = '+ Add to Active Chart'; }, 2000);
+                    }
+                    return;
                 }
+            }
+
+            if (btnElement) {
+                btnElement.textContent = '✓ Added to Chart';
+                btnElement.style.background = '#4a7bb0';
+                setTimeout(() => {
+                    btnElement.disabled = false;
+                    btnElement.textContent = '+ Add to Active Chart';
+                    btnElement.style.background = 'var(--vela-up, #a7be94)';
+                }, 2000);
             }
         } catch (err: any) {
             showToast(`Error: ${err.message}`, true);
@@ -767,7 +859,9 @@ export async function openIndicatorExplorer() {
         if (items.length === 0) {
             listPane.innerHTML = `
                 <div style="flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; color: var(--vela-text-secondary, #757882); gap: 10px; padding: 40px;">
-                    <div style="font-size: 28px;">🔍</div>
+                    <div style="display: flex; align-items: center; justify-content: center; width: 40px; height: 40px; border-radius: 50%; background: rgba(255,255,255,0.03); opacity: 0.5;">
+                        <svg viewBox="0 0 16 16" width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"><circle cx="7" cy="7" r="4.5"/><path d="m10.5 10.5 3.5 3.5"/></svg>
+                    </div>
                     <div style="font-size: 14px; font-weight: 600;">No indicators found</div>
                     <div style="font-size: 12px;">Try adjusting your search terms or selecting another category.</div>
                 </div>
@@ -780,7 +874,7 @@ export async function openIndicatorExplorer() {
         for (const ind of slice) {
             const card = document.createElement('div');
             const isSelected = selectedIndicator?.slug === ind.slug;
-            const meta = FAMILY_METADATA[ind.family] || { label: ind.family, icon: '•' };
+            const meta = FAMILY_METADATA[ind.family] || { label: ind.family, icon: DEFAULT_CAT_ICON };
 
             card.style.cssText = `
                 background: ${isSelected ? 'var(--vela-bg-panel, #121215)' : 'var(--vela-surface-elev, #26272e)'};

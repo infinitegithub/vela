@@ -193,17 +193,40 @@ ws.on('cell:created', ({ id }) => {
     if (cell) seedMarks(cell.chart);
 });
 
-// 9. PWA Service Worker Registration & Storage Persistence
+// 9. Session Stability Guard: prevent sudden background reloads (HMR drops / SW controller shifts)
+if (typeof window !== 'undefined') {
+    const rawReload = window.location.reload.bind(window.location);
+    let explicitReloadAllowed = false;
+    (window as any).__allowReload = () => { explicitReloadAllowed = true; };
+
+    try {
+        window.location.reload = function() {
+            if (explicitReloadAllowed) {
+                return rawReload();
+            }
+            console.warn('[Vela] Blocked spontaneous background reload to preserve active chart workspace and indicators.');
+        };
+    } catch (_) {
+        // sealed location
+    }
+
+    // Keep Cloudflare Tunnel connection alive with light periodic heartbeat
+    setInterval(() => {
+        try {
+            fetch('/api/ping', { method: 'GET', cache: 'no-store' }).catch(() => {});
+        } catch (_) {}
+    }, 25000);
+}
+
+// 10. PWA Service Worker Registration & Storage Persistence
 if (typeof window !== 'undefined' && 'serviceWorker' in navigator && !import.meta.env.DEV) {
     registerSW({
-        immediate: true,
-        onRegisteredSW(_swScriptUrl, registration) {
-            if (registration) {
-                // Periodic update check every 30 minutes
-                setInterval(() => {
-                    registration.update().catch(() => {});
-                }, 30 * 60 * 1000);
-            }
+        immediate: false,
+        onNeedRefresh() {
+            console.log('[PWA] New version available (auto-reload suppressed to protect active charts)');
+        },
+        onOfflineReady() {
+            console.log('[PWA] Workstation offline ready');
         },
         onRegisterError(error) {
             console.warn('[PWA] Service worker registration failed:', error);
