@@ -11,3 +11,9 @@ data/
 *.bak
 playground/dev-dist/
 dev-dist/
+
+.cursor/
+.vscode/
+.agents/
+mcp.json
+mcp_config.json

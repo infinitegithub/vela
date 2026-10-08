@@ -35,6 +35,10 @@ import {
     setThemeWorkspaceInstance,
     getSavedTheme,
 } from './theme-switcher';
+import {
+    registerIndicatorExplorer,
+    setExplorerWorkspaceInstance,
+} from './indicator-explorer';
 
 // 1. Register Extensions
 registerClassicIndicators();
@@ -47,6 +51,7 @@ registerReplayButton();
 registerPineEditor();
 registerTemplateManager();
 registerThemeSwitcher();
+registerIndicatorExplorer();
 
 // 2. Instantiate the multi-chart VelaWorkspace
 const ws = new VelaWorkspace('#workspace', {
@@ -108,6 +113,7 @@ setWorkspaceInstance(ws);
 setWatchlistWorkspaceInstance(ws);
 setTemplateWorkspaceInstance(ws);
 setThemeWorkspaceInstance(ws);
+setExplorerWorkspaceInstance(ws);
 
 // 4. Mount bottom account drawer (starts collapsed at 28px)
 mountBottomAccountStrip(ws);

@@ -37,6 +37,59 @@ function slugify(text: string): string {
         .replace(/\-\-+/g, '-');
 }
 
+let cachedCatalog: any = null;
+
+async function fetchLuxSourceCode(slug: string): Promise<{ name?: string; source: string } | null> {
+    const payload = {
+        jsonrpc: '2.0',
+        id: 1,
+        method: 'tools/call',
+        params: {
+            name: 'library_get_source_code',
+            arguments: {
+                slug,
+                context: 'Vela Workstation live indicator runtime compilation'
+            }
+        }
+    };
+    try {
+        const controller = new AbortController();
+        const timeout = setTimeout(() => controller.abort(), 15000);
+        const resp = await fetch('https://mcp.luxalgo.com/mcp', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'Accept': 'application/json, text/event-stream'
+            },
+            body: JSON.stringify(payload),
+            signal: controller.signal
+        });
+        clearTimeout(timeout);
+        if (!resp.ok) return null;
+        const text = await resp.text();
+        for (const line of text.split('\n')) {
+            if (line.startsWith('data: ')) {
+                const parsed = JSON.parse(line.slice(6));
+                const resText = parsed?.result?.content?.[0]?.text;
+                if (resText) {
+                    try {
+                        const data = JSON.parse(resText);
+                        const source = data.source || data.source_code;
+                        if (source) {
+                            return { name: data.name, source };
+                        }
+                    } catch {
+                        return { source: resText };
+                    }
+                }
+            }
+        }
+    } catch (e) {
+        console.warn(`[lux-mcp] Error fetching source for ${slug}:`, e);
+    }
+    return null;
+}
+
 export function templateSyncPlugin(): Plugin {
     return {
         name: 'template-sync-plugin',
@@ -45,10 +98,13 @@ export function templateSyncPlugin(): Plugin {
             const templatesDir = path.resolve(dataDir, 'templates');
             const workspacesDir = path.resolve(dataDir, 'workspaces');
             const indicatorsDir = path.resolve(dataDir, 'indicators');
+            const pineCacheDir = path.resolve(dataDir, 'pine_cache');
+            const luxCatalogFile = path.resolve(dataDir, 'luxalgo_catalog.json');
 
             fs.mkdirSync(templatesDir, { recursive: true });
             fs.mkdirSync(workspacesDir, { recursive: true });
             fs.mkdirSync(indicatorsDir, { recursive: true });
+            fs.mkdirSync(pineCacheDir, { recursive: true });
 
             // Seed default starter templates if empty
             seedDefaultTemplates(templatesDir);
@@ -62,7 +118,8 @@ export function templateSyncPlugin(): Plugin {
                     if (
                         url.pathname.startsWith('/api/templates') ||
                         url.pathname.startsWith('/api/workspace') ||
-                        url.pathname.startsWith('/api/indicators')
+                        url.pathname.startsWith('/api/indicators') ||
+                        url.pathname.startsWith('/api/lux')
                     ) {
                         res.statusCode = 204;
                         res.setHeader('Access-Control-Allow-Origin', '*');
@@ -191,6 +248,107 @@ export function templateSyncPlugin(): Plugin {
                             } else {
                                 return sendJson(res, { error: 'Indicator not found', id }, 404);
                             }
+                        }
+                    }
+
+                    // ── LuxAlgo Library Endpoints (/api/lux/*) ───────────────────────────
+                    if (url.pathname === '/api/lux/catalog' || url.pathname === '/api/lux/catalog/') {
+                        if (req.method === 'GET') {
+                            if (!cachedCatalog && fs.existsSync(luxCatalogFile)) {
+                                try {
+                                    cachedCatalog = JSON.parse(fs.readFileSync(luxCatalogFile, 'utf-8'));
+                                } catch (e) {
+                                    console.warn('[lux-api] Error reading luxalgo_catalog.json:', e);
+                                }
+                            }
+                            return sendJson(res, cachedCatalog || { total: 0, indicators: [] });
+                        }
+                    }
+
+                    if (url.pathname.startsWith('/api/lux/source/')) {
+                        const slug = decodeURIComponent(url.pathname.replace('/api/lux/source/', '')).trim();
+                        if (!slug) return sendJson(res, { error: 'Slug required' }, 400);
+
+                        // 1. Check local saved indicators first
+                        const savedPath = path.join(indicatorsDir, `${slugify(slug)}.json`);
+                        if (fs.existsSync(savedPath)) {
+                            try {
+                                const savedData = JSON.parse(fs.readFileSync(savedPath, 'utf-8'));
+                                if (savedData.script) {
+                                    return sendJson(res, {
+                                        slug,
+                                        name: savedData.name || slug,
+                                        source: savedData.script,
+                                        language: savedData.language || 'pine',
+                                        fromCache: true
+                                    });
+                                }
+                            } catch (_) {}
+                        }
+
+                        // 2. Check pine cache directory
+                        const cachePath = path.join(pineCacheDir, `${slugify(slug)}.pine`);
+                        if (fs.existsSync(cachePath)) {
+                            const cachedSource = fs.readFileSync(cachePath, 'utf-8');
+                            return sendJson(res, {
+                                slug,
+                                source: cachedSource,
+                                language: 'pine',
+                                fromCache: true
+                            });
+                        }
+
+                        // 3. Query LuxAlgo Library MCP
+                        const result = await fetchLuxSourceCode(slug);
+                        if (result && result.source) {
+                            try {
+                                fs.writeFileSync(cachePath, result.source, 'utf-8');
+                            } catch (_) {}
+                            return sendJson(res, {
+                                slug,
+                                name: result.name || slug,
+                                source: result.source,
+                                language: 'pine',
+                                fromCache: false
+                            });
+                        }
+
+                        return sendJson(res, { error: `Source code for "${slug}" not found in LuxAlgo Library` }, 404);
+                    }
+
+                    if (url.pathname === '/api/lux/favorite' || url.pathname === '/api/lux/favorite/') {
+                        if (req.method === 'POST') {
+                            const body = await readJsonBody(req);
+                            if (!body.slug || !body.source) {
+                                return sendJson(res, { error: 'Slug and source code required' }, 400);
+                            }
+                            const safeId = slugify(body.slug);
+                            const record = {
+                                id: safeId,
+                                name: body.name || safeId,
+                                description: body.description || '',
+                                script: body.source,
+                                language: body.language || 'pine',
+                                category: body.family || 'LuxAlgo Library',
+                                enabled: false,
+                                updatedAt: Date.now()
+                            };
+                            const filePath = path.join(indicatorsDir, `${safeId}.json`);
+                            fs.writeFileSync(filePath, JSON.stringify(record, null, 2), 'utf-8');
+                            return sendJson(res, { success: true, indicator: record });
+                        }
+                    }
+
+                    if (url.pathname.startsWith('/api/lux/favorite/')) {
+                        if (req.method === 'DELETE') {
+                            const slug = decodeURIComponent(url.pathname.replace('/api/lux/favorite/', '')).trim();
+                            const safeId = slugify(slug);
+                            const filePath = path.join(indicatorsDir, `${safeId}.json`);
+                            if (fs.existsSync(filePath)) {
+                                fs.unlinkSync(filePath);
+                                return sendJson(res, { success: true, id: safeId });
+                            }
+                            return sendJson(res, { error: 'Indicator not found', id: safeId }, 404);
                         }
                     }
 

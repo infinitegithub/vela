@@ -253,6 +253,22 @@ do instead.)_`. `Fixed` = bugs that existed in a **released** version only — a
 
 ---
 
+## LuxAlgo Indicator Library & Formulas (MCP)
+
+This project has the official **LuxAlgo Indicator Library MCP server** configured at `https://mcp.luxalgo.com/mcp`.
+
+Whenever the user asks you to create, modify, adapt, or troubleshoot an indicator or trading study:
+1. **Consult the Library First**: Do not create indicator math from scratch or guess parameters. Query the LuxAlgo library to find reference implementations, mathematical definitions, and canonical formulas.
+2. **MCP Tools Available**:
+   - `library_search`: Search 800+ technical concepts and ready-to-use indicator implementations (e.g. `query: 'supertrend'`, `query: 'order blocks'`).
+   - `library_get_concept`: Retrieve complete markdown documentation, formulas, and trader logic for concepts.
+   - `library_get_indicator`: Retrieve metadata, parameters, and family taxonomy for an indicator.
+   - `library_get_source_code`: Retrieve full, working source code (Pine Script / TradingView).
+3. **CLI Access**: You can run `python3 scripts/luxalgo_mcp.py <search|concept|indicator|code> <slug>` directly from the project directory.
+4. **Vela Integration**: Use reference formulas to implement native Vela indicators or execute via Pine Script runtime (`@luxalgo/vela-pinets`).
+
+---
+
 **In short:** read first, surface the real decisions up front, change the smallest
 correct thing at the right seam, gate it four ways, prove it in the playground with
 probes that assert what users actually see, distrust the happy path (and your own

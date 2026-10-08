@@ -1,6 +1,38 @@
 import { setActiveSymbol } from './trade-suite';
 import { registerSidePanel, registerIcon, registerStatePersistence, registerSymbolFavorite } from '../src/plugin';
 import type { VelaWorkspace } from '../src/workspace';
+import { tickerIconEl, baseOf } from '../src/widget/symbol-icon';
+import { ledgerCryptoIconUrl } from '../src/data/symbol-base';
+import { injectStyles } from '../src/ui/styles';
+
+const WATCHLIST_PANEL_STYLE_ID = 'vela-watchlist-panel-styles';
+const WATCHLIST_PANEL_CSS = `
+.vela-wl-avatar {
+    width: 20px;
+    height: 20px;
+    border-radius: 50%;
+    flex: none;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    color: var(--vela-fg-on-fill, #ffffff);
+    font-size: 10px;
+    font-weight: 700;
+    overflow: hidden;
+    user-select: none;
+    background: var(--vela-bg-chip, #292a2f);
+}
+.vela-wl-avatar img {
+    width: 100%;
+    height: 100%;
+    border-radius: 50%;
+    display: block;
+    object-fit: cover;
+}
+.wl-row:hover {
+    background: var(--vela-bg-hover, #2b2d34) !important;
+}
+`;
 
 // Register custom icons
 registerIcon('watchlist', `<svg viewBox="0 0 16 16" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M2.5 3.5h11M2.5 8h11M2.5 12.5h7"/><circle cx="12.5" cy="12.5" r="1.5"/></svg>`);
@@ -76,141 +108,212 @@ export function setWatchlistActiveSymbol(sym: string) {
 }
 
 interface WatchlistItem {
-    symbol: string;        // e.g. BTC-USD
-    binanceSymbol: string; // e.g. BTCUSDT
+    symbol: string;        // e.g. BTC-USD, BTC-PERP
+    binanceSymbol: string; // e.g. BTCUSDT, BTCUSDT.P
+    canonicalSymbol?: string; // e.g. BINANCE:BTCUSDT, BINANCE:BTCUSDT.P
     name: string;
     price: number;
     change: number;
     changePercent: number;
     volume: number;
-    iconSvg: string;
+    high?: number;
+    low?: number;
+    turnover?: number;
+    iconSvg?: string;      // legacy/fallback SVG
+    iconUrl?: string;      // Ledger CDN URL or custom
+    isFutures?: boolean;
 }
 
-// Default high-liquidity crypto assets matching user screenshot
+// Default high-liquidity crypto assets matching user's view
 const DEFAULT_WATCHLIST: WatchlistItem[] = [
     {
         symbol: 'BTC-USD',
         binanceSymbol: 'BTCUSDT',
+        canonicalSymbol: 'BINANCE:BTCUSDT',
         name: 'Bitcoin',
-        price: 86409.64,
-        change: 1560.91,
-        changePercent: 1.84,
-        volume: 3340,
-        iconSvg: `<svg viewBox="0 0 24 24" width="20" height="20"><circle cx="12" cy="12" r="11" fill="#F7931A"/><path d="M16.5 10.5c.3-1.8-1.1-2.8-3-3.4l.6-2.5-1.5-.4-.6 2.4c-.4-.1-.8-.2-1.2-.3l.6-2.4-1.5-.4-.6 2.5c-.3-.1-.7-.2-1-.3l-2.1-.5-.4 1.7s1.1.3 1.1.3c.6.2.7.5.7.8l-1.7 6.8c-.1.2-.3.5-.7.4 0 0-1.1-.3-1.1-.3l-.7 1.8 2 .5c.4.1.7.2 1.1.3l-.6 2.5 1.5.4.6-2.5c.4.1.8.2 1.2.3l-.6 2.5 1.5.4.6-2.5c2.6.5 4.5.3 5.3-2.1.6-1.9 0-3-.1.4-1.3-.9.9-1.5.9-2.5zm-2.8 5c-.5 1.9-3.7.9-4.7.6l.8-3.4c1 .3 4.4 1 3.9 2.8zm.5-5.1c-.4 1.7-3.1.8-3.9.6l.8-3.1c.9.2 3.5.7 3.1 2.5z" fill="#FFF"/></svg>`
+        price: 82574.00,
+        change: -449.99,
+        changePercent: -0.54,
+        volume: 16312,
     },
     {
         symbol: 'ETH-USD',
         binanceSymbol: 'ETHUSDT',
+        canonicalSymbol: 'BINANCE:ETHUSDT',
         name: 'Ethereum',
-        price: 2744.74,
-        change: 39.24,
-        changePercent: 1.45,
-        volume: 40900,
-        iconSvg: `<svg viewBox="0 0 24 24" width="20" height="20"><circle cx="12" cy="12" r="11" fill="#627EEA"/><path d="M12 4v6.8l5.8 2.6L12 4z" fill="#FFF" fill-opacity=".6"/><path d="M12 4L6.2 13.4 12 10.8V4z" fill="#FFF"/><path d="M12 15.3v4.7l5.8-8.1L12 15.3z" fill="#FFF" fill-opacity=".6"/><path d="M12 20V15.3L6.2 11.9 12 20z" fill="#FFF"/><path d="M12 14.3l5.8-3.5L12 8.2v6.1z" fill="#FFF" fill-opacity=".2"/><path d="M6.2 10.8l5.8 3.5V8.2l-5.8 2.6z" fill="#FFF" fill-opacity=".6"/></svg>`
+        price: 2527.55,
+        change: -31.72,
+        changePercent: -1.24,
+        volume: 308032,
     },
     {
         symbol: 'SOL-USD',
         binanceSymbol: 'SOLUSDT',
+        canonicalSymbol: 'BINANCE:SOLUSDT',
         name: 'Solana',
-        price: 121.76,
-        change: 3.38,
-        changePercent: 2.86,
-        volume: 420500,
-        iconSvg: `<svg viewBox="0 0 24 24" width="20" height="20"><circle cx="12" cy="12" r="11" fill="#000"/><path d="M6.5 15.8h9.3c.4 0 .7.2.9.5l1.6 1.6c.3.3.1.8-.3.8H8.7c-.4 0-.7-.2-.9-.5l-1.6-1.6c-.3-.3-.1-.8.3-.8zm0-4.6h9.3c.4 0 .7.2.9.5l1.6 1.6c.3.3.1.8-.3.8H8.7c-.4 0-.7-.2-.9-.5l-1.6-1.6c-.3-.3-.1-.8.3-.8zm11.8-4.6c.3.3.1.8-.3.8H8.7c-.4 0-.7-.2-.9-.5L6.2 5.3c-.3-.3-.1-.8.3-.8h9.3c.4 0 .7.2.9.5l1.6 1.6z" fill="url(#sol-g)"/><defs><linearGradient id="sol-g" x1="6.2" y1="4.5" x2="18.3" y2="18.7" gradientUnits="userSpaceOnUse"><stop stop-color="#00FFA3"/><stop offset="1" stop-color="#DC1FFF"/></linearGradient></defs></svg>`
+        price: 112.57,
+        change: -3.33,
+        changePercent: -2.87,
+        volume: 2120000,
     },
     {
         symbol: 'XRP-USD',
         binanceSymbol: 'XRPUSDT',
+        canonicalSymbol: 'BINANCE:XRPUSDT',
         name: 'Ripple',
-        price: 1.5329,
-        change: 0.0391,
-        changePercent: 2.62,
-        volume: 43690000,
-        iconSvg: `<svg viewBox="0 0 24 24" width="20" height="20"><circle cx="12" cy="12" r="11" fill="#23292F"/><path d="M17.8 6.5h-1.6l-3.2 3.2c-.6.6-1.4.6-2 0L7.8 6.5H6.2l3.7 3.7c1.1 1.1 2.9 1.1 4 0l3.9-3.7zm-11.6 11h1.6l3.2-3.2c.6-.6 1.4-.6 2 0l3.2 3.2h1.6l-3.7-3.7c-1.1-1.1-2.9-1.1-4 0l-3.9 3.7z" fill="#FFF"/></svg>`
+        price: 1.41,
+        change: -0.03,
+        changePercent: -1.77,
+        volume: 127690000,
     },
     {
         symbol: 'DOGE-USD',
         binanceSymbol: 'DOGEUSDT',
+        canonicalSymbol: 'BINANCE:DOGEUSDT',
         name: 'Dogecoin',
-        price: 0.09639,
-        change: 0.00209,
-        changePercent: 2.22,
-        volume: 65120000,
-        iconSvg: `<svg viewBox="0 0 24 24" width="20" height="20"><circle cx="12" cy="12" r="11" fill="#C2A633"/><path d="M8.5 7h4c2.8 0 4.5 1.8 4.5 5s-1.7 5-4.5 5h-4V7zm2.2 8h1.6c1.6 0 2.5-1.1 2.5-3s-.9-3-2.5-3h-1.6v6zm-4.2-2.5h5.5v-1H6.5v1z" fill="#FFF"/></svg>`
+        price: 0.08738,
+        change: -0.0011,
+        changePercent: -1.20,
+        volume: 912530000,
+    },
+    {
+        symbol: 'LINK-USD',
+        binanceSymbol: 'LINKUSDT',
+        canonicalSymbol: 'BINANCE:LINKUSDT',
+        name: 'Chainlink',
+        price: 13.00,
+        change: -0.38,
+        changePercent: -2.83,
+        volume: 1680000,
+    },
+    {
+        symbol: 'AVAX-USD',
+        binanceSymbol: 'AVAXUSDT',
+        canonicalSymbol: 'BINANCE:AVAXUSDT',
+        name: 'Avalanche',
+        price: 10.64,
+        change: -0.64,
+        changePercent: -5.64,
+        volume: 5120000,
+    },
+    {
+        symbol: 'BNB-USD',
+        binanceSymbol: 'BNBUSDT',
+        canonicalSymbol: 'BINANCE:BNBUSDT',
+        name: 'BNB',
+        price: 758.80,
+        change: -8.35,
+        changePercent: -1.09,
+        volume: 88900,
+    },
+    {
+        symbol: 'SUI-USD',
+        binanceSymbol: 'SUIUSDT',
+        canonicalSymbol: 'BINANCE:SUIUSDT',
+        name: 'Sui',
+        price: 1.10,
+        change: -0.02,
+        changePercent: -1.38,
+        volume: 63510000,
+    },
+    {
+        symbol: 'BTC-PERP',
+        binanceSymbol: 'BTCUSDT.P',
+        canonicalSymbol: 'BINANCE:BTCUSDT.P',
+        name: 'BTC Perpetual',
+        price: 82540.10,
+        change: -410.00,
+        changePercent: -0.49,
+        volume: 325200,
+        isFutures: true,
+    },
+    {
+        symbol: 'ETH-PERP',
+        binanceSymbol: 'ETHUSDT.P',
+        canonicalSymbol: 'BINANCE:ETHUSDT.P',
+        name: 'ETH Perpetual',
+        price: 2526.80,
+        change: -32.10,
+        changePercent: -1.25,
+        volume: 1450000,
+        isFutures: true,
+    },
+    {
+        symbol: 'SOL-PERP',
+        binanceSymbol: 'SOLUSDT.P',
+        canonicalSymbol: 'BINANCE:SOLUSDT.P',
+        name: 'SOL Perpetual',
+        price: 112.50,
+        change: -3.30,
+        changePercent: -2.85,
+        volume: 4890000,
+        isFutures: true,
+    },
+    {
+        symbol: 'NEAR-USD',
+        binanceSymbol: 'NEARUSDT',
+        canonicalSymbol: 'BINANCE:NEARUSDT',
+        name: 'NEAR Protocol',
+        price: 3.45,
+        change: -0.08,
+        changePercent: -2.26,
+        volume: 18450000,
+    },
+    {
+        symbol: 'PEPE-USD',
+        binanceSymbol: 'PEPEUSDT',
+        canonicalSymbol: 'BINANCE:PEPEUSDT',
+        name: 'Pepe',
+        price: 0.0000085,
+        change: 0.0000002,
+        changePercent: 2.41,
+        volume: 142000000,
     },
     {
         symbol: 'SPY-USD',
         binanceSymbol: 'SPYUSDT',
+        canonicalSymbol: 'SPYUSDT',
         name: 'SPDR S&P 500 ETF',
         price: 575.20,
         change: 3.40,
         changePercent: 0.59,
         volume: 852000,
-        iconSvg: `<svg viewBox="0 0 24 24" width="20" height="20"><circle cx="12" cy="12" r="11" fill="#1E3A8A"/><text x="12" y="15" font-family="sans-serif" font-size="9" font-weight="bold" fill="#FFF" text-anchor="middle">SPY</text></svg>`
     },
     {
         symbol: 'XAU-USD',
         binanceSymbol: 'XAUUSDT',
-        name: 'Gold Perpetual',
+        canonicalSymbol: 'XAUUSDT',
+        name: 'Gold',
         price: 2650.50,
         change: 12.80,
         changePercent: 0.49,
         volume: 320000,
-        iconSvg: `<svg viewBox="0 0 24 24" width="20" height="20"><circle cx="12" cy="12" r="11" fill="#EAB308"/><text x="12" y="15" font-family="sans-serif" font-size="9" font-weight="bold" fill="#000" text-anchor="middle">XAU</text></svg>`
     },
-    {
-        symbol: 'ADA-USD',
-        binanceSymbol: 'ADAUSDT',
-        name: 'Cardano',
-        price: 0.25522,
-        change: 0.00893,
-        changePercent: 3.63,
-        volume: 27080000,
-        iconSvg: `<svg viewBox="0 0 24 24" width="20" height="20"><circle cx="12" cy="12" r="11" fill="#0033AD"/><circle cx="12" cy="12" r="3" fill="#FFF"/><circle cx="12" cy="6" r="1.2" fill="#FFF"/><circle cx="12" cy="18" r="1.2" fill="#FFF"/><circle cx="6" cy="12" r="1.2" fill="#FFF"/><circle cx="18" cy="12" r="1.2" fill="#FFF"/></svg>`
-    },
-    {
-        symbol: 'LINK-USD',
-        binanceSymbol: 'LINKUSDT',
-        name: 'Chainlink',
-        price: 14.355,
-        change: -0.022,
-        changePercent: -0.15,
-        volume: 723800,
-        iconSvg: `<svg viewBox="0 0 24 24" width="20" height="20"><circle cx="12" cy="12" r="11" fill="#375BD2"/><path d="M12 6.5l-4.5 2.6v5.2L12 16.9l4.5-2.6V9.1L12 6.5zm-2.8 6.7v-2.4L12 9.2l2.8 1.6v2.4L12 14.8l-2.8-1.6z" fill="#FFF"/></svg>`
-    },
-    {
-        symbol: 'AVAX-USD',
-        binanceSymbol: 'AVAXUSDT',
-        name: 'Avalanche',
-        price: 11.129,
-        change: 0.149,
-        changePercent: 1.36,
-        volume: 555000,
-        iconSvg: `<svg viewBox="0 0 24 24" width="20" height="20"><circle cx="12" cy="12" r="11" fill="#E84142"/><path d="M15.8 17.5h3.4c.5 0 .8-.6.5-1L13.5 5.5c-.3-.5-.9-.5-1.2 0L9.8 10l2.5 4.3 1.7-3 1.8 6.2zm-6.2 0H5.3c-.5 0-.8-.6-.5-1l3.5-6.2 2 3.5-1.7 3.7z" fill="#FFF"/></svg>`
-    },
-    {
-        symbol: 'BNB-USD',
-        binanceSymbol: 'BNBUSDT',
-        name: 'BNB',
-        price: 775.24,
-        change: 3.49,
-        changePercent: 0.45,
-        volume: 9800,
-        iconSvg: `<svg viewBox="0 0 24 24" width="20" height="20"><circle cx="12" cy="12" r="11" fill="#F3BA2F"/><path d="M12 6.2l2.3 2.3-2.3 2.3-2.3-2.3L12 6.2zm4.1 4.1l2.3 2.3-2.3 2.3-2.3-2.3 2.3-2.3zm-8.2 0l2.3 2.3-2.3 2.3-2.3-2.3 2.3-2.3zm4.1 4.1l2.3 2.3-2.3 2.3-2.3-2.3 2.3-2.3z" fill="#FFF"/></svg>`
-    },
-    {
-        symbol: 'SUI-USD',
-        binanceSymbol: 'SUIUSDT',
-        name: 'Sui',
-        price: 2.845,
-        change: 0.125,
-        changePercent: 4.60,
-        volume: 12500000,
-        iconSvg: `<svg viewBox="0 0 24 24" width="20" height="20"><circle cx="12" cy="12" r="11" fill="#4DA2FF"/><path d="M12 5.5c-2.8 3.5-4.5 6-4.5 8.5 0 2.5 2 4.5 4.5 4.5s4.5-2 4.5-4.5c0-2.5-1.7-5-4.5-8.5z" fill="#FFF"/></svg>`
-    }
 ];
 
 const WATCHLIST_STORAGE_KEY = 'vela-play:watchlist-store';
+
+function getBaseAsset(item: { binanceSymbol?: string; symbol?: string; name?: string }): string {
+    const raw = item.binanceSymbol || item.symbol || '';
+    const clean = raw.replace(/^(BINANCE|COINBASE|HYPERLIQUID):/i, '').replace(/\.P$/i, '');
+    const base = baseOf({ ticker: clean, description: item.name });
+    return (base || clean.replace(/[-_/]?(USDT|USDC|USD|BUSD|PERP)$/i, '')).toUpperCase();
+}
+
+function renderItemIcon(item: WatchlistItem, doc: Document): HTMLElement {
+    const base = getBaseAsset(item);
+    const iconUrl = item.iconUrl || ledgerCryptoIconUrl(base);
+    if (iconUrl) {
+        return tickerIconEl(doc, base, item.name || base, 'vela-wl-avatar', iconUrl);
+    }
+    if (item.iconSvg) {
+        const wrap = doc.createElement('span');
+        wrap.className = 'vela-wl-avatar';
+        wrap.innerHTML = item.iconSvg;
+        return wrap;
+    }
+    return tickerIconEl(doc, base, item.name || base, 'vela-wl-avatar');
+}
 
 function loadInitialWatchlists(): { activeList: string; lists: Record<string, WatchlistItem[]> } {
     try {
@@ -237,6 +340,7 @@ let { activeList: currentListName, lists: watchlistsStore } = loadInitialWatchli
 let watchlistItems: WatchlistItem[] = watchlistsStore[currentListName] || [...DEFAULT_WATCHLIST];
 let renderWatchlistRowsFn: (() => void) | null = null;
 let updateWlTitleFn: (() => void) | null = null;
+let triggerTickerUpdateFn: (() => void) | null = null;
 
 function saveWatchlistStore() {
     watchlistsStore[currentListName] = [...watchlistItems];
@@ -256,7 +360,7 @@ function saveWatchlistStore() {
     }
 }
 
-// ── Hook Watchlist into Vela's Unified State Persistence Document ─────────────
+// ── Hook Watchlist into Vela\'s Unified State Persistence Document ─────────────
 registerStatePersistence({
     key: 'vela.watchlist',
     scope: 'global',
@@ -267,7 +371,9 @@ registerStatePersistence({
             cleanLists[listName] = (items || []).map(x => ({
                 symbol: x.symbol,
                 binanceSymbol: x.binanceSymbol,
+                canonicalSymbol: x.canonicalSymbol,
                 name: x.name,
+                isFutures: x.isFutures,
             }));
         }
         return {
@@ -280,16 +386,26 @@ registerStatePersistence({
             if (payload.lists && typeof payload.lists === 'object' && Object.keys(payload.lists).length > 0) {
                 const restoredStore: Record<string, WatchlistItem[]> = {};
                 for (const [k, list] of Object.entries(payload.lists as Record<string, any[]>)) {
-                    restoredStore[k] = (list || []).map(item => ({
-                        symbol: item.symbol || `${item.binanceSymbol}-USD`,
-                        binanceSymbol: item.binanceSymbol || item.symbol,
-                        name: item.name || item.binanceSymbol || 'Ticker',
-                        price: typeof item.price === 'number' ? item.price : 1.0,
-                        change: typeof item.change === 'number' ? item.change : 0.0,
-                        changePercent: typeof item.changePercent === 'number' ? item.changePercent : 0.0,
-                        volume: typeof item.volume === 'number' ? item.volume : 1000,
-                        iconSvg: item.iconSvg || `<svg viewBox="0 0 24 24" width="20" height="20"><circle cx="12" cy="12" r="11" fill="#363c4e"/><text x="12" y="16" font-size="11" fill="#fff" text-anchor="middle" font-weight="bold">${(item.name || item.symbol || '?').charAt(0)}</text></svg>`,
-                    }));
+                    restoredStore[k] = (list || []).map(item => {
+                        const isFutures = item.isFutures || (item.binanceSymbol || item.symbol || '').endsWith('.P');
+                        const base = getBaseAsset(item);
+                        return {
+                            symbol: item.symbol || `${item.binanceSymbol}-USD`,
+                            binanceSymbol: item.binanceSymbol || item.symbol,
+                            canonicalSymbol: item.canonicalSymbol || `BINANCE:${item.binanceSymbol || item.symbol}`,
+                            name: item.name || item.binanceSymbol || 'Ticker',
+                            price: typeof item.price === 'number' ? item.price : 1.0,
+                            change: typeof item.change === 'number' ? item.change : 0.0,
+                            changePercent: typeof item.changePercent === 'number' ? item.changePercent : 0.0,
+                            volume: typeof item.volume === 'number' ? item.volume : 1000,
+                            high: typeof item.high === 'number' ? item.high : undefined,
+                            low: typeof item.low === 'number' ? item.low : undefined,
+                            turnover: typeof item.turnover === 'number' ? item.turnover : undefined,
+                            iconUrl: item.iconUrl || ledgerCryptoIconUrl(base),
+                            iconSvg: item.iconSvg,
+                            isFutures: isFutures,
+                        };
+                    });
                 }
                 watchlistsStore = restoredStore;
             }
@@ -307,10 +423,10 @@ registerStatePersistence({
             } catch {}
             if (updateWlTitleFn) updateWlTitleFn();
             if (renderWatchlistRowsFn) renderWatchlistRowsFn();
+            if (triggerTickerUpdateFn) triggerTickerUpdateFn();
         }
     },
 });
-
 
 // Helper to check and toggle watchlist membership for symbol picker (checks across all lists)
 export function isSymbolInWatchlist(sym: string): boolean {
@@ -318,7 +434,7 @@ export function isSymbolInWatchlist(sym: string): boolean {
     const clean = raw.replace('-', '').replace('/', '');
     return Object.values(watchlistsStore).some(items => (items || []).some(x => {
         const xNorm = (x.binanceSymbol || x.symbol).toUpperCase().replace('-', '').replace('/', '');
-        return xNorm === clean || xNorm === raw || x.symbol.toUpperCase() === raw;
+        return xNorm === clean || xNorm === raw || x.symbol.toUpperCase() === raw || (x.canonicalSymbol && x.canonicalSymbol.toUpperCase() === sym.toUpperCase());
     }));
 }
 
@@ -327,7 +443,7 @@ export function toggleWatchlistSymbol(rawSym: string, descriptor?: any): boolean
     const clean = raw.replace('-', '').replace('/', '');
     const existingIndex = watchlistItems.findIndex(x => {
         const xNorm = (x.binanceSymbol || x.symbol).toUpperCase().replace('-', '').replace('/', '');
-        return xNorm === clean || xNorm === raw || x.symbol.toUpperCase() === raw;
+        return xNorm === clean || xNorm === raw || x.symbol.toUpperCase() === raw || (x.canonicalSymbol && x.canonicalSymbol.toUpperCase() === rawSym.toUpperCase());
     });
 
     if (existingIndex >= 0) {
@@ -336,21 +452,30 @@ export function toggleWatchlistSymbol(rawSym: string, descriptor?: any): boolean
         renderWatchlistRowsFn?.();
         return false;
     } else {
-        const isFutures = raw.endsWith('.P');
-        const baseName = descriptor?.description?.split('/')?.[0]?.trim() || raw.replace('.P', '').replace('USDT', '').replace('USD', '');
-        const display = raw.endsWith('USDT') ? `${raw.replace('USDT', '')}-USD` : (raw.includes('-') ? raw : `${raw}-USD`);
+        const isFutures = raw.endsWith('.P') || rawSym.endsWith('.P');
+        const baseName = descriptor?.description?.split('/')?.[0]?.trim() || raw.replace('.P', '').replace(/USDT$/, '').replace(/USD$/, '');
+        const display = isFutures
+            ? `${raw.replace('.P', '').replace(/USDT$/, '')}-PERP`
+            : (raw.endsWith('USDT') ? `${raw.replace(/USDT$/, '')}-USD` : (raw.includes('-') ? raw : `${raw}-USD`));
+        const canonical = descriptor?.ticker || (rawSym.includes(':') ? rawSym : `BINANCE:${raw}`);
+        const base = baseOf({ ticker: raw.replace(/\.P$/i, ''), description: descriptor?.description || baseName }) || baseName;
+        const iconUrl = ledgerCryptoIconUrl(base);
+
         watchlistItems.unshift({
             symbol: display,
             binanceSymbol: raw,
-            name: baseName,
+            canonicalSymbol: canonical,
+            name: descriptor?.description || baseName,
             price: 1.0,
             change: 0.0,
             changePercent: 0.0,
             volume: 1000,
-            iconSvg: `<svg viewBox="0 0 24 24" width="20" height="20"><circle cx="12" cy="12" r="11" fill="#363c4e"/><text x="12" y="16" font-size="11" fill="#fff" text-anchor="middle" font-weight="bold">${baseName.charAt(0)}</text></svg>`
+            iconUrl: iconUrl,
+            isFutures: isFutures,
         });
         saveWatchlistStore();
         renderWatchlistRowsFn?.();
+        triggerTickerUpdateFn?.();
         return true;
     }
 }
@@ -369,10 +494,11 @@ export function registerWatchlistSidePanel() {
         order: 5, // Sits first among panel toggles (before dataWindow: 10, objects: 20)
         width: 340,
         minWidth: 280,
-        maxWidth: 620,
+        maxWidth: 850,
         resizable: true,
         overlay: false,
         mount: (ctx, body, header) => {
+            injectStyles(WATCHLIST_PANEL_STYLE_ID, WATCHLIST_PANEL_CSS, body.ownerDocument);
             // Replace header title so tab buttons claim the entire header surface
             header.setTitle('');
             body.style.padding = '0';
@@ -627,10 +753,36 @@ export function registerWatchlistSidePanel() {
                 <button id="wl-add-btn" title="Add symbol" style="background: transparent; border: none; color: var(--vela-text-secondary, #757882); cursor: pointer; font-size: 16px; padding: 2px 4px;">+</button>
                 <button title="Settings" style="background: transparent; border: none; color: var(--vela-text-secondary, #757882); cursor: pointer; font-size: 12px; padding: 2px 4px;">⊶</button>
                 <button title="More" style="background: transparent; border: none; color: var(--vela-text-secondary, #757882); cursor: pointer; font-size: 14px; padding: 2px 4px;">⋮</button>
-                <button title="Expand" style="background: transparent; border: none; color: var(--vela-text-secondary, #757882); cursor: pointer; font-size: 12px; padding: 2px 4px;">⤢</button>
+                <button id="wl-expand-btn" title="Expand" style="background: transparent; border: none; color: var(--vela-text-secondary, #757882); cursor: pointer; font-size: 13px; padding: 2px 4px; transition: color 0.15s ease;">⤢</button>
             `;
 
             wlSubheader.append(wlTitleGroup, wlActions);
+
+            // Expand / Collapse state & toggle button
+            const expandBtn = wlActions.querySelector('#wl-expand-btn') as HTMLButtonElement;
+            let isExpanded = false;
+
+            const applyExpandState = () => {
+                const panelEl = body.closest<HTMLElement>('.vela-panel');
+                if (panelEl) {
+                    panelEl.style.setProperty('--vela-panel-w', isExpanded ? '640px' : '340px');
+                }
+                if (expandBtn) {
+                    expandBtn.title = isExpanded ? 'Collapse' : 'Expand';
+                    expandBtn.textContent = isExpanded ? '⤡' : '⤢';
+                    expandBtn.style.color = isExpanded ? 'var(--vela-primary, #3b82f6)' : 'var(--vela-text-secondary, #757882)';
+                }
+                renderTableHeader();
+                renderWatchlistRows();
+            };
+
+            if (expandBtn) {
+                expandBtn.addEventListener('click', (ev) => {
+                    ev.stopPropagation();
+                    isExpanded = !isExpanded;
+                    applyExpandState();
+                });
+            }
 
             // Inline Add Symbol search box
             const addSearchBox = document.createElement('div');
@@ -650,11 +802,10 @@ export function registerWatchlistSidePanel() {
                 }
             });
 
-            // Table Header: Grip | Symbol | Price | Chg | Chg% | Vol | [Del]
+            // Table Header: Dynamic grid based on expanded state
             const wlTableHead = document.createElement('div');
             wlTableHead.style.cssText = `
                 display: grid;
-                grid-template-columns: 16px 2fr 1.3fr 1.1fr 1.1fr 0.9fr 20px;
                 gap: 4px;
                 padding: 6px 10px;
                 font-size: 10px;
@@ -663,42 +814,85 @@ export function registerWatchlistSidePanel() {
                 border-bottom: 1px solid var(--vela-border, #262629);
                 user-select: none;
             `;
-            wlTableHead.innerHTML = `
-                <div></div>
-                <div style="text-align: left;">Symbol</div>
-                <div style="text-align: right;">Price</div>
-                <div style="text-align: right;">Chg</div>
-                <div style="text-align: right;">Chg%</div>
-                <div style="text-align: right;">Vol</div>
-                <div></div>
-            `;
+
+            const renderTableHeader = () => {
+                if (isExpanded) {
+                    wlTableHead.style.gridTemplateColumns = '16px 2.2fr 1.2fr 1fr 1fr 1.1fr 1.1fr 1fr 1.2fr 20px';
+                    wlTableHead.innerHTML = `
+                        <div></div>
+                        <div style="text-align: left;">Symbol</div>
+                        <div style="text-align: right;">Price</div>
+                        <div style="text-align: right;">Chg</div>
+                        <div style="text-align: right;">Chg%</div>
+                        <div style="text-align: right;">24h High</div>
+                        <div style="text-align: right;">24h Low</div>
+                        <div style="text-align: right;">Vol</div>
+                        <div style="text-align: right;">Turnover</div>
+                        <div></div>
+                    `;
+                } else {
+                    wlTableHead.style.gridTemplateColumns = '16px 2fr 1.3fr 1.1fr 1.1fr 0.9fr 20px';
+                    wlTableHead.innerHTML = `
+                        <div></div>
+                        <div style="text-align: left;">Symbol</div>
+                        <div style="text-align: right;">Price</div>
+                        <div style="text-align: right;">Chg</div>
+                        <div style="text-align: right;">Chg%</div>
+                        <div style="text-align: right;">Vol</div>
+                        <div></div>
+                    `;
+                }
+            };
+            renderTableHeader();
 
             const wlList = document.createElement('div');
             wlList.style.cssText = `flex: 1; overflow-y: auto; overflow-x: hidden;`;
 
             viewWatchlist.append(wlSubheader, addSearchBox, wlTableHead, wlList);
 
-            const formatVol = (v: number) => {
+            const formatPrice = (p?: number) => {
+                if (p === undefined || isNaN(p) || p === 0) return '-';
+                return p.toLocaleString(undefined, {
+                    minimumFractionDigits: p < 1 ? 4 : 2,
+                    maximumFractionDigits: p < 1 ? 5 : 2
+                });
+            };
+
+            const formatVol = (v?: number) => {
+                if (!v || isNaN(v)) return '-';
+                if (v >= 1_000_000_000) return `${(v / 1_000_000_000).toFixed(2)}B`;
                 if (v >= 1_000_000) return `${(v / 1_000_000).toFixed(2)}M`;
                 if (v >= 1_000) return `${(v / 1_000).toFixed(1)}K`;
                 return v.toFixed(0);
+            };
+
+            const formatTurnover = (t?: number) => {
+                if (!t || isNaN(t)) return '-';
+                if (t >= 1_000_000_000) return `$${(t / 1_000_000_000).toFixed(2)}B`;
+                if (t >= 1_000_000) return `$${(t / 1_000_000).toFixed(2)}M`;
+                if (t >= 1_000) return `$${(t / 1_000).toFixed(1)}K`;
+                return `$${t.toFixed(0)}`;
             };
 
             let draggedIdx: number | null = null;
 
             const renderWatchlistRows = () => {
                 wlList.innerHTML = '';
+                const colTemplate = isExpanded
+                    ? '16px 2.2fr 1.2fr 1fr 1fr 1.1fr 1.1fr 1fr 1.2fr 20px'
+                    : '16px 2fr 1.3fr 1.1fr 1.1fr 0.9fr 20px';
+
                 for (let i = 0; i < watchlistItems.length; i++) {
                     const item = watchlistItems[i];
                     const itemIdx = i;
-                    const isSelected = item.binanceSymbol === activeSymbol;
+                    const isSelected = item.binanceSymbol === activeSymbol || item.symbol === activeSymbol;
                     const row = document.createElement('div');
                     row.className = 'wl-row';
                     row.draggable = true;
                     row.dataset.idx = String(i);
                     row.style.cssText = `
                         display: grid;
-                        grid-template-columns: 16px 2fr 1.3fr 1.1fr 1.1fr 0.9fr 20px;
+                        grid-template-columns: ${colTemplate};
                         gap: 4px;
                         padding: 7px 10px;
                         font-size: 12px;
@@ -807,9 +1001,14 @@ export function registerWatchlistSidePanel() {
                         setActiveSymbol(item.binanceSymbol);
                         if (wsInstance) {
                             try {
-                                wsInstance.active.setSymbol(item.binanceSymbol);
+                                const symToLoad = item.canonicalSymbol || (item.binanceSymbol.includes(':') ? item.binanceSymbol : `BINANCE:${item.binanceSymbol}`);
+                                wsInstance.active.setSymbol(symToLoad);
                             } catch (e) {
-                                console.error('Failed to set symbol', e);
+                                try {
+                                    wsInstance.active.setSymbol(item.binanceSymbol);
+                                } catch (e2) {
+                                    console.error('Failed to set symbol', e2);
+                                }
                             }
                         }
                         renderWatchlistRows();
@@ -819,25 +1018,60 @@ export function registerWatchlistSidePanel() {
                     const chgColor = isUp ? 'var(--vela-up, #a7be94)' : 'var(--vela-down, #af6870)';
                     const sign = isUp ? '+' : '';
 
-                    row.innerHTML = `
-                        <div style="display: flex; align-items: center; justify-content: center; font-size: 12px; color: var(--vela-text-secondary, #757882); opacity: 0.4; cursor: grab;" title="Drag to reorder">⋮⋮</div>
-                        <div style="display: flex; align-items: center; gap: 6px; min-width: 0;">
-                            <div style="flex: none; display: flex; align-items: center;">${item.iconSvg}</div>
-                            <span style="font-weight: 700; color: var(--vela-text-primary, #eeeef1); overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">${item.symbol}</span>
-                        </div>
-                        <div style="text-align: right; color: var(--vela-text-primary, #eeeef1); font-weight: 600; font-family: ui-monospace, monospace; font-size: 11px;">
-                            ${item.price.toLocaleString(undefined, { minimumFractionDigits: item.price < 1 ? 4 : 2, maximumFractionDigits: item.price < 1 ? 5 : 2 })}
-                        </div>
-                        <div style="text-align: right; color: ${chgColor}; font-family: ui-monospace, monospace; font-size: 11px;">
-                            ${sign}${item.change.toFixed(item.price < 1 ? 4 : 2)}
-                        </div>
-                        <div style="text-align: right; color: ${chgColor}; font-weight: 600; font-family: ui-monospace, monospace; font-size: 11px;">
-                            ${sign}${item.changePercent.toFixed(2)}%
-                        </div>
-                        <div style="text-align: right; color: var(--vela-text-secondary, #757882); font-size: 10px; font-family: ui-monospace, monospace;">
-                            ${formatVol(item.volume)}
-                        </div>
-                    `;
+                    // Drag grip
+                    const gripEl = document.createElement('div');
+                    gripEl.style.cssText = 'display: flex; align-items: center; justify-content: center; font-size: 12px; color: var(--vela-text-secondary, #757882); opacity: 0.4; cursor: grab;';
+                    gripEl.title = 'Drag to reorder';
+                    gripEl.textContent = '⋮⋮';
+
+                    // Symbol with official logo
+                    const symContainer = document.createElement('div');
+                    symContainer.style.cssText = 'display: flex; align-items: center; gap: 6px; min-width: 0;';
+                    const iconWrap = renderItemIcon(item, row.ownerDocument);
+                    const symLabel = document.createElement('span');
+                    symLabel.style.cssText = 'font-weight: 700; color: var(--vela-text-primary, #eeeef1); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 11px;';
+                    symLabel.textContent = item.symbol;
+                    symContainer.append(iconWrap, symLabel);
+
+                    // Price
+                    const priceEl = document.createElement('div');
+                    priceEl.style.cssText = 'text-align: right; color: var(--vela-text-primary, #eeeef1); font-weight: 600; font-family: ui-monospace, monospace; font-size: 11px;';
+                    priceEl.textContent = formatPrice(item.price);
+
+                    // Change
+                    const chgEl = document.createElement('div');
+                    chgEl.style.cssText = `text-align: right; color: ${chgColor}; font-family: ui-monospace, monospace; font-size: 11px;`;
+                    chgEl.textContent = `${sign}${item.change.toFixed(item.price < 1 ? 4 : 2)}`;
+
+                    // Change %
+                    const chgPctEl = document.createElement('div');
+                    chgPctEl.style.cssText = `text-align: right; color: ${chgColor}; font-weight: 600; font-family: ui-monospace, monospace; font-size: 11px;`;
+                    chgPctEl.textContent = `${sign}${item.changePercent.toFixed(2)}%`;
+
+                    // Volume
+                    const volEl = document.createElement('div');
+                    volEl.style.cssText = 'text-align: right; color: var(--vela-text-secondary, #757882); font-size: 10px; font-family: ui-monospace, monospace;';
+                    volEl.textContent = formatVol(item.volume);
+
+                    row.append(gripEl, symContainer, priceEl, chgEl, chgPctEl);
+
+                    if (isExpanded) {
+                        const highEl = document.createElement('div');
+                        highEl.style.cssText = 'text-align: right; color: var(--vela-text-primary, #eeeef1); font-size: 11px; font-family: ui-monospace, monospace;';
+                        highEl.textContent = formatPrice(item.high);
+
+                        const lowEl = document.createElement('div');
+                        lowEl.style.cssText = 'text-align: right; color: var(--vela-text-secondary, #757882); font-size: 11px; font-family: ui-monospace, monospace;';
+                        lowEl.textContent = formatPrice(item.low);
+
+                        const toEl = document.createElement('div');
+                        toEl.style.cssText = 'text-align: right; color: var(--vela-text-secondary, #757882); font-size: 10px; font-family: ui-monospace, monospace;';
+                        toEl.textContent = formatTurnover(item.turnover);
+
+                        row.append(highEl, lowEl, volEl, toEl);
+                    } else {
+                        row.append(volEl);
+                    }
 
                     row.appendChild(delBtn);
                     wlList.appendChild(row);
@@ -853,21 +1087,50 @@ export function registerWatchlistSidePanel() {
             const doAdd = () => {
                 const val = searchInput.value.trim().toUpperCase();
                 if (!val) return;
-                const binanceSym = val.endsWith('USDT') ? val : `${val}USDT`;
-                const displaySym = `${val.replace('USDT', '')}-USD`;
+                const cleanVal = val.replace(/^(BINANCE|COINBASE|HYPERLIQUID):/i, '');
+                const isFutures = cleanVal.endsWith('.P');
+                let binanceSym: string;
+                let displaySym: string;
+                let baseName: string;
+
+                if (isFutures) {
+                    binanceSym = cleanVal;
+                    baseName = cleanVal.replace('.P', '').replace(/USDT$/, '');
+                    displaySym = `${baseName}-PERP`;
+                } else if (cleanVal.includes('-')) {
+                    displaySym = cleanVal;
+                    baseName = cleanVal.split('-')[0];
+                    binanceSym = `${baseName}USDT`;
+                } else if (cleanVal.endsWith('USDT')) {
+                    binanceSym = cleanVal;
+                    baseName = cleanVal.replace(/USDT$/, '');
+                    displaySym = `${baseName}-USD`;
+                } else {
+                    baseName = cleanVal;
+                    binanceSym = `${cleanVal}USDT`;
+                    displaySym = `${cleanVal}-USD`;
+                }
+
                 if (!watchlistItems.find(x => x.binanceSymbol === binanceSym)) {
+                    const canonical = `BINANCE:${binanceSym}`;
+                    const base = baseOf({ ticker: binanceSym.replace(/\.P$/i, ''), description: baseName }) || baseName;
+                    const iconUrl = ledgerCryptoIconUrl(base);
+
                     watchlistItems.push({
                         symbol: displaySym,
                         binanceSymbol: binanceSym,
-                        name: val,
+                        canonicalSymbol: canonical,
+                        name: baseName,
                         price: 1.00,
                         change: 0.00,
                         changePercent: 0.00,
                         volume: 1000,
-                        iconSvg: `<svg viewBox="0 0 24 24" width="20" height="20"><circle cx="12" cy="12" r="11" fill="#363c4e"/><text x="12" y="16" font-size="11" fill="#fff" text-anchor="middle" font-weight="bold">${val.charAt(0)}</text></svg>`
+                        iconUrl: iconUrl,
+                        isFutures: isFutures,
                     });
                     saveWatchlistStore();
                     renderWatchlistRows();
+                    void updateTickerPrices();
                 }
                 searchInput.value = '';
                 addSearchBox.style.display = 'none';
@@ -875,36 +1138,95 @@ export function registerWatchlistSidePanel() {
             searchAddBtn.addEventListener('click', doAdd);
             searchInput.addEventListener('keydown', (e) => { if (e.key === 'Enter') doAdd(); });
 
-            // Fetch live 24h ticker prices from Binance
-            const updateTickerPrices = async () => {
-                try {
-                    const res = await fetch('https://api.binance.com/api/v3/ticker/24hr');
-                    if (res.ok) {
-                        const data = await res.json();
-                        const tickerMap = new Map<string, any>();
-                        for (const t of data) tickerMap.set(t.symbol, t);
+            // Fetch live 24h ticker prices from Binance Spot & Futures
+            let isUpdatingTickers = false;
+            let tickerBackoffUntil = 0;
 
-                        for (const item of watchlistItems) {
-                            const tick = tickerMap.get(item.binanceSymbol);
-                            if (tick) {
-                                item.price = parseFloat(tick.lastPrice);
-                                item.change = parseFloat(tick.priceChange);
-                                item.changePercent = parseFloat(tick.priceChangePercent);
-                                item.volume = parseFloat(tick.volume);
+            const updateTickerPrices = async () => {
+                if (isUpdatingTickers) return;
+                if (typeof document !== 'undefined' && document.hidden) return;
+                if (Date.now() < tickerBackoffUntil) return;
+
+                isUpdatingTickers = true;
+                try {
+                    const [spotRes, futuresRes] = await Promise.allSettled([
+                        fetch('https://api.binance.com/api/v3/ticker/24hr'),
+                        fetch('https://fapi.binance.com/fapi/v1/ticker/24hr'),
+                    ]);
+
+                    const tickerMap = new Map<string, any>();
+                    const futuresMap = new Map<string, any>();
+
+                    if (spotRes.status === 'fulfilled') {
+                        if (spotRes.value.status === 429 || spotRes.value.status === 418) {
+                            console.warn('[watchlist] Binance Spot rate limit reached. Backing off 30s.');
+                            tickerBackoffUntil = Date.now() + 30_000;
+                        } else if (spotRes.value.ok) {
+                            const data = await spotRes.value.json();
+                            if (Array.isArray(data)) {
+                                for (const t of data) tickerMap.set(t.symbol, t);
                             }
                         }
-                        if (activeTab === 'watchlist') renderWatchlistRows();
+                    }
+
+                    if (futuresRes.status === 'fulfilled') {
+                        if (futuresRes.value.status === 429 || futuresRes.value.status === 418) {
+                            console.warn('[watchlist] Binance Futures rate limit reached. Backing off 30s.');
+                            tickerBackoffUntil = Date.now() + 30_000;
+                        } else if (futuresRes.value.ok) {
+                            const data = await futuresRes.value.json();
+                            if (Array.isArray(data)) {
+                                for (const t of data) futuresMap.set(t.symbol, t);
+                            }
+                        }
+                    }
+
+                    let hasUpdates = false;
+                    for (const item of watchlistItems) {
+                        const isFut = item.isFutures || item.binanceSymbol.endsWith('.P') || item.symbol.endsWith('.P');
+                        const cleanSym = item.binanceSymbol.replace(/\.P$/i, '').replace(/[-_/]/g, '').toUpperCase();
+
+                        const tick = isFut
+                            ? (futuresMap.get(cleanSym) || tickerMap.get(cleanSym))
+                            : (tickerMap.get(cleanSym) || futuresMap.get(cleanSym));
+
+                        if (tick) {
+                            const p = parseFloat(tick.lastPrice);
+                            const c = parseFloat(tick.priceChange);
+                            const cp = parseFloat(tick.priceChangePercent);
+                            const v = parseFloat(tick.volume);
+                            const h = tick.highPrice ? parseFloat(tick.highPrice) : undefined;
+                            const l = tick.lowPrice ? parseFloat(tick.lowPrice) : undefined;
+                            const to = tick.quoteVolume ? parseFloat(tick.quoteVolume) : undefined;
+
+                            if (!isNaN(p) && p > 0) {
+                                item.price = p;
+                                item.change = isNaN(c) ? 0 : c;
+                                item.changePercent = isNaN(cp) ? 0 : cp;
+                                item.volume = isNaN(v) ? 0 : v;
+                                if (h !== undefined && !isNaN(h)) item.high = h;
+                                if (l !== undefined && !isNaN(l)) item.low = l;
+                                if (to !== undefined && !isNaN(to)) item.turnover = to;
+                                hasUpdates = true;
+                            }
+                        }
+                    }
+
+                    if (hasUpdates && activeTab === 'watchlist') {
+                        renderWatchlistRows();
                     }
                 } catch (e) {
                     // Ignore offline fallback
+                } finally {
+                    isUpdatingTickers = false;
                 }
             };
 
+            triggerTickerUpdateFn = () => { void updateTickerPrices(); };
             void updateTickerPrices();
-            const tickerInterval = setInterval(updateTickerPrices, 4000);
+            const tickerInterval = setInterval(updateTickerPrices, 8000);
 
-            // ─────────────────────────────────────────────────────────────────────────
-            // ── TAB 2: ORDER BOOK IMPLEMENTATION ─────────────────────────────────────
+// ── TAB 2: ORDER BOOK IMPLEMENTATION ─────────────────────────────────────
             // ─────────────────────────────────────────────────────────────────────────
             const obHeader = document.createElement('div');
             obHeader.style.cssText = `
