@@ -160,6 +160,20 @@ export function templateSyncPlugin(): Plugin {
                                 res.setHeader('Access-Control-Allow-Origin', '*');
                                 return res.end(content);
                             } else {
+                                if (safeKey === 'vela-workspace') {
+                                    const files = fs.readdirSync(templatesDir).filter(f => f.endsWith('.json'));
+                                    for (const f of files) {
+                                        try {
+                                            const tpl = JSON.parse(fs.readFileSync(path.join(templatesDir, f), 'utf-8'));
+                                            if (tpl.isDefault && tpl.state) {
+                                                res.statusCode = 200;
+                                                res.setHeader('Content-Type', 'application/json');
+                                                res.setHeader('Access-Control-Allow-Origin', '*');
+                                                return res.end(JSON.stringify(tpl.state));
+                                            }
+                                        } catch (_) {}
+                                    }
+                                }
                                 return sendJson(res, { error: 'No saved workspace found', key }, 404);
                             }
                         }
@@ -431,6 +445,38 @@ export function templateSyncPlugin(): Plugin {
                         }
                     }
 
+                    // Set Default Template: POST /api/templates/set-default
+                    if (url.pathname === '/api/templates/set-default' && req.method === 'POST') {
+                        const body = await readJsonBody(req);
+                        const targetId = slugify(body.id || '');
+                        if (!targetId) {
+                            return sendJson(res, { error: 'Template ID required' }, 400);
+                        }
+                        const files = fs.readdirSync(templatesDir).filter(f => f.endsWith('.json'));
+                        let found = false;
+                        for (const file of files) {
+                            const filePath = path.join(templatesDir, file);
+                            try {
+                                const raw = fs.readFileSync(filePath, 'utf-8');
+                                const data = JSON.parse(raw);
+                                const isMatch = (data.id === targetId || file.replace('.json', '') === targetId);
+                                if (isMatch) found = true;
+                                data.isDefault = isMatch;
+                                fs.writeFileSync(filePath, JSON.stringify(data, null, 2), 'utf-8');
+                            } catch (_) {}
+                        }
+                        if (!found) {
+                            return sendJson(res, { error: 'Template not found', id: targetId }, 404);
+                        }
+                        return sendJson(res, { success: true, defaultId: targetId });
+                    }
+
+                    // Restore Starter Templates: POST /api/templates/restore-defaults
+                    if (url.pathname === '/api/templates/restore-defaults' && req.method === 'POST') {
+                        seedDefaultTemplates(templatesDir, true);
+                        return sendJson(res, { success: true });
+                    }
+
                     // Single Template Endpoint: /api/templates/:id
                     if (url.pathname.startsWith('/api/templates/')) {
                         const id = decodeURIComponent(url.pathname.replace('/api/templates/', ''));
@@ -451,7 +497,23 @@ export function templateSyncPlugin(): Plugin {
 
                         if (req.method === 'DELETE') {
                             if (fs.existsSync(filePath)) {
+                                let wasDefault = false;
+                                try {
+                                    const current = JSON.parse(fs.readFileSync(filePath, 'utf-8'));
+                                    wasDefault = current.isDefault === true;
+                                } catch (_) {}
                                 fs.unlinkSync(filePath);
+                                if (wasDefault) {
+                                    const remaining = fs.readdirSync(templatesDir).filter(f => f.endsWith('.json'));
+                                    if (remaining.length > 0) {
+                                        try {
+                                            const firstPath = path.join(templatesDir, remaining[0]);
+                                            const firstData = JSON.parse(fs.readFileSync(firstPath, 'utf-8'));
+                                            firstData.isDefault = true;
+                                            fs.writeFileSync(firstPath, JSON.stringify(firstData, null, 2), 'utf-8');
+                                        } catch (_) {}
+                                    }
+                                }
                                 return sendJson(res, { success: true, id });
                             } else {
                                 return sendJson(res, { error: 'Template not found', id }, 404);
@@ -502,7 +564,12 @@ fill(plot(fast), plot(med), color=fast > med ? color.new(#00e676, 80) : color.ne
     }
 }
 
-function seedDefaultTemplates(templatesDir: string) {
+function seedDefaultTemplates(templatesDir: string, force: boolean = false) {
+    const sentinelFile = path.join(templatesDir, '.templates_seeded');
+    if (!force && fs.existsSync(sentinelFile)) {
+        return;
+    }
+
     const defaults = [
         {
             id: 'velo-4cell-trading',
@@ -531,7 +598,7 @@ function seedDefaultTemplates(templatesDir: string) {
             id: 'single-chart-deep-dive',
             name: 'Single Chart Deep Dive',
             description: 'Full-screen single chart setup with maximum viewport space for detailed analysis.',
-            isDefault: true,
+            isDefault: false,
             updatedAt: Date.now() - 1000,
             state: {
                 version: 1,
@@ -550,7 +617,7 @@ function seedDefaultTemplates(templatesDir: string) {
             id: 'dual-split-btc-eth',
             name: 'Dual Split (BTC / ETH)',
             description: '2 side-by-side charts comparing Bitcoin and Ethereum market structures in real time.',
-            isDefault: true,
+            isDefault: false,
             updatedAt: Date.now() - 2000,
             state: {
                 version: 1,
@@ -571,7 +638,7 @@ function seedDefaultTemplates(templatesDir: string) {
             id: '8-cell-market-overview',
             name: '8-Cell Market Overview',
             description: '8 synchronized charts monitoring the top crypto market leaders simultaneously.',
-            isDefault: true,
+            isDefault: false,
             updatedAt: Date.now() - 3000,
             state: {
                 version: 1,
@@ -597,8 +664,8 @@ function seedDefaultTemplates(templatesDir: string) {
     ];
 
     for (const tpl of defaults) {
-        const filePath = path.join(templatesDir, `${tpl.id}.json`);
-        if (!fs.existsSync(filePath)) {
+        const filePath = path.join(templatesDir, tpl.id + ".json");
+        if (force || !fs.existsSync(filePath)) {
             try {
                 fs.writeFileSync(filePath, JSON.stringify(tpl, null, 2), 'utf-8');
             } catch (e) {
@@ -606,4 +673,8 @@ function seedDefaultTemplates(templatesDir: string) {
             }
         }
     }
+
+    try {
+        fs.writeFileSync(sentinelFile, new Date().toISOString(), 'utf-8');
+    } catch (_) {}
 }

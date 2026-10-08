@@ -53,9 +53,34 @@ registerTemplateManager();
 registerThemeSwitcher();
 registerIndicatorExplorer();
 
+function getBootLayout(): string {
+    try {
+        if (typeof window !== 'undefined') {
+            const raw = window.localStorage.getItem('vela-play:vela-workspace');
+            if (raw) {
+                const parsed = JSON.parse(raw);
+                if (parsed && typeof parsed.layout === 'string') {
+                    return parsed.layout;
+                }
+            }
+            const tplCache = window.localStorage.getItem('vela-play:templates-cache');
+            if (tplCache) {
+                const tpls = JSON.parse(tplCache);
+                if (Array.isArray(tpls)) {
+                    const def = tpls.find((t: any) => t.isDefault);
+                    if (def?.layout && typeof def.layout === 'string') {
+                        return def.layout;
+                    }
+                }
+            }
+        }
+    } catch {}
+    return '1';
+}
+
 // 2. Instantiate the multi-chart VelaWorkspace
 const ws = new VelaWorkspace('#workspace', {
-    layout: '4', // 4-cell grid layout (Velo / OpenMarket style)
+    layout: getBootLayout(), // Restores saved/default layout immediately with zero flicker
     symbol: 'BTCUSDT',
     timeframe: '60',
     cells: {

@@ -18,6 +18,16 @@ function getInitialActiveTemplate(): { id: string; name: string } {
             const id = window.localStorage.getItem(ACTIVE_TPL_ID_KEY);
             const name = window.localStorage.getItem(ACTIVE_TPL_NAME_KEY);
             if (id && name) return { id, name };
+
+            const tplCache = window.localStorage.getItem(TPL_CACHE_KEY);
+            if (tplCache) {
+                const list = JSON.parse(tplCache);
+                if (Array.isArray(list)) {
+                    const def = list.find((t: any) => t.isDefault);
+                    if (def?.id && def?.name) return { id: def.id, name: def.name };
+                    if (list[0]?.id && list[0]?.name) return { id: list[0].id, name: list[0].name };
+                }
+            }
         }
     } catch {}
     return {
@@ -365,6 +375,7 @@ export function openTemplateModal() {
     footerTools.innerHTML = `
         <div style="color: var(--vela-text-secondary, #757882); font-size: 11px;">State captures multi-grid layout, charts, timeframes, indicators & drawing links.</div>
         <div style="display: flex; gap: 8px;">
+            <button id="tpl-restore-starters-btn" style="background: transparent; border: 1px solid var(--vela-border, #262629); color: var(--vela-text-secondary, #757882); padding: 6px 12px; border-radius: 4px; font-size: 11px; font-weight: 600; cursor: pointer;" title="Restore original starter templates if deleted">↺ Restore Starters</button>
             <button id="tpl-export-json-btn" style="background: var(--vela-bg-main, #202126); border: 1px solid var(--vela-border, #262629); color: var(--vela-text-primary, #eeeef1); padding: 6px 12px; border-radius: 4px; font-size: 11px; font-weight: 600; cursor: pointer;">Export JSON</button>
             <button id="tpl-import-json-btn" style="background: var(--vela-bg-main, #202126); border: 1px solid var(--vela-border, #262629); color: var(--vela-text-primary, #eeeef1); padding: 6px 12px; border-radius: 4px; font-size: 11px; font-weight: 600; cursor: pointer;">Import JSON</button>
             <input type="file" id="tpl-file-input" accept=".json" style="display: none;" />
@@ -435,7 +446,7 @@ export function openTemplateModal() {
                     <div style="display: flex; align-items: center; gap: 8px; flex-wrap: wrap;">
                         <span style="font-weight: 700; font-size: 13px; color: var(--vela-text-primary, #eeeef1);">${tpl.name}</span>
                         <span style="background: var(--vela-bg-card, #232429); color: var(--vela-text-secondary, #757882); font-size: 10px; font-weight: 700; padding: 2px 6px; border-radius: 4px;">${layoutLabel}</span>
-                        ${tpl.isDefault ? '<span style="background: rgba(167,190,148,0.15); color: var(--vela-up, #a7be94); font-size: 10px; font-weight: 700; padding: 2px 6px; border-radius: 4px;">Default</span>' : ""}
+                        ${tpl.isDefault ? '<span style="background: rgba(167,190,148,0.18); color: var(--vela-up, #a7be94); font-size: 10px; font-weight: 700; padding: 2px 6px; border-radius: 4px; display: inline-flex; align-items: center; gap: 3px;">★ Default</span>' : ""}
                         ${isCurrent ? '<span style="background: var(--vela-up-selected-bg, #363a38); color: var(--vela-up, #a7be94); font-size: 9px; font-weight: 700; padding: 1px 5px; border-radius: 4px;">ACTIVE</span>' : ""}
                     </div>
                     <div style="font-size: 11px; color: var(--vela-text-secondary, #757882); margin-top: 4px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">
@@ -447,7 +458,8 @@ export function openTemplateModal() {
                     <button class="tpl-load-btn" style="background: ${isCurrent ? "var(--vela-bg-card, #232429)" : "var(--vela-button-light-bg, #eeeef1)"}; border: 1px solid var(--vela-border, #262629); color: ${isCurrent ? "var(--vela-text-secondary, #757882)" : "var(--vela-button-light-text, #121215)"}; padding: 6px 12px; border-radius: 4px; font-size: 11px; font-weight: 700; cursor: pointer;">
                         ${isCurrent ? "Reload" : "Load"}
                     </button>
-                    ${!tpl.isDefault ? `<button class="tpl-del-btn" title="Delete template" style="background: transparent; border: none; color: var(--vela-text-secondary, #757882); cursor: pointer; padding: 4px 6px; border-radius: 4px; font-size: 12px;">🗑️</button>` : ""}
+                    ${!tpl.isDefault ? `<button class="tpl-set-def-btn" title="Set this template as default" style="background: var(--vela-bg-card, #232429); border: 1px solid var(--vela-border, #262629); color: var(--vela-text-secondary, #757882); padding: 6px 10px; border-radius: 4px; font-size: 11px; font-weight: 600; cursor: pointer;">★ Set Default</button>` : ""}
+                    <button class="tpl-del-btn" title="Delete template from server" style="background: transparent; border: none; color: var(--vela-text-secondary, #757882); cursor: pointer; padding: 4px 6px; border-radius: 4px; font-size: 12px;">🗑️</button>
                 </div>
             `;
 
@@ -462,20 +474,52 @@ export function openTemplateModal() {
                 }
             });
 
+            // Set Default Action
+            const setDefBtn = card.querySelector(".tpl-set-def-btn");
+            if (setDefBtn) {
+                setDefBtn.addEventListener("click", async (e) => {
+                    e.stopPropagation();
+                    try {
+                        const res = await fetch("/api/templates/set-default", {
+                            method: "POST",
+                            headers: { "Content-Type": "application/json" },
+                            body: JSON.stringify({ id: tpl.id }),
+                        });
+                        if (res.ok) {
+                            showToast(`"${tpl.name}" is now the default template!`);
+                            void loadAndRender();
+                        } else {
+                            showToast("Failed to set default template", true);
+                        }
+                    } catch (err: any) {
+                        showToast(`Failed to set default template: ${err.message}`, true);
+                    }
+                });
+            }
+
             // Delete Action
             const delBtn = card.querySelector(".tpl-del-btn");
             if (delBtn) {
-                delBtn.addEventListener("click", async () => {
+                delBtn.addEventListener("click", async (e) => {
+                    e.stopPropagation();
                     if (confirm(`Delete template "${tpl.name}" from server?`)) {
                         try {
                             const res = await fetch(`/api/templates/${encodeURIComponent(tpl.id)}`, { method: "DELETE" });
                             if (res.ok) {
                                 showToast(`Deleted template "${tpl.name}"`);
                                 if (tpl.id === activeTemplateId) {
-                                    persistActiveTemplate("velo-4cell-trading", "Velo 4-Cell Trading (Default)");
+                                    const remaining = allTemplates.filter(t => t.id !== tpl.id);
+                                    const fallback = remaining.find(t => t.isDefault) || remaining[0];
+                                    if (fallback) {
+                                        persistActiveTemplate(fallback.id, fallback.name);
+                                    } else {
+                                        persistActiveTemplate("custom", "Custom Layout");
+                                    }
                                     (activeBar.querySelector("#tpl-active-title") as HTMLElement).textContent = activeTemplateName;
                                 }
                                 void loadAndRender();
+                            } else {
+                                showToast("Failed to delete template", true);
                             }
                         } catch (e: any) {
                             showToast(`Failed to delete template: ${e.message}`, true);
@@ -540,6 +584,26 @@ export function openTemplateModal() {
             void loadAndRender();
         }
     });
+
+    // Restore Starter Templates
+    const restoreStartersBtn = footerTools.querySelector("#tpl-restore-starters-btn");
+    if (restoreStartersBtn) {
+        restoreStartersBtn.addEventListener("click", async () => {
+            if (confirm("Restore the 4 original starter templates? (Any custom templates you created will NOT be deleted)")) {
+                try {
+                    const res = await fetch("/api/templates/restore-defaults", { method: "POST" });
+                    if (res.ok) {
+                        showToast("Starter templates restored!");
+                        void loadAndRender();
+                    } else {
+                        showToast("Failed to restore starter templates", true);
+                    }
+                } catch (err: any) {
+                    showToast(`Failed to restore templates: ${err.message}`, true);
+                }
+            }
+        });
+    }
 
     // Export JSON: downloads full TemplateRecord
     const exportBtn = footerTools.querySelector("#tpl-export-json-btn")!;
