@@ -2,6 +2,7 @@ import { registerSidePanel, registerWidgetAction, registerIcon } from '../src/pl
 import type { WidgetContext } from '../src/widget/WidgetContext';
 import type { VelaWorkspace } from '../src/workspace';
 import { Dialog } from '../src/ui';
+import { BINANCE_WHITE_ICON, BINANCE_YELLOW_ICON } from './binance-icons-data';
 
 registerIcon('trade', '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m16 3 4 4-4 4"/><path d="M20 7H4"/><path d="m8 21-4-4 4-4"/><path d="M4 17h16"/></svg>');
 registerIcon('code', '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="16 18 22 12 16 6"/><polyline points="8 6 2 12 8 18"/></svg>');
@@ -117,35 +118,49 @@ export function setEnvironment(isTestnet: boolean) {
 
     const envTestnet = document.getElementById("env-testnet-btn");
     const envProd = document.getElementById("env-prod-btn");
-    const badge = document.getElementById("strip-env-badge");
+    const badge = document.getElementById("strip-env-badge") as HTMLElement | null;
+    const badgeIcon = document.getElementById("strip-env-icon") as HTMLImageElement | null;
 
     if (envTestnet && envProd) {
+        const testIcon = envTestnet.querySelector('img');
+        const prodIcon = envProd.querySelector('img');
         if (isTestnet) {
-            envTestnet.style.border = "1px solid var(--vela-warning, #fde047)";
-            envTestnet.style.background = "var(--vela-warning-bg, #29261a)";
-            envTestnet.style.color = "var(--vela-warning, #fde047)";
+            envTestnet.style.border = "1px solid rgba(255, 255, 255, 0.45)";
+            envTestnet.style.background = "rgba(255, 255, 255, 0.1)";
+            envTestnet.style.color = "#ffffff";
+            if (testIcon) testIcon.style.opacity = "1";
+
             envProd.style.border = "1px solid var(--vela-border, #262629)";
             envProd.style.background = "var(--vela-bg-card, #232429)";
             envProd.style.color = "var(--vela-text-secondary, #757882)";
+            if (prodIcon) prodIcon.style.opacity = "0.45";
         } else {
-            envProd.style.border = "1px solid var(--vela-up, #a7be94)";
-            envProd.style.background = "var(--vela-up-selected-bg, #363a38)";
-            envProd.style.color = "var(--vela-up, #a7be94)";
+            envProd.style.border = "1px solid #f0b90b";
+            envProd.style.background = "rgba(240, 185, 11, 0.16)";
+            envProd.style.color = "#f0b90b";
+            if (prodIcon) prodIcon.style.opacity = "1";
+
             envTestnet.style.border = "1px solid var(--vela-border, #262629)";
             envTestnet.style.background = "var(--vela-bg-card, #232429)";
             envTestnet.style.color = "var(--vela-text-secondary, #757882)";
+            if (testIcon) testIcon.style.opacity = "0.45";
         }
     }
 
     if (badge) {
+        if (badgeIcon) {
+            badgeIcon.src = isTestnet ? BINANCE_WHITE_ICON : BINANCE_YELLOW_ICON;
+        }
         if (isTestnet) {
-            badge.textContent = "BINANCE TESTNET";
-            badge.style.color = "var(--vela-warning, #fde047)";
-            badge.style.background = "var(--vela-warning-bg, #29261a)";
+            badge.title = "Binance Testnet (Click to switch to Production Live)";
+            badge.style.border = "1px solid rgba(255, 255, 255, 0.2)";
+            badge.style.background = "rgba(255, 255, 255, 0.06)";
+            badge.style.boxShadow = "none";
         } else {
-            badge.textContent = "BINANCE PRODUCTION";
-            badge.style.color = "var(--vela-up, #a7be94)";
-            badge.style.background = "var(--vela-up-selected-bg, #363a38)";
+            badge.title = "Binance Production Live (Click to switch to Testnet)";
+            badge.style.border = "1px solid #f0b90b";
+            badge.style.background = "rgba(240, 185, 11, 0.18)";
+            badge.style.boxShadow = "0 0 8px rgba(240, 185, 11, 0.3)";
         }
     }
 
@@ -156,7 +171,7 @@ export function setEnvironment(isTestnet: boolean) {
     fetchAccount();
     fetchOrders(state.symbol);
     fetchOrderHistory(state.symbol);
-    fetchTradeHistory(state.symbol);
+    fetchTradeHistory();
 }
 
 let updateTicketSymbolCallback: (() => void) | null = null;
@@ -394,8 +409,7 @@ function updateAccountBalanceUI() {
     if (stripBalEl) stripBalEl.textContent = `$${state.availableBalance.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 }
 
-let historyContainer: HTMLElement | null = null;
-let journalContainer: HTMLElement | null = null;
+
 
 function formatDateTime(ts: number): string {
     if (!ts) return '--';
@@ -408,11 +422,26 @@ function formatDateTime(ts: number): string {
     return `${mm}/${dd} ${hh}:${min}:${ss}`;
 }
 
-export async function fetchOrderHistory(symbol: string) {
+export async function fetchOrderHistory(symbol?: string) {
     try {
-        const res = await fetch(`/api/binance/order-history?symbol=${encodeURIComponent(symbol)}&testnet=${state.isTestnet}`);
+        const symQuery = symbol && symbol !== 'ALL' && symbol !== 'undefined'
+            ? `symbol=${encodeURIComponent(symbol)}&`
+            : '';
+        const res = await fetch(`/api/binance/order-history?${symQuery}testnet=${state.isTestnet}`);
         if (res.ok) {
-            state.orderHistory = await res.json();
+            const data = await res.json();
+            if (Array.isArray(data)) {
+                const map = new Map<string, any>();
+                if (Array.isArray(state.orderHistory)) {
+                    for (const o of state.orderHistory) {
+                        if (o.orderId) map.set(String(o.orderId), o);
+                    }
+                }
+                for (const o of data) {
+                    if (o.orderId) map.set(String(o.orderId), o);
+                }
+                state.orderHistory = Array.from(map.values()).sort((a, b) => Number(b.time || b.updateTime || 0) - Number(a.time || a.updateTime || 0));
+            }
             updateHistoryUI();
         }
     } catch (e) {
@@ -420,12 +449,94 @@ export async function fetchOrderHistory(symbol: string) {
     }
 }
 
-export async function fetchTradeHistory(symbol: string) {
+
+export function syncTradeMarksToCharts() {
+    if (!wsInstance) return;
+    const trades = state.tradeHistory;
+    if (!Array.isArray(trades) || trades.length === 0) return;
+
+    for (const cell of wsInstance.cells()) {
+        const chart = cell.chart;
+        if (!chart || !chart.marks) continue;
+
+        try {
+            chart.marks.defineGroup({ id: 'trades', label: 'Executed Trades' });
+        } catch {}
+
+        const cellSym = (cell.symbol || '').toUpperCase().replace(/^BINANCE:/, '').replace(/\.P$/, '');
+        for (const t of trades) {
+            if (!t.symbol || !t.time) continue;
+            const tradeSym = String(t.symbol).toUpperCase().replace(/\.P$/, '');
+            if (tradeSym !== cellSym) continue;
+
+            const isBuy = t.side === 'BUY';
+            const pnl = parseFloat(t.realizedPnl || '0');
+            const pnlStr = pnl !== 0 ? (' (PnL: ' + (pnl > 0 ? '+' : '') + '$' + pnl.toFixed(2) + ')') : '';
+            const price = parseFloat(t.price || '0');
+            const qty = parseFloat(t.qty || '0');
+            chart.marks.add({
+                id: 'trade-' + (t.id || t.orderId),
+                time: Number(t.time),
+                title: t.side + ' ' + qty + ' @ $' + price.toFixed(2) + pnlStr,
+                group: 'trades',
+                glyph: {
+                    shape: 'pin',
+                    color: isBuy ? '#2ebd85' : '#f6465d',
+                    letter: isBuy ? 'B' : 'S',
+                },
+                tooltip: t.side + ' ' + qty + ' @ $' + price.toFixed(2) + pnlStr,
+                content: {
+                    panel: {
+                        items: [
+                            { type: 'field', label: 'Order ID', value: '#' + (t.orderId || t.id) },
+                            { type: 'field', label: 'Symbol', value: String(t.symbol) },
+                            { type: 'field', label: 'Side', value: String(t.side) },
+                            { type: 'field', label: 'Price', value: '$' + price.toFixed(2) },
+                            { type: 'field', label: 'Quantity', value: String(qty) },
+                            { type: 'field', label: 'Realized PnL', value: (pnl >= 0 ? '+' : '') + pnl.toFixed(4) + ' USDT' },
+                            { type: 'field', label: 'Fee', value: (t.commission || 0) + ' ' + (t.commissionAsset || 'USDT') },
+                            { type: 'field', label: 'Time', value: new Date(Number(t.time)).toLocaleString() },
+                        ],
+                    },
+                },
+            });
+        }
+    }
+}
+
+export async function fetchTradeHistory(symbol?: string) {
     try {
-        const res = await fetch(`/api/binance/trade-history?symbol=${encodeURIComponent(symbol)}&testnet=${state.isTestnet}`);
+        const symQuery = symbol && symbol !== 'ALL' && symbol !== 'undefined'
+            ? `symbol=${encodeURIComponent(symbol)}&`
+            : '';
+        const res = await fetch(`/api/binance/trade-history?${symQuery}testnet=${state.isTestnet}`);
         if (res.ok) {
             state.tradeHistory = await res.json();
+
             updateJournalUI();
+            syncTradeMarksToCharts();
+
+            // Synchronize order history in the background for relevant symbols so order metadata (SL, TP triggers) is complete
+            const symsToFetch = new Set<string>();
+            if (symbol && symbol !== 'ALL' && symbol !== 'undefined') {
+                symsToFetch.add(symbol.replace(/\.P$/i, '').toUpperCase());
+            } else if (Array.isArray(state.tradeHistory)) {
+                for (const t of state.tradeHistory) {
+                    if (t.symbol) symsToFetch.add(String(t.symbol).replace(/\.P$/i, '').toUpperCase());
+                }
+            }
+            if (symsToFetch.size === 0 && state.symbol) {
+                symsToFetch.add(state.symbol.replace(/\.P$/i, '').toUpperCase());
+            }
+
+            const recentSyms = Array.from(symsToFetch).slice(0, 5);
+            if (recentSyms.length > 0) {
+                Promise.all(recentSyms.map(s => fetchOrderHistory(s))).then(() => {
+                    updateJournalUI();
+                }).catch(err => {
+                    console.warn('[journal] Background order sync error:', err);
+                });
+            }
         }
     } catch (e) {
         console.error('Failed to fetch trade history', e);
@@ -434,6 +545,9 @@ export async function fetchTradeHistory(symbol: string) {
 
 let positionsContainer: HTMLElement | null = null;
 let ordersContainer: HTMLElement | null = null;
+let historyContainer: HTMLElement | null = null;
+let journalContainer: HTMLElement | null = null;
+let historySymbolFilter: string = 'ALL';
 
 function updatePositionsUI() {
     const posCountEl = document.getElementById('pos-count');
@@ -441,58 +555,145 @@ function updatePositionsUI() {
 
     if (!positionsContainer) return;
     if (state.activePositions.length === 0) {
-        positionsContainer.innerHTML = `<div style="padding: 16px; text-align: center; color: var(--vela-text-muted, #46474b);">No open positions</div>`;
+        positionsContainer.innerHTML = `
+            <div style="padding: 30px; text-align: center; color: var(--vela-text-muted, #757882); background: var(--vela-bg, #202126);">
+                <div style="font-size: 12px; font-weight: 600; color: var(--vela-text-primary, #eeeef1);">No open positions</div>
+                <div style="font-size: 10.5px; margin-top: 4px; color: var(--vela-text-muted, #757882);">Active Binance Futures contracts with live mark prices & PnL will appear here</div>
+                <button id="refresh-empty-pos-btn" style="margin-top: 10px; background: var(--vela-bg-chip, #292a2f); border: 1px solid var(--vela-border, #262629); color: var(--vela-text-primary, #eeeef1); font-size: 10.5px; font-weight: 600; padding: 4px 12px; border-radius: 4px; cursor: pointer;">↻ Refresh Account</button>
+            </div>
+        `;
+        positionsContainer.querySelector('#refresh-empty-pos-btn')?.addEventListener('click', () => {
+            fetchAccount();
+        });
         return;
     }
+
+    let totalPnl = 0;
+    let totalMargin = 0;
+    for (const p of state.activePositions) {
+        totalPnl += (p.pnl || 0);
+        totalMargin += ((p.entryPrice * p.size) / (p.leverage || 1));
+    }
+    const pnlColor = totalPnl >= 0 ? 'var(--vela-up, #a7be94)' : 'var(--vela-down, #af6870)';
+    const pnlBg = totalPnl >= 0 ? 'rgba(167,190,148,0.12)' : 'rgba(175,104,112,0.12)';
+    const pnlBorder = totalPnl >= 0 ? 'rgba(167,190,148,0.25)' : 'rgba(175,104,112,0.25)';
 
     let rowsHtml = '';
     for (const p of state.activePositions) {
         const isLong = p.side === 'LONG';
-        const pnlColor = p.pnl >= 0 ? 'var(--vela-up, #a7be94)' : 'var(--vela-down, #af6870)';
+        const sideColor = isLong ? 'var(--vela-up, #a7be94)' : 'var(--vela-down, #af6870)';
+        const sideBg = isLong ? 'rgba(167,190,148,0.15)' : 'rgba(175,104,112,0.15)';
+        const sideBorder = isLong ? 'rgba(167,190,148,0.25)' : 'rgba(175,104,112,0.25)';
+        const rowPnlColor = p.pnl >= 0 ? 'var(--vela-up, #a7be94)' : 'var(--vela-down, #af6870)';
+        const marginUsed = (p.entryPrice * p.size) / (p.leverage || 1);
+
         rowsHtml += `
-            <tr style="border-bottom: 1px solid var(--vela-border, #262629); font-size: 12px;">
-                <td style="padding: 8px 10px;">
-                    <span style="font-weight: 700; color: var(--vela-text-primary, #eeeef1);">${p.symbol}</span>
-                    <span style="padding: 1px 4px; border-radius: 2px; font-size: 10px; font-weight: 700; background: ${isLong ? 'var(--vela-up-selected-bg, #363a38)' : 'rgba(175,104,112,0.25)'}; color: ${isLong ? 'var(--vela-up, #a7be94)' : 'var(--vela-down, #af6870)'}; margin-left: 4px;">${p.side} ${p.leverage}x</span>
+            <tr style="border-bottom: 1px solid var(--vela-border, #262629); font-size: 10.5px; transition: background 0.1s;" onmouseover="this.style.background='var(--vela-bg-hover, rgba(255,255,255,0.03))'" onmouseout="this.style.background='transparent'">
+                <td style="padding: 5px 8px; font-weight: 700; color: var(--vela-text-primary, #eeeef1); white-space: nowrap;">
+                    ${p.symbol}
                 </td>
-                <td style="padding: 8px 10px; color: var(--vela-text-secondary, #757882);">${p.size}</td>
-                <td style="padding: 8px 10px; color: var(--vela-text-secondary, #757882);">${p.entryPrice.toFixed(2)}</td>
-                <td style="padding: 8px 10px; color: var(--vela-text-secondary, #757882);">${p.markPrice.toFixed(2)}</td>
-                <td style="padding: 8px 10px; color: var(--vela-down, #af6870);">${p.liqPrice > 0 ? p.liqPrice.toFixed(2) : '--'}</td>
-                <td style="padding: 8px 10px; color: ${pnlColor}; font-weight: 600;">
-                    ${p.pnl >= 0 ? '+' : ''}${p.pnl.toFixed(2)} USDT (${p.roe.toFixed(2)}%)
+                <td style="padding: 5px 8px; white-space: nowrap;">
+                    <span style="font-size: 9.5px; font-weight: 700; padding: 1px 5px; border-radius: 2px; background: ${sideBg}; color: ${sideColor}; border: 1px solid ${sideBorder};">${p.side} ${p.leverage}x</span>
                 </td>
-                <td style="padding: 8px 10px; text-align: right;">
-                    <button class="close-pos-btn" data-sym="${p.symbol}" data-side="${p.side}" data-size="${p.size}" style="background: var(--vela-bg-card, #232429); border: 1px solid var(--vela-border, #262629); color: var(--vela-down, #af6870); font-size: 11px; padding: 3px 8px; border-radius: 4px; cursor: pointer;">Close</button>
+                <td style="padding: 5px 8px; font-family: var(--vela-font-mono, monospace); font-variant-numeric: tabular-nums; white-space: nowrap;">
+                    <div style="color: var(--vela-text-primary, #eeeef1); font-weight: 600;">${p.size}</div>
+                    <div style="font-size: 9.5px; color: var(--vela-text-muted, #757882);">$${marginUsed.toFixed(2)} margin</div>
+                </td>
+                <td style="padding: 5px 8px; font-family: var(--vela-font-mono, monospace); font-variant-numeric: tabular-nums; color: var(--vela-text-secondary, #757882); white-space: nowrap;">
+                    $${p.entryPrice.toFixed(2)} → <strong style="color: var(--vela-text-primary, #eeeef1);">$${p.markPrice.toFixed(2)}</strong>
+                </td>
+                <td style="padding: 5px 8px; font-family: var(--vela-font-mono, monospace); font-variant-numeric: tabular-nums; color: ${p.liqPrice > 0 ? 'var(--vela-down, #af6870)' : 'var(--vela-text-muted, #757882)'}; white-space: nowrap;">
+                    ${p.liqPrice > 0 ? '$' + p.liqPrice.toFixed(2) : '--'}
+                </td>
+                <td style="padding: 5px 8px; font-family: var(--vela-font-mono, monospace); font-variant-numeric: tabular-nums; white-space: nowrap;">
+                    <div style="font-weight: 700; font-size: 11px; color: ${rowPnlColor};">${p.pnl >= 0 ? '+' : ''}$${p.pnl.toFixed(2)} USDT</div>
+                    <div style="font-size: 9.5px; color: ${rowPnlColor}; font-weight: 600;">${p.roe >= 0 ? '+' : ''}${p.roe.toFixed(2)}%</div>
+                </td>
+                <td style="padding: 5px 8px; text-align: right; white-space: nowrap;">
+                    <button class="jump-pos-btn" data-sym="${p.symbol}" data-price="${p.markPrice}" title="Jump chart to ${p.symbol}" style="background: var(--vela-bg-chip, #292a2f); border: 1px solid var(--vela-border, #262629); color: var(--vela-text-secondary, #757882); font-size: 10px; padding: 2px 6px; border-radius: 3px; cursor: pointer; margin-right: 4px;">⤢</button>
+                    <button class="close-pos-btn" data-sym="${p.symbol}" data-side="${p.side}" data-size="${p.size}" style="background: rgba(175,104,112,0.12); border: 1px solid rgba(175,104,112,0.25); color: var(--vela-down, #af6870); font-size: 10px; font-weight: 600; padding: 2px 8px; border-radius: 3px; cursor: pointer;">Close</button>
                 </td>
             </tr>
         `;
     }
 
     positionsContainer.innerHTML = `
-        <table style="width: 100%; border-collapse: collapse; text-align: left;">
-            <thead>
-                <tr style="color: var(--vela-text-muted, #46474b); font-size: 10px; text-transform: uppercase; border-bottom: 1px solid var(--vela-border, #262629);">
-                    <th style="padding: 6px 10px;">Symbol</th>
-                    <th style="padding: 6px 10px;">Size</th>
-                    <th style="padding: 6px 10px;">Entry Price</th>
-                    <th style="padding: 6px 10px;">Mark Price</th>
-                    <th style="padding: 6px 10px;">Liq. Price</th>
-                    <th style="padding: 6px 10px;">PnL (ROE %)</th>
-                    <th style="padding: 6px 10px; text-align: right;">Action</th>
-                </tr>
-            </thead>
-            <tbody>${rowsHtml}</tbody>
-        </table>
+        <div style="display: flex; flex-direction: column; height: 100%; background: var(--vela-bg, #202126);">
+            <!-- TOP METRICS STRIP -->
+            <div style="padding: 5px 12px; display: flex; align-items: center; justify-content: space-between; gap: 8px; border-bottom: 1px solid var(--vela-border, #262629); background: var(--vela-bg, #202126); flex-wrap: wrap;">
+                <div style="display: flex; align-items: center; gap: 8px; flex-wrap: wrap;">
+                    <div style="background: var(--vela-bg-chip, #292a2f); border: 1px solid var(--vela-border, #262629); border-radius: 4px; padding: 2px 8px; display: flex; flex-direction: column;">
+                        <span style="font-size: 8.5px; font-weight: 700; text-transform: uppercase; color: var(--vela-text-muted, #757882); letter-spacing: 0.5px;">Positions</span>
+                        <span style="font-size: 12px; font-weight: 800; color: var(--vela-text-primary, #eeeef1); font-family: var(--vela-font-mono, monospace);">${state.activePositions.length} Active</span>
+                    </div>
+
+                    <div style="background: ${pnlBg}; border: 1px solid ${pnlBorder}; border-radius: 4px; padding: 2px 8px; display: flex; flex-direction: column;">
+                        <span style="font-size: 8.5px; font-weight: 700; text-transform: uppercase; color: var(--vela-text-muted, #757882); letter-spacing: 0.5px;">Unrealized PnL</span>
+                        <span style="font-size: 12.5px; font-weight: 800; color: ${pnlColor}; font-family: var(--vela-font-mono, monospace); font-variant-numeric: tabular-nums;">
+                            ${totalPnl >= 0 ? '+' : ''}$${totalPnl.toFixed(2)} USDT
+                        </span>
+                    </div>
+
+                    <div style="background: var(--vela-bg-chip, #292a2f); border: 1px solid var(--vela-border, #262629); border-radius: 4px; padding: 2px 8px; display: flex; flex-direction: column;">
+                        <span style="font-size: 8.5px; font-weight: 700; text-transform: uppercase; color: var(--vela-text-muted, #757882); letter-spacing: 0.5px;">Margin In Use</span>
+                        <span style="font-size: 12px; font-weight: 700; color: var(--vela-text-primary, #eeeef1); font-family: var(--vela-font-mono, monospace);">$${totalMargin.toFixed(2)} USDT</span>
+                    </div>
+                </div>
+
+                <div style="display: flex; align-items: center; gap: 6px;">
+                    <button id="close-all-positions-btn" title="Market close all open positions" style="background: rgba(175,104,112,0.12); border: 1px solid rgba(175,104,112,0.25); color: var(--vela-down, #af6870); font-size: 10px; font-weight: 600; padding: 3px 8px; border-radius: 3px; cursor: pointer;">Close All</button>
+                    <button id="refresh-pos-btn" title="Refresh positions from Binance" style="background: var(--vela-bg-chip, #292a2f); border: 1px solid var(--vela-border, #262629); color: var(--vela-text-secondary, #757882); font-size: 10px; font-weight: 600; padding: 3px 6px; border-radius: 3px; cursor: pointer;">↻</button>
+                </div>
+            </div>
+
+            <!-- TABLE CONTENT -->
+            <div style="flex: 1; overflow: auto; background: var(--vela-bg, #202126);">
+                <table style="width: 100%; border-collapse: collapse; text-align: left;">
+                    <thead>
+                        <tr style="color: var(--vela-text-muted, #757882); font-size: 9.5px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px; border-bottom: 1px solid var(--vela-border, #262629); background: var(--vela-bg, #202126); position: sticky; top: 0; z-index: 2;">
+                            <th style="padding: 5px 8px;">Symbol</th>
+                            <th style="padding: 5px 8px;">Side / Lev</th>
+                            <th style="padding: 5px 8px;">Size & Margin</th>
+                            <th style="padding: 5px 8px;">Entry → Mark Price</th>
+                            <th style="padding: 5px 8px;">Liq. Price</th>
+                            <th style="padding: 5px 8px;">Unrealized PnL (ROE)</th>
+                            <th style="padding: 5px 8px; text-align: right;">Action</th>
+                        </tr>
+                    </thead>
+                    <tbody>${rowsHtml}</tbody>
+                </table>
+            </div>
+        </div>
     `;
 
+    positionsContainer.querySelector('#refresh-pos-btn')?.addEventListener('click', () => {
+        fetchAccount();
+    });
+
+    positionsContainer.querySelector('#close-all-positions-btn')?.addEventListener('click', async () => {
+        if (!confirm('Are you sure you want to market close ALL open positions?')) return;
+        for (const p of state.activePositions) {
+            await closePosition(p.symbol, p.side, p.size);
+        }
+        await fetchAccount();
+    });
+
+    positionsContainer.querySelectorAll('.jump-pos-btn').forEach(btn => {
+        btn.addEventListener('click', () => {
+            const sym = (btn as HTMLElement).dataset.sym || '';
+            const price = parseFloat((btn as HTMLElement).dataset.price || '0');
+            jumpChartToFill(Date.now(), sym, price);
+        });
+    });
+
     positionsContainer.querySelectorAll('.close-pos-btn').forEach(btn => {
-        btn.addEventListener('click', (e: any) => {
+        btn.addEventListener('click', async (e: any) => {
             const sym = e.target.getAttribute('data-sym');
             const side = e.target.getAttribute('data-side');
             const size = parseFloat(e.target.getAttribute('data-size') || '0');
             e.target.textContent = 'Closing...';
-            closePosition(sym, side, size);
+            await closePosition(sym, side, size);
+            await fetchAccount();
         });
     });
 }
@@ -503,47 +704,135 @@ function updateOrdersUI() {
 
     if (!ordersContainer) return;
     if (state.openOrders.length === 0) {
-        ordersContainer.innerHTML = `<div style="padding: 16px; text-align: center; color: var(--vela-text-muted, #46474b);">No open orders</div>`;
+        ordersContainer.innerHTML = `
+            <div style="padding: 30px; text-align: center; color: var(--vela-text-muted, #757882); background: var(--vela-bg, #202126);">
+                <div style="font-size: 12px; font-weight: 600; color: var(--vela-text-primary, #eeeef1);">No open orders</div>
+                <div style="font-size: 10.5px; margin-top: 4px; color: var(--vela-text-muted, #757882);">Limit, Stop Loss, and Take Profit bracket orders placed will appear here</div>
+                <button id="refresh-empty-ord-btn" style="margin-top: 10px; background: var(--vela-bg-chip, #292a2f); border: 1px solid var(--vela-border, #262629); color: var(--vela-text-primary, #eeeef1); font-size: 10.5px; font-weight: 600; padding: 4px 12px; border-radius: 4px; cursor: pointer;">↻ Refresh Orders</button>
+            </div>
+        `;
+        ordersContainer.querySelector('#refresh-empty-ord-btn')?.addEventListener('click', () => {
+            fetchOrders();
+        });
         return;
+    }
+
+    let slOrdersCount = 0;
+    let tpOrdersCount = 0;
+    let limitOrdersCount = 0;
+    for (const o of state.openOrders) {
+        const oType = (o.origType || o.type || '').toUpperCase();
+        if (oType.includes('STOP')) slOrdersCount++;
+        else if (oType.includes('TAKE_PROFIT')) tpOrdersCount++;
+        else limitOrdersCount++;
     }
 
     let rowsHtml = '';
     for (const o of state.openOrders) {
         const isBuy = o.side === 'BUY';
+        const sideColor = isBuy ? 'var(--vela-up, #a7be94)' : 'var(--vela-down, #af6870)';
+        const sideBg = isBuy ? 'rgba(167,190,148,0.15)' : 'rgba(175,104,112,0.15)';
+        const sideBorder = isBuy ? 'rgba(167,190,148,0.25)' : 'rgba(175,104,112,0.25)';
+
+        const oType = (o.origType || o.type || 'LIMIT').toUpperCase();
+        let typeBadgeBg = 'rgba(117,120,130,0.15)';
+        let typeBadgeFg = 'var(--vela-text-secondary, #757882)';
+        let typeBadgeBorder = 'rgba(117,120,130,0.25)';
+        if (oType.includes('STOP')) {
+            typeBadgeBg = 'rgba(175,104,112,0.18)';
+            typeBadgeFg = 'var(--vela-down, #af6870)';
+            typeBadgeBorder = 'rgba(175,104,112,0.3)';
+        } else if (oType.includes('TAKE_PROFIT')) {
+            typeBadgeBg = 'rgba(167,190,148,0.18)';
+            typeBadgeFg = 'var(--vela-up, #a7be94)';
+            typeBadgeBorder = 'rgba(167,190,148,0.3)';
+        } else if (oType.includes('LIMIT')) {
+            typeBadgeBg = 'rgba(253,224,71,0.12)';
+            typeBadgeFg = 'var(--vela-warning, #fde047)';
+            typeBadgeBorder = 'rgba(253,224,71,0.25)';
+        }
+
+        const trigPrice = parseFloat(o.stopPrice || o.triggerPrice || '0');
+        const priceVal = parseFloat(o.price || '0');
+        const priceDisplay = trigPrice > 0
+            ? `Trig: $${trigPrice.toFixed(2)}`
+            : (priceVal > 0 ? '$' + priceVal.toFixed(2) : 'Market');
+
+        const dateStr = formatDateTime(o.time || o.updateTime);
+        const qtyVal = parseFloat(o.origQty || o.quantity || '0');
+        const filledVal = parseFloat(o.executedQty || '0');
+
         rowsHtml += `
-            <tr style="border-bottom: 1px solid var(--vela-border, #262629); font-size: 12px;">
-                <td style="padding: 8px 10px; color: var(--vela-text-primary, #eeeef1); font-weight: 700;">${o.symbol}</td>
-                <td style="padding: 8px 10px;">
-                    <span style="color: ${isBuy ? 'var(--vela-up, #a7be94)' : 'var(--vela-down, #af6870)'}; font-weight: 700;">${o.side}</span>
+            <tr style="border-bottom: 1px solid var(--vela-border, #262629); font-size: 10.5px; transition: background 0.1s;" onmouseover="this.style.background='var(--vela-bg-hover, rgba(255,255,255,0.03))'" onmouseout="this.style.background='transparent'">
+                <td style="padding: 5px 8px; color: var(--vela-text-muted, #757882); white-space: nowrap;">${dateStr}</td>
+                <td style="padding: 5px 8px; font-weight: 700; color: var(--vela-text-primary, #eeeef1); white-space: nowrap;">${o.symbol}</td>
+                <td style="padding: 5px 8px; white-space: nowrap;">
+                    <span style="font-size: 9.5px; font-weight: 700; padding: 1px 5px; border-radius: 2px; background: ${sideBg}; color: ${sideColor}; border: 1px solid ${sideBorder};">${o.side}</span>
                 </td>
-                <td style="padding: 8px 10px; color: var(--vela-text-secondary, #757882);">${o.type}</td>
-                <td style="padding: 8px 10px; color: var(--vela-text-secondary, #757882);">${(parseFloat(o.stopPrice || o.triggerPrice || '0') || parseFloat(o.price || '0')).toFixed(2)}</td>
-                <td style="padding: 8px 10px; color: var(--vela-text-secondary, #757882);">${parseFloat(o.origQty || '0')}</td>
-                <td style="padding: 8px 10px; text-align: right;">
-                    <button class="cancel-ord-btn" data-sym="${o.symbol}" data-id="${o.orderId}" style="background: var(--vela-bg-card, #232429); border: 1px solid var(--vela-border, #262629); color: var(--vela-down, #af6870); font-size: 11px; padding: 3px 8px; border-radius: 4px; cursor: pointer;">Cancel</button>
+                <td style="padding: 5px 8px; white-space: nowrap;">
+                    <span style="font-size: 9.5px; font-weight: 700; padding: 1px 5px; border-radius: 2px; background: ${typeBadgeBg}; color: ${typeBadgeFg}; border: 1px solid ${typeBadgeBorder};">${oType}</span>
+                </td>
+                <td style="padding: 5px 8px; font-family: var(--vela-font-mono, monospace); font-variant-numeric: tabular-nums; color: var(--vela-text-primary, #eeeef1); white-space: nowrap;">${priceDisplay}</td>
+                <td style="padding: 5px 8px; font-family: var(--vela-font-mono, monospace); font-variant-numeric: tabular-nums; color: var(--vela-text-secondary, #757882); white-space: nowrap;">${filledVal} / ${qtyVal}</td>
+                <td style="padding: 5px 8px; white-space: nowrap;">
+                    <span style="font-size: 9.5px; font-weight: 700; padding: 1px 5px; border-radius: 2px; background: rgba(253,224,71,0.15); color: var(--vela-warning, #fde047); border: 1px solid rgba(253,224,71,0.25);">${o.status || 'NEW'}</span>
+                </td>
+                <td style="padding: 5px 8px; text-align: right; white-space: nowrap;">
+                    <button class="jump-ord-btn" data-sym="${o.symbol}" data-price="${trigPrice || priceVal}" title="Jump chart to ${o.symbol}" style="background: var(--vela-bg-chip, #292a2f); border: 1px solid var(--vela-border, #262629); color: var(--vela-text-secondary, #757882); font-size: 10px; padding: 2px 6px; border-radius: 3px; cursor: pointer; margin-right: 4px;">⤢</button>
+                    <button class="cancel-ord-btn" data-sym="${o.symbol}" data-id="${o.orderId}" style="background: rgba(175,104,112,0.12); border: 1px solid rgba(175,104,112,0.25); color: var(--vela-down, #af6870); font-size: 10px; font-weight: 600; padding: 2px 8px; border-radius: 3px; cursor: pointer;">Cancel</button>
                 </td>
             </tr>
         `;
     }
 
     ordersContainer.innerHTML = `
-        <div style="padding: 6px 10px; display: flex; justify-content: flex-end;">
-            <button id="cancel-all-orders-btn" style="background: var(--vela-bg-card, #232429); border: 1px solid var(--vela-border, #262629); color: var(--vela-down, #af6870); font-size: 11px; padding: 4px 10px; border-radius: 4px; cursor: pointer;">Cancel All</button>
+        <div style="display: flex; flex-direction: column; height: 100%; background: var(--vela-bg, #202126);">
+            <!-- TOP METRICS STRIP -->
+            <div style="padding: 5px 12px; display: flex; align-items: center; justify-content: space-between; gap: 8px; border-bottom: 1px solid var(--vela-border, #262629); background: var(--vela-bg, #202126); flex-wrap: wrap;">
+                <div style="display: flex; align-items: center; gap: 8px; flex-wrap: wrap;">
+                    <div style="background: var(--vela-bg-chip, #292a2f); border: 1px solid var(--vela-border, #262629); border-radius: 4px; padding: 2px 8px; display: flex; flex-direction: column;">
+                        <span style="font-size: 8.5px; font-weight: 700; text-transform: uppercase; color: var(--vela-text-muted, #757882); letter-spacing: 0.5px;">Pending Orders</span>
+                        <span style="font-size: 12px; font-weight: 800; color: var(--vela-text-primary, #eeeef1); font-family: var(--vela-font-mono, monospace);">${state.openOrders.length}</span>
+                    </div>
+
+                    <div style="background: var(--vela-bg-chip, #292a2f); border: 1px solid var(--vela-border, #262629); border-radius: 4px; padding: 2px 8px; display: flex; flex-direction: column;">
+                        <span style="font-size: 8.5px; font-weight: 700; text-transform: uppercase; color: var(--vela-text-muted, #757882); letter-spacing: 0.5px;">Brackets & Limits</span>
+                        <span style="font-size: 11.5px; font-weight: 700; color: var(--vela-text-secondary, #757882); font-family: var(--vela-font-mono, monospace);">
+                            <span style="color: var(--vela-down, #af6870);">${slOrdersCount} SL</span> • <span style="color: var(--vela-up, #a7be94);">${tpOrdersCount} TP</span> • <span style="color: var(--vela-warning, #fde047);">${limitOrdersCount} Limit</span>
+                        </span>
+                    </div>
+                </div>
+
+                <div style="display: flex; align-items: center; gap: 6px;">
+                    <button id="cancel-all-orders-btn" title="Cancel all open orders" style="background: rgba(175,104,112,0.12); border: 1px solid rgba(175,104,112,0.25); color: var(--vela-down, #af6870); font-size: 10px; font-weight: 600; padding: 3px 8px; border-radius: 3px; cursor: pointer;">Cancel All</button>
+                    <button id="refresh-orders-btn" title="Refresh open orders from Binance" style="background: var(--vela-bg-chip, #292a2f); border: 1px solid var(--vela-border, #262629); color: var(--vela-text-secondary, #757882); font-size: 10px; font-weight: 600; padding: 3px 6px; border-radius: 3px; cursor: pointer;">↻</button>
+                </div>
+            </div>
+
+            <!-- TABLE CONTENT -->
+            <div style="flex: 1; overflow: auto; background: var(--vela-bg, #202126);">
+                <table style="width: 100%; border-collapse: collapse; text-align: left;">
+                    <thead>
+                        <tr style="color: var(--vela-text-muted, #757882); font-size: 9.5px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px; border-bottom: 1px solid var(--vela-border, #262629); background: var(--vela-bg, #202126); position: sticky; top: 0; z-index: 2;">
+                            <th style="padding: 5px 8px;">Time</th>
+                            <th style="padding: 5px 8px;">Symbol</th>
+                            <th style="padding: 5px 8px;">Side</th>
+                            <th style="padding: 5px 8px;">Type</th>
+                            <th style="padding: 5px 8px;">Order / Trigger Price</th>
+                            <th style="padding: 5px 8px;">Filled / Total</th>
+                            <th style="padding: 5px 8px;">Status</th>
+                            <th style="padding: 5px 8px; text-align: right;">Action</th>
+                        </tr>
+                    </thead>
+                    <tbody>${rowsHtml}</tbody>
+                </table>
+            </div>
         </div>
-        <table style="width: 100%; border-collapse: collapse; text-align: left;">
-            <thead>
-                <tr style="color: var(--vela-text-muted, #46474b); font-size: 10px; text-transform: uppercase; border-bottom: 1px solid var(--vela-border, #262629);">
-                    <th style="padding: 6px 10px;">Symbol</th>
-                    <th style="padding: 6px 10px;">Side</th>
-                    <th style="padding: 6px 10px;">Type</th>
-                    <th style="padding: 6px 10px;">Price</th>
-                    <th style="padding: 6px 10px;">Amount</th>
-                    <th style="padding: 6px 10px; text-align: right;">Action</th>
-                </tr>
-            </thead>
-            <tbody>${rowsHtml}</tbody>
-        </table>
     `;
+
+    ordersContainer.querySelector('#refresh-orders-btn')?.addEventListener('click', () => {
+        fetchOrders();
+    });
 
     ordersContainer.querySelector('#cancel-all-orders-btn')?.addEventListener('click', async () => {
         await fetch('/api/binance/order/cancel-all', {
@@ -552,6 +841,14 @@ function updateOrdersUI() {
             body: JSON.stringify({ symbol: state.symbol, testnet: state.isTestnet })
         });
         await fetchOrders(state.symbol);
+    });
+
+    ordersContainer.querySelectorAll('.jump-ord-btn').forEach(btn => {
+        btn.addEventListener('click', () => {
+            const sym = (btn as HTMLElement).dataset.sym || '';
+            const price = parseFloat((btn as HTMLElement).dataset.price || '0');
+            jumpChartToFill(Date.now(), sym, price);
+        });
     });
 
     ordersContainer.querySelectorAll('.cancel-ord-btn').forEach(btn => {
@@ -568,159 +865,895 @@ function updateOrdersUI() {
     });
 }
 
-
 function updateHistoryUI() {
+    const histCountEl = document.getElementById('hist-count');
+    if (histCountEl) histCountEl.textContent = state.orderHistory.length.toString();
+
     if (!historyContainer) return;
     if (!Array.isArray(state.orderHistory) || state.orderHistory.length === 0) {
-        historyContainer.innerHTML = `<div style="padding: 24px; text-align: center; color: var(--vela-text-muted, #46474b);">No order history for ${state.symbol}</div>`;
+        historyContainer.innerHTML = `
+            <div style="padding: 30px; text-align: center; color: var(--vela-text-muted, #757882); background: var(--vela-bg, #202126);">
+                <div style="font-size: 12px; font-weight: 600; color: var(--vela-text-primary, #eeeef1);">No order history recorded</div>
+                <div style="font-size: 10.5px; margin-top: 4px; color: var(--vela-text-muted, #757882);">Recent filled, canceled, and expired orders will appear here</div>
+                <button id="refresh-empty-hist-btn" style="margin-top: 10px; background: var(--vela-bg-chip, #292a2f); border: 1px solid var(--vela-border, #262629); color: var(--vela-text-primary, #eeeef1); font-size: 10.5px; font-weight: 600; padding: 4px 12px; border-radius: 4px; cursor: pointer;">↻ Sync Binance Orders</button>
+            </div>
+        `;
+        historyContainer.querySelector('#refresh-empty-hist-btn')?.addEventListener('click', () => {
+            fetchOrderHistory(state.symbol);
+        });
         return;
     }
 
+    const uniqueSymbols = Array.from(new Set(state.orderHistory.map(o => String(o.symbol).toUpperCase()))).filter(Boolean);
+    const activeOrders = historySymbolFilter === 'ALL'
+        ? state.orderHistory
+        : state.orderHistory.filter(o => String(o.symbol).toUpperCase() === historySymbolFilter);
+
+    let filledCount = 0;
+    let canceledCount = 0;
+    let otherCount = 0;
+    for (const o of activeOrders) {
+        const s = (o.status || '').toUpperCase();
+        if (s === 'FILLED' || s === 'FINISHED') filledCount++;
+        else if (s === 'CANCELED') canceledCount++;
+        else otherCount++;
+    }
+
     let rowsHtml = '';
-    for (const o of state.orderHistory) {
+    for (const o of activeOrders) {
         const isBuy = o.side === 'BUY';
         const sideColor = isBuy ? 'var(--vela-up, #a7be94)' : 'var(--vela-down, #af6870)';
+        const sideBg = isBuy ? 'rgba(167,190,148,0.15)' : 'rgba(175,104,112,0.15)';
+        const sideBorder = isBuy ? 'rgba(167,190,148,0.25)' : 'rgba(175,104,112,0.25)';
+
         const status = o.status || 'UNKNOWN';
         let statusBg = 'rgba(117,120,130,0.15)';
         let statusFg = 'var(--vela-text-secondary, #757882)';
-        if (status === 'FILLED') {
-            statusBg = 'rgba(167,190,148,0.2)';
+        let statusBorder = 'rgba(117,120,130,0.25)';
+        if (status === 'FILLED' || status === 'FINISHED') {
+            statusBg = 'rgba(167,190,148,0.15)';
             statusFg = 'var(--vela-up, #a7be94)';
+            statusBorder = 'rgba(167,190,148,0.25)';
         } else if (status === 'CANCELED') {
             statusBg = 'rgba(175,104,112,0.15)';
             statusFg = 'var(--vela-down, #af6870)';
+            statusBorder = 'rgba(175,104,112,0.25)';
         } else if (status === 'NEW') {
             statusBg = 'rgba(253,224,71,0.15)';
             statusFg = 'var(--vela-warning, #fde047)';
+            statusBorder = 'rgba(253,224,71,0.25)';
+        }
+
+        const oType = (o.origType || o.type || 'LIMIT').toUpperCase();
+        let typeBadgeBg = 'rgba(117,120,130,0.15)';
+        let typeBadgeFg = 'var(--vela-text-secondary, #757882)';
+        let typeBadgeBorder = 'rgba(117,120,130,0.25)';
+        if (oType.includes('STOP')) {
+            typeBadgeBg = 'rgba(175,104,112,0.18)';
+            typeBadgeFg = 'var(--vela-down, #af6870)';
+            typeBadgeBorder = 'rgba(175,104,112,0.3)';
+        } else if (oType.includes('TAKE_PROFIT')) {
+            typeBadgeBg = 'rgba(167,190,148,0.18)';
+            typeBadgeFg = 'var(--vela-up, #a7be94)';
+            typeBadgeBorder = 'rgba(167,190,148,0.3)';
+        } else if (oType.includes('LIMIT')) {
+            typeBadgeBg = 'rgba(253,224,71,0.12)';
+            typeBadgeFg = 'var(--vela-warning, #fde047)';
+            typeBadgeBorder = 'rgba(253,224,71,0.25)';
         }
 
         const dateStr = formatDateTime(o.time || o.updateTime);
-        const priceStr = parseFloat(o.price || '0') > 0 ? parseFloat(o.price).toFixed(2) : 'Market';
-        const avgPriceStr = parseFloat(o.avgPrice || '0') > 0 ? parseFloat(o.avgPrice).toFixed(2) : '--';
+        const trigPrice = parseFloat(o.stopPrice || o.triggerPrice || '0');
+        const orderPrice = parseFloat(o.price || '0');
+        const priceStr = trigPrice > 0
+            ? `Trig: $${trigPrice.toFixed(2)}`
+            : (orderPrice > 0 ? '$' + orderPrice.toFixed(2) : 'Market');
+        const avgPrice = parseFloat(o.avgPrice || o.actualPrice || '0');
+        const avgPriceStr = avgPrice > 0 ? '$' + avgPrice.toFixed(2) : '--';
         const execQty = parseFloat(o.executedQty || '0');
-        const origQty = parseFloat(o.origQty || '0');
+        const origQty = parseFloat(o.origQty || o.quantity || '0');
 
         rowsHtml += `
-            <tr style="border-bottom: 1px solid var(--vela-border, #262629); font-size: 11px;">
-                <td style="padding: 7px 10px; color: var(--vela-text-muted, #757882); white-space: nowrap;">${dateStr}</td>
-                <td style="padding: 7px 10px; font-weight: 700; color: var(--vela-text-primary, #eeeef1);">${o.symbol}</td>
-                <td style="padding: 7px 10px; font-weight: 700; color: ${sideColor};">${o.side}</td>
-                <td style="padding: 7px 10px; color: var(--vela-text-secondary, #757882);">${o.type || 'LIMIT'}</td>
-                <td style="padding: 7px 10px; color: var(--vela-text-secondary, #757882);">${priceStr}</td>
-                <td style="padding: 7px 10px; color: var(--vela-text-secondary, #757882);">${avgPriceStr}</td>
-                <td style="padding: 7px 10px; color: var(--vela-text-primary, #eeeef1);">${execQty} / ${origQty}</td>
-                <td style="padding: 7px 10px;">
-                    <span style="font-size: 10px; font-weight: 700; padding: 2px 6px; border-radius: 3px; background: ${statusBg}; color: ${statusFg};">${status}</span>
+            <tr style="border-bottom: 1px solid var(--vela-border, #262629); font-size: 10.5px; transition: background 0.1s;" onmouseover="this.style.background='var(--vela-bg-hover, rgba(255,255,255,0.03))'" onmouseout="this.style.background='transparent'">
+                <td style="padding: 5px 8px; color: var(--vela-text-muted, #757882); white-space: nowrap;">${dateStr}</td>
+                <td style="padding: 5px 8px; font-weight: 700; color: var(--vela-text-primary, #eeeef1); white-space: nowrap;">${o.symbol}</td>
+                <td style="padding: 5px 8px; white-space: nowrap;">
+                    <span style="font-size: 9.5px; font-weight: 700; padding: 1px 5px; border-radius: 2px; background: ${sideBg}; color: ${sideColor}; border: 1px solid ${sideBorder};">${o.side}</span>
+                </td>
+                <td style="padding: 5px 8px; white-space: nowrap;">
+                    <span style="font-size: 9.5px; font-weight: 700; padding: 1px 5px; border-radius: 2px; background: ${typeBadgeBg}; color: ${typeBadgeFg}; border: 1px solid ${typeBadgeBorder};">${oType}</span>
+                </td>
+                <td style="padding: 5px 8px; font-family: var(--vela-font-mono, monospace); font-variant-numeric: tabular-nums; color: var(--vela-text-primary, #eeeef1); white-space: nowrap;">${priceStr}</td>
+                <td style="padding: 5px 8px; font-family: var(--vela-font-mono, monospace); font-variant-numeric: tabular-nums; color: var(--vela-text-secondary, #757882); white-space: nowrap;">${avgPriceStr}</td>
+                <td style="padding: 5px 8px; font-family: var(--vela-font-mono, monospace); font-variant-numeric: tabular-nums; color: var(--vela-text-primary, #eeeef1); white-space: nowrap;">${execQty} / ${origQty}</td>
+                <td style="padding: 5px 8px; white-space: nowrap;">
+                    <span style="font-size: 9.5px; font-weight: 700; padding: 1px 5px; border-radius: 2px; background: ${statusBg}; color: ${statusFg}; border: 1px solid ${statusBorder};">${status}</span>
+                </td>
+                <td style="padding: 5px 8px; text-align: right; white-space: nowrap;">
+                    <button class="jump-hist-btn" data-sym="${o.symbol}" data-price="${avgPrice || trigPrice || orderPrice}" data-time="${o.time || o.updateTime}" title="Jump chart to order" style="background: var(--vela-bg-chip, #292a2f); border: 1px solid var(--vela-border, #262629); color: var(--vela-text-secondary, #757882); font-size: 10px; padding: 2px 6px; border-radius: 3px; cursor: pointer;">⤢</button>
                 </td>
             </tr>
         `;
     }
 
+    const symbolOptions = ['ALL', ...uniqueSymbols].map(s => `
+        <option value="${s}" ${s === historySymbolFilter ? 'selected' : ''}>${s === 'ALL' ? 'All Symbols' : s}</option>
+    `).join('');
+
     historyContainer.innerHTML = `
-        <div style="padding: 6px 12px; display: flex; align-items: center; justify-content: space-between; border-bottom: 1px solid var(--vela-border, #262629); background: var(--vela-bg-panel, #121215); font-size: 11px;">
-            <span style="color: var(--vela-text-muted, #757882);">Recent orders for <strong style="color: var(--vela-text-primary, #eeeef1);">${state.symbol}</strong></span>
-            <button id="refresh-history-btn" style="background: var(--vela-bg-card, #232429); border: 1px solid var(--vela-border, #262629); color: var(--vela-text-secondary, #757882); font-size: 10px; padding: 2px 8px; border-radius: 4px; cursor: pointer;">↻ Refresh</button>
+        <div style="display: flex; flex-direction: column; height: 100%; background: var(--vela-bg, #202126);">
+            <!-- TOP METRICS STRIP -->
+            <div style="padding: 5px 12px; display: flex; align-items: center; justify-content: space-between; gap: 8px; border-bottom: 1px solid var(--vela-border, #262629); background: var(--vela-bg, #202126); flex-wrap: wrap;">
+                <div style="display: flex; align-items: center; gap: 8px; flex-wrap: wrap;">
+                    <div style="background: var(--vela-bg-chip, #292a2f); border: 1px solid var(--vela-border, #262629); border-radius: 4px; padding: 2px 8px; display: flex; flex-direction: column;">
+                        <span style="font-size: 8.5px; font-weight: 700; text-transform: uppercase; color: var(--vela-text-muted, #757882); letter-spacing: 0.5px;">Orders</span>
+                        <span style="font-size: 12px; font-weight: 800; color: var(--vela-text-primary, #eeeef1); font-family: var(--vela-font-mono, monospace);">${activeOrders.length}</span>
+                    </div>
+
+                    <div style="background: var(--vela-bg-chip, #292a2f); border: 1px solid var(--vela-border, #262629); border-radius: 4px; padding: 2px 8px; display: flex; flex-direction: column;">
+                        <span style="font-size: 8.5px; font-weight: 700; text-transform: uppercase; color: var(--vela-text-muted, #757882); letter-spacing: 0.5px;">Executions</span>
+                        <span style="font-size: 11.5px; font-weight: 700; color: var(--vela-text-secondary, #757882); font-family: var(--vela-font-mono, monospace);">
+                            <span style="color: var(--vela-up, #a7be94);">${filledCount} Filled</span> • <span style="color: var(--vela-down, #af6870);">${canceledCount} Canceled</span>${otherCount > 0 ? ` • <span style="color: var(--vela-text-muted, #757882);">${otherCount} Other</span>` : ''}
+                        </span>
+                    </div>
+                </div>
+
+                <div style="display: flex; align-items: center; gap: 6px;">
+                    <select id="history-sym-filter" style="background: var(--vela-bg-chip, #292a2f); color: var(--vela-text-primary, #eeeef1); border: 1px solid var(--vela-border, #262629); border-radius: 3px; padding: 3px 6px; font-size: 10px; font-weight: 600; cursor: pointer; outline: none;">
+                        ${symbolOptions}
+                    </select>
+                    <button id="refresh-history-btn" title="Refresh order history from Binance" style="background: var(--vela-bg-chip, #292a2f); border: 1px solid var(--vela-border, #262629); color: var(--vela-text-secondary, #757882); font-size: 10px; font-weight: 600; padding: 3px 6px; border-radius: 3px; cursor: pointer;">↻</button>
+                </div>
+            </div>
+
+            <!-- TABLE CONTENT -->
+            <div style="flex: 1; overflow: auto; background: var(--vela-bg, #202126);">
+                <table style="width: 100%; border-collapse: collapse; text-align: left;">
+                    <thead>
+                        <tr style="color: var(--vela-text-muted, #757882); font-size: 9.5px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px; border-bottom: 1px solid var(--vela-border, #262629); background: var(--vela-bg, #202126); position: sticky; top: 0; z-index: 2;">
+                            <th style="padding: 5px 8px;">Time</th>
+                            <th style="padding: 5px 8px;">Symbol</th>
+                            <th style="padding: 5px 8px;">Side</th>
+                            <th style="padding: 5px 8px;">Type</th>
+                            <th style="padding: 5px 8px;">Order / Trigger Price</th>
+                            <th style="padding: 5px 8px;">Avg Price</th>
+                            <th style="padding: 5px 8px;">Filled / Total</th>
+                            <th style="padding: 5px 8px;">Status</th>
+                            <th style="padding: 5px 8px; text-align: right;">Action</th>
+                        </tr>
+                    </thead>
+                    <tbody>${rowsHtml}</tbody>
+                </table>
+            </div>
         </div>
-        <table style="width: 100%; border-collapse: collapse; text-align: left;">
-            <thead>
-                <tr style="color: var(--vela-text-muted, #46474b); font-size: 10px; text-transform: uppercase; border-bottom: 1px solid var(--vela-border, #262629);">
-                    <th style="padding: 6px 10px;">Time</th>
-                    <th style="padding: 6px 10px;">Symbol</th>
-                    <th style="padding: 6px 10px;">Side</th>
-                    <th style="padding: 6px 10px;">Type</th>
-                    <th style="padding: 6px 10px;">Order Price</th>
-                    <th style="padding: 6px 10px;">Avg Price</th>
-                    <th style="padding: 6px 10px;">Filled / Total</th>
-                    <th style="padding: 6px 10px;">Status</th>
-                </tr>
-            </thead>
-            <tbody>${rowsHtml}</tbody>
-        </table>
     `;
 
     historyContainer.querySelector('#refresh-history-btn')?.addEventListener('click', () => {
-        fetchOrderHistory(state.symbol);
+        fetchOrderHistory(historySymbolFilter === 'ALL' ? undefined : historySymbolFilter);
     });
+
+    const symSelect = historyContainer.querySelector('#history-sym-filter') as HTMLSelectElement | null;
+    symSelect?.addEventListener('change', () => {
+        historySymbolFilter = symSelect.value;
+        updateHistoryUI();
+    });
+
+    historyContainer.querySelectorAll('.jump-hist-btn').forEach(btn => {
+        btn.addEventListener('click', () => {
+            const sym = (btn as HTMLElement).dataset.sym || '';
+            const price = parseFloat((btn as HTMLElement).dataset.price || '0');
+            const time = Number((btn as HTMLElement).dataset.time || Date.now());
+            jumpChartToFill(time, sym, price);
+        });
+    });
+}
+
+let journalSymbolFilter: string = 'ALL';
+let journalViewMode: 'trades' | 'fills' | 'daily' = 'trades';
+let isJournalMaximized = false;
+
+function formatDuration(ms: number): string {
+    if (!ms || ms <= 0) return '< 1m';
+    const s = Math.floor(ms / 1000);
+    if (s < 60) return `${s}s`;
+    const m = Math.floor(s / 60);
+    if (m < 60) return `${m}m`;
+    const h = Math.floor(m / 60);
+    const remM = m % 60;
+    if (h < 24) return `${h}h ${remM}m`;
+    const d = (ms / 86400000).toFixed(1);
+    return `${d}d`;
+}
+
+interface ClosedTradeSession {
+    id: string | number;
+    symbol: string;
+    side: 'LONG' | 'SHORT';
+    entryPrice: number;
+    exitPrice: number;
+    qty: number;
+    grossPnl: number;
+    fee: number;
+    netPnl: number;
+    roi: number;
+    openTime: number;
+    closeTime: number;
+    durationMs: number;
+    closeReason: string;
+    closeReasonType: 'sl' | 'tp' | 'manual' | 'limit';
+    orderId?: string | number;
+    fills: any[];
+}
+
+function aggregateClosedTrades(trades: any[], orders: any[]): ClosedTradeSession[] {
+    const ordersMap = new Map<string, any>();
+    if (Array.isArray(orders)) {
+        for (const o of orders) {
+            if (o.orderId) ordersMap.set(String(o.orderId), o);
+        }
+    }
+
+    const sorted = [...trades].sort((a, b) => Number(a.time || 0) - Number(b.time || 0));
+    const bySymbol: Record<string, any[]> = {};
+    for (const t of sorted) {
+        const sym = (t.symbol || 'UNKNOWN').toUpperCase();
+        if (!bySymbol[sym]) bySymbol[sym] = [];
+        bySymbol[sym].push(t);
+    }
+
+    const closedTrades: ClosedTradeSession[] = [];
+
+    for (const sym of Object.keys(bySymbol)) {
+        const list = bySymbol[sym];
+        let openPos: {
+            side: 'LONG' | 'SHORT';
+            qty: number;
+            avgPrice: number;
+            totalCost: number;
+            openTime: number;
+            fees: number;
+            fills: any[];
+        } | null = null;
+
+        for (const fill of list) {
+            const side = fill.side; // BUY or SELL
+            const qty = parseFloat(fill.qty || '0');
+            const price = parseFloat(fill.price || '0');
+            const pnl = parseFloat(fill.realizedPnl || '0');
+            const fee = Math.abs(parseFloat(fill.commission || '0'));
+            const time = Number(fill.time || 0);
+            const orderId = String(fill.orderId || '');
+
+            const ord = ordersMap.get(orderId);
+            let exitReason = 'Manual Close';
+            let exitReasonType: 'sl' | 'tp' | 'manual' | 'limit' = 'manual';
+
+            if (ord) {
+                const oType = (ord.type || ord.origType || ord.algoOrderType || '').toUpperCase();
+                const aType = (ord.algoOrderType || ord.origType || '').toUpperCase();
+                const isStop = oType.includes('STOP') || aType.includes('STOP');
+                const isTp = oType.includes('TAKE_PROFIT') || aType.includes('TAKE_PROFIT');
+
+                if (isStop) {
+                    const trig = parseFloat(ord.triggerPrice || ord.stopPrice || '0');
+                    exitReason = trig > 0 ? `Stop Loss Triggered (@ $${trig.toFixed(2)})` : 'Stop Loss Triggered';
+                    exitReasonType = 'sl';
+                } else if (isTp) {
+                    const trig = parseFloat(ord.triggerPrice || ord.stopPrice || '0');
+                    exitReason = trig > 0 ? `Take Profit Hit (@ $${trig.toFixed(2)})` : 'Take Profit Hit';
+                    exitReasonType = 'tp';
+                } else if (oType === 'LIMIT') {
+                    exitReason = pnl >= 0 ? 'Limit Take Profit' : 'Limit Exit';
+                    exitReasonType = pnl >= 0 ? 'tp' : 'limit';
+                } else if (oType === 'MARKET') {
+                    if (ord.closePosition === true || ord.closePosition === 'true' || ord.isBracketClose) {
+                        // On Binance Futures, closePosition=true ONLY exists on orders spawned by conditional STOP/TP bracket triggers
+                        if (pnl < 0) {
+                            exitReason = 'Stop Loss Triggered';
+                            exitReasonType = 'sl';
+                        } else {
+                            exitReason = 'Take Profit Hit';
+                            exitReasonType = 'tp';
+                        }
+                    } else {
+                        exitReason = pnl >= 0 ? 'Manual Close (Profit)' : 'Manual Close (Loss)';
+                        exitReasonType = 'manual';
+                    }
+                }
+            } else {
+                if (pnl > 0.0001) {
+                    exitReason = 'Take Profit';
+                    exitReasonType = 'tp';
+                } else if (pnl < -0.0001) {
+                    exitReason = 'Stop Loss';
+                    exitReasonType = 'sl';
+                } else {
+                    exitReason = 'Breakeven';
+                    exitReasonType = 'manual';
+                }
+            }
+
+            // Realized PnL !== 0 marks an exit
+            if (Math.abs(pnl) > 0.00000001) {
+                const tradeSide: 'LONG' | 'SHORT' = side === 'SELL' ? 'LONG' : 'SHORT';
+                const entryPrice = openPos ? openPos.avgPrice : price;
+                const openTime = openPos ? openPos.openTime : (time - 60000);
+                const grossPnl = pnl;
+                const netPnl = grossPnl - fee;
+                const notional = entryPrice * qty;
+                const roi = notional > 0 ? (grossPnl / notional) * 100 : 0;
+
+                closedTrades.push({
+                    id: fill.id || fill.orderId,
+                    symbol: sym,
+                    side: tradeSide,
+                    entryPrice,
+                    exitPrice: price,
+                    qty,
+                    grossPnl,
+                    fee,
+                    netPnl,
+                    roi,
+                    openTime,
+                    closeTime: time,
+                    durationMs: Math.max(0, time - openTime),
+                    closeReason: exitReason,
+                    closeReasonType: exitReasonType,
+                    orderId: fill.orderId,
+                    fills: [fill]
+                });
+
+                if (openPos) {
+                    openPos.qty -= qty;
+                    if (openPos.qty <= 0.0000001) openPos = null;
+                }
+            } else {
+                // Entry fill
+                if (!openPos) {
+                    openPos = {
+                        side: side === 'BUY' ? 'LONG' : 'SHORT',
+                        qty,
+                        avgPrice: price,
+                        totalCost: qty * price,
+                        openTime: time,
+                        fees: fee,
+                        fills: [fill]
+                    };
+                } else {
+                    openPos.totalCost += qty * price;
+                    openPos.qty += qty;
+                    openPos.avgPrice = openPos.totalCost / openPos.qty;
+                    openPos.fees += fee;
+                    openPos.fills.push(fill);
+                }
+            }
+        }
+    }
+
+    return closedTrades.sort((a, b) => b.closeTime - a.closeTime);
+}
+
+function jumpChartToTrade(t: ClosedTradeSession | any) {
+    if (!wsInstance) return;
+    const cleanSym = String(t.symbol || '').toUpperCase().replace(/^BINANCE:/, '').replace(/\.P$/, '');
+    let targetCell = wsInstance.cells().find(c => {
+        const cSym = (c.symbol || '').toUpperCase().replace(/^BINANCE:/, '').replace(/\.P$/, '');
+        return cSym === cleanSym;
+    });
+
+    if (!targetCell) {
+        targetCell = wsInstance.active || wsInstance.cells()[0];
+        if (targetCell) {
+            void targetCell.chart.setMarket({ symbol: cleanSym });
+        }
+    }
+
+    if (!targetCell) return;
+    try {
+        wsInstance.setActiveCell(targetCell.id);
+    } catch {}
+
+    const openT = Number(t.openTime || t.time || Date.now());
+    const closeT = Number(t.closeTime || t.time || (openT + 60_000));
+    const entryPrice = parseFloat(t.entryPrice || t.price || '0');
+    const exitPrice = parseFloat(t.exitPrice || t.price || '0');
+    const side = (t.side || (t.grossPnl >= 0 ? 'LONG' : 'SHORT')).toUpperCase();
+    const isLong = side === 'LONG';
+
+    const priceDiff = Math.abs(exitPrice - entryPrice);
+    const offset = priceDiff > 0 ? priceDiff : (entryPrice * 0.005 || 1);
+
+    let stopPrice: number;
+    let targetPrice: number;
+
+    if (isLong) {
+        if (exitPrice >= entryPrice) {
+            targetPrice = exitPrice;
+            stopPrice = entryPrice - offset * 0.5;
+        } else {
+            stopPrice = exitPrice;
+            targetPrice = entryPrice + offset * 1.5;
+        }
+    } else {
+        if (exitPrice <= entryPrice) {
+            targetPrice = exitPrice;
+            stopPrice = entryPrice + offset * 0.5;
+        } else {
+            stopPrice = exitPrice;
+            targetPrice = entryPrice - offset * 1.5;
+        }
+    }
+
+    try {
+        const drawingsCtrl = targetCell.chart.drawings;
+        if (drawingsCtrl && typeof drawingsCtrl.all === 'function') {
+            const allDrawings = drawingsCtrl.all();
+            const existing = allDrawings.find(d => {
+                if (d.type !== 'position') return false;
+                const a0 = d.anchors?.[0];
+                return a0 && Math.abs(a0.time - openT) < 10000 && Math.abs(a0.price - entryPrice) < (entryPrice * 0.001);
+            });
+
+            if (existing) {
+                drawingsCtrl.select(existing.id);
+            } else {
+                const added = drawingsCtrl.add('position', {
+                    paneId: 'price',
+                    anchors: [
+                        { time: openT, price: entryPrice },
+                        { time: closeT, price: stopPrice },
+                        { time: closeT, price: targetPrice }
+                    ],
+                    props: {
+                        riskPercent: Math.abs(t.roi || 1),
+                        accountBalance: 10000,
+                        showText: true,
+                        showHeader: true,
+                        showPrices: true,
+                        showLossSize: false,
+                        showTargetLabel: true,
+                        showStopLabel: true,
+                        profitColor: '#2ebd85',
+                        lossColor: '#f6465d'
+                    }
+                });
+                if (added) {
+                    drawingsCtrl.select(added.id);
+                }
+            }
+        }
+    } catch (err) {
+        console.warn('[journal] Failed to place position drawing:', err);
+    }
+
+    const span = Math.max(Math.abs(closeT - openT), 30 * 60_000);
+    const pad = span * 0.6;
+    const from = openT - pad;
+    const to = closeT + pad;
+
+    try {
+        targetCell.chart.setVisibleRange({ from, to });
+    } catch (e) {
+        console.warn('[journal] Failed to set visible range:', e);
+    }
+
+    if (isJournalMaximized) {
+        toggleJournalPanelMaximize();
+    }
+
+    toast(`Chart focused on ${cleanSym} trade: ${side} @ $${entryPrice.toFixed(2)} → $${exitPrice.toFixed(2)}`, 'info');
+}
+
+function jumpChartToFill(fillTime: number, fillSym: string, fillPrice?: number) {
+    if (!wsInstance) return;
+    const cleanSym = String(fillSym || '').toUpperCase().replace(/^BINANCE:/, '').replace(/\.P$/, '');
+    let targetCell = wsInstance.cells().find(c => {
+        const cSym = (c.symbol || '').toUpperCase().replace(/^BINANCE:/, '').replace(/\.P$/, '');
+        return cSym === cleanSym;
+    });
+
+    if (!targetCell) {
+        targetCell = wsInstance.active || wsInstance.cells()[0];
+        if (targetCell) {
+            void targetCell.chart.setMarket({ symbol: cleanSym });
+        }
+    }
+
+    if (!targetCell) return;
+    try {
+        wsInstance.setActiveCell(targetCell.id);
+    } catch {}
+
+    const t = Number(fillTime || Date.now());
+    const span = 15 * 60_000;
+    const from = t - span;
+    const to = t + span;
+
+    try {
+        targetCell.chart.setVisibleRange({ from, to });
+    } catch (e) {
+        console.warn('[journal] Failed to set visible range for fill:', e);
+    }
+
+    if (isJournalMaximized) {
+        toggleJournalPanelMaximize();
+    }
+
+    toast(`Chart focused on ${cleanSym} execution fill${fillPrice ? ` @ $${fillPrice.toFixed(2)}` : ''}`, 'info');
+}
+
+function toggleJournalPanelMaximize() {
+    isJournalMaximized = !isJournalMaximized;
+    const panel = document.getElementById('velo-bottom-account-panel');
+    if (panel) {
+        panel.style.height = isJournalMaximized ? 'calc(100vh - 75px)' : '220px';
+        panel.style.zIndex = isJournalMaximized ? '9999' : '10';
+    }
+    updateJournalUI();
 }
 
 function updateJournalUI() {
     if (!journalContainer) return;
     if (!Array.isArray(state.tradeHistory) || state.tradeHistory.length === 0) {
-        journalContainer.innerHTML = `<div style="padding: 24px; text-align: center; color: var(--vela-text-muted, #46474b);">No trade executions recorded in journal for ${state.symbol}</div>`;
+        journalContainer.innerHTML = `
+            <div style="padding: 30px; text-align: center; color: var(--vela-text-muted, #757882); background: var(--vela-bg, #202126);">
+                <div style="font-size: 12px; font-weight: 600; color: var(--vela-text-primary, #eeeef1);">No trade executions found in journal</div>
+                <div style="font-size: 10.5px; margin-top: 4px; color: var(--vela-text-muted, #757882);">Trade history is synced automatically upon fills or via manual sync</div>
+                <button id="refresh-empty-journal-btn" style="margin-top: 10px; background: var(--vela-bg-chip, #292a2f); border: 1px solid var(--vela-border, #262629); color: var(--vela-text-primary, #eeeef1); font-size: 10.5px; font-weight: 600; padding: 4px 12px; border-radius: 4px; cursor: pointer;">↻ Sync Binance History</button>
+            </div>
+        `;
+        journalContainer.querySelector('#refresh-empty-journal-btn')?.addEventListener('click', () => {
+            fetchTradeHistory(state.symbol);
+        });
         return;
     }
 
-    let totalRealizedPnl = 0;
-    let winningTrades = 0;
-    let losingTrades = 0;
-    let totalCommission = 0;
-    let rowsHtml = '';
+    const allClosed = aggregateClosedTrades(state.tradeHistory, state.orderHistory);
+    const journCountEl = document.getElementById('journ-count');
+    if (journCountEl) journCountEl.textContent = allClosed.length.toString();
+    const uniqueSymbols = Array.from(new Set(state.tradeHistory.map(t => String(t.symbol).toUpperCase()))).filter(Boolean);
 
-    for (const t of state.tradeHistory) {
-        const isBuy = t.side === 'BUY';
-        const sideColor = isBuy ? 'var(--vela-up, #a7be94)' : 'var(--vela-down, #af6870)';
-        const pnl = parseFloat(t.realizedPnl || '0');
-        const comm = parseFloat(t.commission || '0');
-        const price = parseFloat(t.price || '0');
-        const qty = parseFloat(t.qty || '0');
+    const activeClosed = journalSymbolFilter === 'ALL' 
+        ? allClosed 
+        : allClosed.filter(t => t.symbol === journalSymbolFilter);
+    const activeFills = journalSymbolFilter === 'ALL'
+        ? state.tradeHistory
+        : state.tradeHistory.filter(t => t.symbol === journalSymbolFilter);
 
-        totalRealizedPnl += pnl;
-        totalCommission += Math.abs(comm);
-        if (pnl > 0.0001) winningTrades++;
-        else if (pnl < -0.0001) losingTrades++;
+    let totalGrossPnl = 0;
+    let totalFees = 0;
+    let winCount = 0;
+    let lossCount = 0;
+    let grossWins = 0;
+    let grossLosses = 0;
+    let slCount = 0;
+    let tpCount = 0;
+    let manualCount = 0;
 
-        const pnlStr = pnl === 0 ? '$0.00' : `${pnl > 0 ? '+' : ''}$${pnl.toFixed(4)} USDT`;
-        const pnlColor = pnl > 0 ? 'var(--vela-up, #a7be94)' : (pnl < 0 ? 'var(--vela-down, #af6870)' : 'var(--vela-text-muted, #757882)');
-        const dateStr = formatDateTime(t.time);
+    for (const t of activeClosed) {
+        totalGrossPnl += t.grossPnl;
+        totalFees += t.fee;
+        if (t.netPnl > 0.0001) {
+            winCount++;
+            grossWins += t.grossPnl;
+        } else if (t.netPnl < -0.0001) {
+            lossCount++;
+            grossLosses += Math.abs(t.grossPnl);
+        }
 
-        rowsHtml += `
-            <tr style="border-bottom: 1px solid var(--vela-border, #262629); font-size: 11px;">
-                <td style="padding: 7px 10px; color: var(--vela-text-muted, #757882); white-space: nowrap;">${dateStr}</td>
-                <td style="padding: 7px 10px; font-weight: 700; color: var(--vela-text-primary, #eeeef1);">${t.symbol}</td>
-                <td style="padding: 7px 10px; font-weight: 700; color: ${sideColor};">${t.side}</td>
-                <td style="padding: 7px 10px; color: var(--vela-text-secondary, #757882);">$${price.toFixed(2)}</td>
-                <td style="padding: 7px 10px; color: var(--vela-text-primary, #eeeef1);">${qty}</td>
-                <td style="padding: 7px 10px; font-weight: 700; color: ${pnlColor};">${pnlStr}</td>
-                <td style="padding: 7px 10px; color: var(--vela-text-muted, #757882);">${comm.toFixed(4)} ${t.commissionAsset || 'USDT'}</td>
-                <td style="padding: 7px 10px; color: var(--vela-text-muted, #46474b); font-family: monospace; font-size: 10px;">#${t.id || t.orderId}</td>
-            </tr>
+        if (t.closeReasonType === 'sl') slCount++;
+        else if (t.closeReasonType === 'tp') tpCount++;
+        else manualCount++;
+    }
+
+    const totalNetPnl = totalGrossPnl - totalFees;
+    const totalTrades = winCount + lossCount;
+    const winRate = totalTrades > 0 ? Math.round((winCount / totalTrades) * 100) : 0;
+    const profitFactor = grossLosses > 0 ? (grossWins / grossLosses).toFixed(2) : (grossWins > 0 ? '∞' : '0.00');
+    const netPnlColor = totalNetPnl >= 0 ? 'var(--vela-up, #a7be94)' : 'var(--vela-down, #af6870)';
+    const netPnlBg = totalNetPnl >= 0 ? 'rgba(167,190,148,0.12)' : 'rgba(175,104,112,0.12)';
+    const netPnlBorder = totalNetPnl >= 0 ? 'rgba(167,190,148,0.3)' : 'rgba(175,104,112,0.3)';
+
+    let contentHtml = '';
+
+    if (journalViewMode === 'trades') {
+        if (activeClosed.length === 0) {
+            contentHtml = `<div style="padding: 24px; text-align: center; color: var(--vela-text-muted, #757882); font-size: 11px;">No completed round-trip trades recorded for this filter. Check the Fills tab.</div>`;
+        } else {
+            let rowsHtml = '';
+            for (const t of activeClosed) {
+                const isLong = t.side === 'LONG';
+                const sideColor = isLong ? 'var(--vela-up, #a7be94)' : 'var(--vela-down, #af6870)';
+                const sideBg = isLong ? 'rgba(167,190,148,0.15)' : 'rgba(175,104,112,0.15)';
+                const pnlColor = t.netPnl >= 0 ? 'var(--vela-up, #a7be94)' : 'var(--vela-down, #af6870)';
+                const pnlStr = (t.netPnl >= 0 ? '+' : '') + '$' + t.netPnl.toFixed(2);
+                const dateStr = formatDateTime(t.closeTime);
+                const durationStr = formatDuration(t.durationMs);
+
+                let closeBadgeBg = 'rgba(56,192,253,0.12)';
+                let closeBadgeFg = '#38c0fd';
+                let closeBadgeBorder = 'rgba(56,192,253,0.25)';
+                let closeBadgeLabel = 'MANUAL';
+
+                if (t.closeReasonType === 'sl') {
+                    closeBadgeBg = 'rgba(175,104,112,0.18)';
+                    closeBadgeFg = 'var(--vela-down, #af6870)';
+                    closeBadgeBorder = 'rgba(175,104,112,0.3)';
+                    closeBadgeLabel = 'SL';
+                } else if (t.closeReasonType === 'tp') {
+                    closeBadgeBg = 'rgba(167,190,148,0.18)';
+                    closeBadgeFg = 'var(--vela-up, #a7be94)';
+                    closeBadgeBorder = 'rgba(167,190,148,0.3)';
+                    closeBadgeLabel = 'TP';
+                } else if (t.closeReasonType === 'limit') {
+                    closeBadgeBg = 'rgba(253,224,71,0.12)';
+                    closeBadgeFg = 'var(--vela-warning, #fde047)';
+                    closeBadgeBorder = 'rgba(253,224,71,0.25)';
+                    closeBadgeLabel = 'LIMIT';
+                }
+
+                rowsHtml += `
+                    <tr style="border-bottom: 1px solid var(--vela-border, #262629); font-size: 10.5px; transition: background 0.1s;" onmouseover="this.style.background='var(--vela-bg-hover, rgba(255,255,255,0.03))'" onmouseout="this.style.background='transparent'">
+                        <td style="padding: 4px 8px; color: var(--vela-text-secondary, #757882); white-space: nowrap;">
+                            <div>${dateStr}</div>
+                            <div style="font-size: 9.5px; color: var(--vela-text-muted, #757882); margin-top: 1px;">${durationStr}</div>
+                        </td>
+                        <td style="padding: 4px 8px; font-weight: 700; color: var(--vela-text-primary, #eeeef1); white-space: nowrap;">
+                            ${t.symbol}
+                        </td>
+                        <td style="padding: 4px 8px; white-space: nowrap;">
+                            <span style="font-size: 9.5px; font-weight: 700; padding: 1px 5px; border-radius: 2px; background: ${sideBg}; color: ${sideColor};">${t.side}</span>
+                        </td>
+                        <td style="padding: 4px 8px; font-family: var(--vela-font-mono, monospace); font-variant-numeric: tabular-nums; color: var(--vela-text-secondary, #757882); white-space: nowrap;">
+                            $${t.entryPrice.toFixed(2)} → <strong style="color: var(--vela-text-primary, #eeeef1);">$${t.exitPrice.toFixed(2)}</strong>
+                        </td>
+                        <td style="padding: 4px 8px; font-family: var(--vela-font-mono, monospace); font-variant-numeric: tabular-nums; color: var(--vela-text-primary, #eeeef1); white-space: nowrap;">
+                            ${t.qty}
+                        </td>
+                        <td style="padding: 4px 8px; white-space: nowrap;">
+                            <span title="${t.closeReason}" style="font-size: 9.5px; font-weight: 700; padding: 1px 5px; border-radius: 2px; background: ${closeBadgeBg}; color: ${closeBadgeFg}; border: 1px solid ${closeBadgeBorder};">
+                                ${closeBadgeLabel}
+                            </span>
+                        </td>
+                        <td style="padding: 4px 8px; white-space: nowrap; font-family: var(--vela-font-mono, monospace); font-variant-numeric: tabular-nums;">
+                            <div style="font-weight: 700; font-size: 11px; color: ${pnlColor};">${pnlStr} USDT</div>
+                            <div style="font-size: 9.5px; color: var(--vela-text-muted, #757882);">Fee: $${t.fee.toFixed(3)}</div>
+                        </td>
+                        <td style="padding: 4px 8px; text-align: right; white-space: nowrap;">
+                            <button class="jump-trade-btn" data-trade-id="${t.id}" style="background: var(--vela-bg-chip, #292a2f); border: 1px solid var(--vela-border, #262629); color: var(--vela-text-primary, #eeeef1); font-size: 10px; font-weight: 600; padding: 2px 7px; border-radius: 3px; cursor: pointer;">Chart</button>
+                        </td>
+                    </tr>
+                `;
+            }
+
+            contentHtml = `
+                <table style="width: 100%; border-collapse: collapse; text-align: left;">
+                    <thead>
+                        <tr style="color: var(--vela-text-muted, #757882); font-size: 9.5px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px; border-bottom: 1px solid var(--vela-border, #262629); background: var(--vela-bg, #202126); position: sticky; top: 0; z-index: 2;">
+                            <th style="padding: 5px 8px;">Time</th>
+                            <th style="padding: 5px 8px;">Symbol</th>
+                            <th style="padding: 5px 8px;">Side</th>
+                            <th style="padding: 5px 8px;">Entry → Exit</th>
+                            <th style="padding: 5px 8px;">Size</th>
+                            <th style="padding: 5px 8px;">Close Reason</th>
+                            <th style="padding: 5px 8px;">Net PnL</th>
+                            <th style="padding: 5px 8px; text-align: right;">Action</th>
+                        </tr>
+                    </thead>
+                    <tbody>${rowsHtml}</tbody>
+                </table>
+            `;
+        }
+    } else if (journalViewMode === 'fills') {
+        let fillsRows = '';
+        for (const f of activeFills) {
+            const isBuy = f.side === 'BUY';
+            const sideColor = isBuy ? 'var(--vela-up, #a7be94)' : 'var(--vela-down, #af6870)';
+            const pnl = parseFloat(f.realizedPnl || '0');
+            const pnlColor = pnl > 0 ? 'var(--vela-up, #a7be94)' : (pnl < 0 ? 'var(--vela-down, #af6870)' : 'var(--vela-text-muted, #757882)');
+            const pnlStr = pnl === 0 ? '$0.00' : (pnl > 0 ? '+' : '') + '$' + pnl.toFixed(4);
+            const dateStr = formatDateTime(f.time);
+            const price = parseFloat(f.price || '0');
+            const qty = parseFloat(f.qty || '0');
+            const fee = parseFloat(f.commission || '0');
+
+            fillsRows += `
+                <tr style="border-bottom: 1px solid var(--vela-border, #262629); font-size: 10.5px; transition: background 0.1s;" onmouseover="this.style.background='var(--vela-bg-hover, rgba(255,255,255,0.03))'" onmouseout="this.style.background='transparent'">
+                    <td style="padding: 4px 8px; color: var(--vela-text-muted, #757882); white-space: nowrap;">${dateStr}</td>
+                    <td style="padding: 4px 8px; font-weight: 700; color: var(--vela-text-primary, #eeeef1); white-space: nowrap;">${f.symbol}</td>
+                    <td style="padding: 4px 8px; white-space: nowrap;">
+                        <span style="font-size: 9.5px; font-weight: 700; padding: 1px 5px; border-radius: 2px; background: ${isBuy ? 'rgba(167,190,148,0.15)' : 'rgba(175,104,112,0.15)'}; color: ${sideColor};">${f.side}</span>
+                    </td>
+                    <td style="padding: 4px 8px; font-family: var(--vela-font-mono, monospace); font-variant-numeric: tabular-nums; color: var(--vela-text-secondary, #757882); white-space: nowrap;">$${price.toFixed(2)}</td>
+                    <td style="padding: 4px 8px; font-family: var(--vela-font-mono, monospace); font-variant-numeric: tabular-nums; color: var(--vela-text-primary, #eeeef1); white-space: nowrap;">${qty}</td>
+                    <td style="padding: 4px 8px; font-family: var(--vela-font-mono, monospace); font-variant-numeric: tabular-nums; font-weight: 700; color: ${pnlColor}; white-space: nowrap;">${pnlStr} USDT</td>
+                    <td style="padding: 4px 8px; color: var(--vela-text-muted, #757882); white-space: nowrap;">${fee.toFixed(4)} ${f.commissionAsset || 'USDT'}</td>
+                    <td style="padding: 4px 8px; color: var(--vela-text-muted, #757882); font-family: var(--vela-font-mono, monospace); font-size: 9.5px; white-space: nowrap;">#${f.id || f.orderId}</td>
+                    <td style="padding: 4px 8px; text-align: right; white-space: nowrap;">
+                        <button class="jump-fill-btn" data-fill-time="${f.time}" data-fill-sym="${f.symbol}" data-fill-price="${price}" style="background: var(--vela-bg-chip, #292a2f); border: 1px solid var(--vela-border, #262629); color: var(--vela-text-primary, #eeeef1); font-size: 10px; font-weight: 600; padding: 2px 7px; border-radius: 3px; cursor: pointer;">Chart</button>
+                    </td>
+                </tr>
+            `;
+        }
+
+        contentHtml = `
+            <table style="width: 100%; border-collapse: collapse; text-align: left;">
+                <thead>
+                    <tr style="color: var(--vela-text-muted, #757882); font-size: 9.5px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px; border-bottom: 1px solid var(--vela-border, #262629); background: var(--vela-bg, #202126); position: sticky; top: 0; z-index: 2;">
+                        <th style="padding: 5px 8px;">Time</th>
+                        <th style="padding: 5px 8px;">Symbol</th>
+                        <th style="padding: 5px 8px;">Side</th>
+                        <th style="padding: 5px 8px;">Fill Price</th>
+                        <th style="padding: 5px 8px;">Quantity</th>
+                        <th style="padding: 5px 8px;">Realized PnL</th>
+                        <th style="padding: 5px 8px;">Fee</th>
+                        <th style="padding: 5px 8px;">Trade ID</th>
+                        <th style="padding: 5px 8px; text-align: right;">Action</th>
+                    </tr>
+                </thead>
+                <tbody>${fillsRows}</tbody>
+            </table>
+        `;
+    } else if (journalViewMode === 'daily') {
+        const byDay: Record<string, { pnl: number; wins: number; losses: number; count: number; fees: number }> = {};
+        for (const t of activeClosed) {
+            const dayKey = new Date(t.closeTime).toISOString().slice(0, 10);
+            if (!byDay[dayKey]) byDay[dayKey] = { pnl: 0, wins: 0, losses: 0, count: 0, fees: 0 };
+            byDay[dayKey].pnl += t.netPnl;
+            byDay[dayKey].fees += t.fee;
+            byDay[dayKey].count++;
+            if (t.netPnl > 0.0001) byDay[dayKey].wins++;
+            else if (t.netPnl < -0.0001) byDay[dayKey].losses++;
+        }
+
+        const days = Object.keys(byDay).sort().reverse();
+        let dayCardsHtml = '';
+        for (const d of days) {
+            const data = byDay[d];
+            const dColor = data.pnl >= 0 ? 'var(--vela-up, #a7be94)' : 'var(--vela-down, #af6870)';
+            const dWinRate = (data.wins + data.losses > 0) ? Math.round((data.wins / (data.wins + data.losses)) * 100) : 0;
+            dayCardsHtml += `
+                <div style="background: var(--vela-bg-card, #202126); border: 1px solid var(--vela-border, #262629); border-radius: 4px; padding: 6px 12px; display: flex; align-items: center; justify-content: space-between;">
+                    <div>
+                        <div style="font-weight: 700; font-size: 11.5px; color: var(--vela-text-primary, #eeeef1);">${d}</div>
+                        <div style="font-size: 10px; color: var(--vela-text-muted, #757882); margin-top: 2px;">
+                            ${data.count} trades • ${data.wins}W / ${data.losses}L (${dWinRate}% Win Rate) • Fees: $${data.fees.toFixed(3)}
+                        </div>
+                    </div>
+                    <div style="text-align: right;">
+                        <div style="font-size: 13px; font-weight: 700; color: ${dColor}; font-family: var(--vela-font-mono, monospace); font-variant-numeric: tabular-nums;">
+                            ${data.pnl >= 0 ? '+' : ''}$${data.pnl.toFixed(2)} USDT
+                        </div>
+                    </div>
+                </div>
+            `;
+        }
+
+        contentHtml = `
+            <div style="padding: 10px; display: flex; flex-direction: column; gap: 6px;">
+                ${dayCardsHtml || '<div style="color: var(--vela-text-muted, #757882); text-align: center; padding: 20px; font-size: 11px;">No daily data recorded yet.</div>'}
+            </div>
         `;
     }
 
-    const tradeCount = state.tradeHistory.length;
-    const closedCount = winningTrades + losingTrades;
-    const winRate = closedCount > 0 ? Math.round((winningTrades / closedCount) * 100) : 0;
-    const pnlHeaderColor = totalRealizedPnl >= 0 ? 'var(--vela-up, #a7be94)' : 'var(--vela-down, #af6870)';
+    const symbolOptions = ['ALL', ...uniqueSymbols].map(s => `
+        <option value="${s}" ${s === journalSymbolFilter ? 'selected' : ''}>${s === 'ALL' ? 'All Symbols' : s}</option>
+    `).join('');
 
     journalContainer.innerHTML = `
-        <div style="padding: 8px 12px; display: flex; align-items: center; justify-content: space-between; border-bottom: 1px solid var(--vela-border, #262629); background: var(--vela-bg-panel, #121215); font-size: 11px;">
-            <div style="display: flex; gap: 16px; align-items: center;">
-                <span>Journal Realized PnL: <strong style="color: ${pnlHeaderColor}; font-size: 12px;">${totalRealizedPnl >= 0 ? '+' : ''}$${totalRealizedPnl.toFixed(2)} USDT</strong></span>
-                <span>Win Rate: <strong style="color: var(--vela-text-primary, #eeeef1);">${winRate}%</strong> (${winningTrades}W / ${losingTrades}L)</span>
-                <span>Fills: <strong style="color: var(--vela-text-primary, #eeeef1);">${tradeCount}</strong></span>
-                <span>Total Fees: <strong style="color: var(--vela-text-muted, #757882);">$${totalCommission.toFixed(3)} USDT</strong></span>
+        <div style="display: flex; flex-direction: column; height: 100%; background: var(--vela-bg, #202126);">
+            <!-- TOP METRICS STRIP -->
+            <div style="padding: 5px 12px; display: flex; align-items: center; justify-content: space-between; gap: 8px; border-bottom: 1px solid var(--vela-border, #262629); background: var(--vela-bg, #202126); flex-wrap: wrap;">
+                <div style="display: flex; align-items: center; gap: 8px; flex-wrap: wrap;">
+                    <!-- Realized Net PnL -->
+                    <div style="background: ${netPnlBg}; border: 1px solid ${netPnlBorder}; border-radius: 4px; padding: 2px 8px; display: flex; flex-direction: column;">
+                        <span style="font-size: 8.5px; font-weight: 700; text-transform: uppercase; color: var(--vela-text-muted, #757882); letter-spacing: 0.5px;">Net PnL</span>
+                        <span style="font-size: 12.5px; font-weight: 800; color: ${netPnlColor}; font-family: var(--vela-font-mono, monospace); font-variant-numeric: tabular-nums;">
+                            ${totalNetPnl >= 0 ? '+' : ''}$${totalNetPnl.toFixed(2)} USDT
+                        </span>
+                    </div>
+
+                    <!-- Win Rate -->
+                    <div style="background: var(--vela-bg-card, #202126); border: 1px solid var(--vela-border, #262629); border-radius: 4px; padding: 2px 8px; display: flex; flex-direction: column;">
+                        <span style="font-size: 8.5px; font-weight: 700; text-transform: uppercase; color: var(--vela-text-muted, #757882); letter-spacing: 0.5px;">Win Rate</span>
+                        <div style="display: flex; align-items: baseline; gap: 4px;">
+                            <span style="font-size: 12px; font-weight: 700; color: var(--vela-text-primary, #eeeef1); font-family: var(--vela-font-mono, monospace);">${winRate}%</span>
+                            <span style="font-size: 9.5px; color: var(--vela-text-muted, #757882);">(${winCount}W / ${lossCount}L)</span>
+                        </div>
+                    </div>
+
+                    <!-- Profit Factor -->
+                    <div style="background: var(--vela-bg-card, #202126); border: 1px solid var(--vela-border, #262629); border-radius: 4px; padding: 2px 8px; display: flex; flex-direction: column;">
+                        <span style="font-size: 8.5px; font-weight: 700; text-transform: uppercase; color: var(--vela-text-muted, #757882); letter-spacing: 0.5px;">Profit Factor</span>
+                        <span style="font-size: 12px; font-weight: 700; color: var(--vela-text-primary, #eeeef1); font-family: var(--vela-font-mono, monospace);">${profitFactor}</span>
+                    </div>
+
+                    <!-- Close Breakdown -->
+                    <div style="background: var(--vela-bg-card, #202126); border: 1px solid var(--vela-border, #262629); border-radius: 4px; padding: 2px 8px; display: flex; flex-direction: column;">
+                        <span style="font-size: 8.5px; font-weight: 700; text-transform: uppercase; color: var(--vela-text-muted, #757882); letter-spacing: 0.5px;">Exit Breakdown</span>
+                        <div style="display: flex; gap: 6px; align-items: center; margin-top: 1px;">
+                            <span style="font-size: 9.5px; font-weight: 700; color: var(--vela-up, #a7be94);">TP ${tpCount}</span>
+                            <span style="font-size: 9.5px; color: var(--vela-border, #3a3b45);">•</span>
+                            <span style="font-size: 9.5px; font-weight: 700; color: var(--vela-down, #af6870);">SL ${slCount}</span>
+                            <span style="font-size: 9.5px; color: var(--vela-border, #3a3b45);">•</span>
+                            <span style="font-size: 9.5px; font-weight: 700; color: #38c0fd;">MANUAL ${manualCount}</span>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- CONTROLS -->
+                <div style="display: flex; align-items: center; gap: 6px;">
+                    <select id="journal-sym-filter" style="background: var(--vela-bg-chip, #292a2f); color: var(--vela-text-primary, #eeeef1); border: 1px solid var(--vela-border, #262629); border-radius: 3px; padding: 3px 6px; font-size: 10px; font-weight: 600; cursor: pointer; outline: none;">
+                        ${symbolOptions}
+                    </select>
+
+                    <div style="display: flex; background: var(--vela-bg-card, #202126); border: 1px solid var(--vela-border, #262629); border-radius: 3px; padding: 1px;">
+                        <button id="view-mode-trades" style="background: ${journalViewMode === 'trades' ? 'var(--vela-bg-chip, #292a2f)' : 'transparent'}; color: ${journalViewMode === 'trades' ? 'var(--vela-text-primary, #eeeef1)' : 'var(--vela-text-secondary, #757882)'}; border: none; font-size: 10px; font-weight: 600; padding: 2px 7px; border-radius: 2px; cursor: pointer;">Trades (${activeClosed.length})</button>
+                        <button id="view-mode-fills" style="background: ${journalViewMode === 'fills' ? 'var(--vela-bg-chip, #292a2f)' : 'transparent'}; color: ${journalViewMode === 'fills' ? 'var(--vela-text-primary, #eeeef1)' : 'var(--vela-text-secondary, #757882)'}; border: none; font-size: 10px; font-weight: 600; padding: 2px 7px; border-radius: 2px; cursor: pointer;">Fills (${activeFills.length})</button>
+                        <button id="view-mode-daily" style="background: ${journalViewMode === 'daily' ? 'var(--vela-bg-chip, #292a2f)' : 'transparent'}; color: ${journalViewMode === 'daily' ? 'var(--vela-text-primary, #eeeef1)' : 'var(--vela-text-secondary, #757882)'}; border: none; font-size: 10px; font-weight: 600; padding: 2px 7px; border-radius: 2px; cursor: pointer;">Daily PnL</button>
+                    </div>
+
+                    <button id="journal-maximize-btn" title="${isJournalMaximized ? 'Dock to bottom' : 'Expand full height'}" style="background: var(--vela-bg-chip, #292a2f); border: 1px solid var(--vela-border, #262629); color: var(--vela-text-secondary, #757882); font-size: 10px; font-weight: 600; padding: 3px 6px; border-radius: 3px; cursor: pointer;">
+                        ${isJournalMaximized ? 'Dock' : 'Expand'}
+                    </button>
+
+                    <button id="refresh-journal-btn" title="Refresh trade fills from Binance" style="background: var(--vela-bg-chip, #292a2f); border: 1px solid var(--vela-border, #262629); color: var(--vela-text-secondary, #757882); font-size: 10px; font-weight: 600; padding: 3px 6px; border-radius: 3px; cursor: pointer;">↻</button>
+                </div>
             </div>
-            <button id="refresh-journal-btn" style="background: var(--vela-bg-card, #232429); border: 1px solid var(--vela-border, #262629); color: var(--vela-text-secondary, #757882); font-size: 10px; padding: 2px 8px; border-radius: 4px; cursor: pointer;">↻ Refresh</button>
+
+            <!-- TABLE CONTENT -->
+            <div style="flex: 1; overflow: auto; background: var(--vela-bg, #202126);">
+                ${contentHtml}
+            </div>
         </div>
-        <table style="width: 100%; border-collapse: collapse; text-align: left;">
-            <thead>
-                <tr style="color: var(--vela-text-muted, #46474b); font-size: 10px; text-transform: uppercase; border-bottom: 1px solid var(--vela-border, #262629);">
-                    <th style="padding: 6px 10px;">Time</th>
-                    <th style="padding: 6px 10px;">Symbol</th>
-                    <th style="padding: 6px 10px;">Side</th>
-                    <th style="padding: 6px 10px;">Fill Price</th>
-                    <th style="padding: 6px 10px;">Quantity</th>
-                    <th style="padding: 6px 10px;">Realized PnL</th>
-                    <th style="padding: 6px 10px;">Commission Fee</th>
-                    <th style="padding: 6px 10px;">Trade ID</th>
-                </tr>
-            </thead>
-            <tbody>${rowsHtml}</tbody>
-        </table>
     `;
 
+    // Bind event listeners
     journalContainer.querySelector('#refresh-journal-btn')?.addEventListener('click', () => {
-        fetchTradeHistory(state.symbol);
+        fetchTradeHistory(journalSymbolFilter === 'ALL' ? undefined : journalSymbolFilter);
+    });
+
+    journalContainer.querySelector('#journal-maximize-btn')?.addEventListener('click', () => {
+        toggleJournalPanelMaximize();
+    });
+
+    const symSelect = journalContainer.querySelector('#journal-sym-filter') as HTMLSelectElement | null;
+    symSelect?.addEventListener('change', () => {
+        journalSymbolFilter = symSelect.value;
+        updateJournalUI();
+    });
+
+    journalContainer.querySelector('#view-mode-trades')?.addEventListener('click', () => {
+        journalViewMode = 'trades';
+        updateJournalUI();
+    });
+
+    journalContainer.querySelector('#view-mode-fills')?.addEventListener('click', () => {
+        journalViewMode = 'fills';
+        updateJournalUI();
+    });
+
+    journalContainer.querySelector('#view-mode-daily')?.addEventListener('click', () => {
+        journalViewMode = 'daily';
+        updateJournalUI();
+    });
+
+    // Bind jump buttons
+    journalContainer.querySelectorAll('.jump-trade-btn').forEach(btn => {
+        btn.addEventListener('click', () => {
+            const id = (btn as HTMLElement).dataset.tradeId;
+            const target = activeClosed.find(t => String(t.id) === String(id));
+            if (target) jumpChartToTrade(target);
+        });
+    });
+
+    journalContainer.querySelectorAll('.jump-fill-btn').forEach(btn => {
+        btn.addEventListener('click', () => {
+            const time = Number((btn as HTMLElement).dataset.fillTime || 0);
+            const sym = (btn as HTMLElement).dataset.fillSym || '';
+            const price = parseFloat((btn as HTMLElement).dataset.fillPrice || '0');
+            jumpChartToFill(time, sym, price);
+        });
     });
 }
 
@@ -803,11 +1836,17 @@ export function mountIndependentOrderTicket(ws: VelaWorkspace) {
             <button class="vela-order-ticket-close" title="Close Order Ticket">✕</button>
         </div>
         <div class="vela-order-ticket-body">
-            <div style="padding: 12px; font-family: -apple-system, system-ui, sans-serif; font-size: 12px; color: var(--vela-text-secondary, #757882); background: var(--vela-bg-panel, #121215);">
+            <div style="padding: 12px; font-family: -apple-system, system-ui, sans-serif; font-size: 12px; color: var(--vela-text-secondary, #757882); background: var(--vela-bg, #202126);">
                     <!-- Environment switcher -->
                     <div style="display: flex; gap: 6px; margin-bottom: 12px;">
-                        <button id="env-testnet-btn" style="flex: 1; padding: 6px; font-size: 11px; font-weight: 700; border-radius: 4px; border: 1px solid ${state.isTestnet ? 'var(--vela-warning, #fde047)' : 'var(--vela-border, #262629)'}; background: ${state.isTestnet ? 'var(--vela-warning-bg, #29261a)' : 'var(--vela-bg-card, #232429)'}; color: ${state.isTestnet ? 'var(--vela-warning, #fde047)' : 'var(--vela-text-secondary, #757882)'}; cursor: pointer;">TESTNET</button>
-                        <button id="env-prod-btn" style="flex: 1; padding: 6px; font-size: 11px; font-weight: 700; border-radius: 4px; border: 1px solid ${!state.isTestnet ? 'var(--vela-up, #a7be94)' : 'var(--vela-border, #262629)'}; background: ${!state.isTestnet ? 'var(--vela-up-selected-bg, #363a38)' : 'var(--vela-bg-card, #232429)'}; color: ${!state.isTestnet ? 'var(--vela-up, #a7be94)' : 'var(--vela-text-secondary, #757882)'}; cursor: pointer;">PRODUCTION LIVE</button>
+                        <button id="env-testnet-btn" style="flex: 1; padding: 6px; font-size: 11px; font-weight: 700; border-radius: 4px; border: 1px solid ${state.isTestnet ? 'rgba(255, 255, 255, 0.45)' : 'var(--vela-border, #262629)'}; background: ${state.isTestnet ? 'rgba(255, 255, 255, 0.1)' : 'var(--vela-bg-card, #232429)'}; color: ${state.isTestnet ? '#ffffff' : 'var(--vela-text-secondary, #757882)'}; cursor: pointer; display: inline-flex; align-items: center; justify-content: center; gap: 6px;">
+                            <img src="${BINANCE_WHITE_ICON}" alt="Testnet" style="width: 14px; height: 14px; opacity: ${state.isTestnet ? '1' : '0.45'};" />
+                            <span>TESTNET</span>
+                        </button>
+                        <button id="env-prod-btn" style="flex: 1; padding: 6px; font-size: 11px; font-weight: 700; border-radius: 4px; border: 1px solid ${!state.isTestnet ? '#f0b90b' : 'var(--vela-border, #262629)'}; background: ${!state.isTestnet ? 'rgba(240, 185, 11, 0.16)' : 'var(--vela-bg-card, #232429)'}; color: ${!state.isTestnet ? '#f0b90b' : 'var(--vela-text-secondary, #757882)'}; cursor: pointer; display: inline-flex; align-items: center; justify-content: center; gap: 6px;">
+                            <img src="${BINANCE_YELLOW_ICON}" alt="Production" style="width: 14px; height: 14px; opacity: ${!state.isTestnet ? '1' : '0.45'};" />
+                            <span>PRODUCTION LIVE</span>
+                        </button>
                     </div>
 
                     <!-- Margin Mode & Leverage -->
@@ -833,7 +1872,7 @@ export function mountIndependentOrderTicket(ws: VelaWorkspace) {
                     </div>
 
                     <!-- Order Type Selector -->
-                    <div style="display: flex; background: var(--vela-bg-panel, #121215); border: 1px solid var(--vela-border, #262629); border-radius: 6px; margin-bottom: 12px; overflow: hidden;">
+                    <div style="display: flex; background: var(--vela-bg-card, #202126); border: 1px solid var(--vela-border, #262629); border-radius: 6px; margin-bottom: 12px; overflow: hidden;">
                         <button id="type-market-btn" style="flex: 1; padding: 6px; font-size: 11px; font-weight: 700; background: var(--vela-bg-chip, #292a2f); color: var(--vela-text-primary, #eeeef1); border: none; cursor: pointer;">Market</button>
                         <button id="type-limit-btn" style="flex: 1; padding: 6px; font-size: 11px; font-weight: 700; background: transparent; color: var(--vela-text-secondary, #757882); border: none; cursor: pointer;">Limit</button>
                         <button id="type-stop-btn" style="flex: 1; padding: 6px; font-size: 11px; font-weight: 700; background: transparent; color: var(--vela-text-secondary, #757882); border: none; cursor: pointer;">Stop</button>
@@ -875,7 +1914,7 @@ export function mountIndependentOrderTicket(ws: VelaWorkspace) {
                     </div>
 
                     <!-- Bracket TP / SL -->
-                    <div style="background: var(--vela-bg-panel, #121215); border: 1px solid var(--vela-border, #262629); border-radius: 6px; padding: 8px 10px; margin-bottom: 14px;">
+                    <div style="background: var(--vela-bg-card, #202126); border: 1px solid var(--vela-border, #262629); border-radius: 6px; padding: 8px 10px; margin-bottom: 14px;">
                         <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 6px;">
                             <label style="display: flex; align-items: center; gap: 6px; font-size: 11px; cursor: pointer;">
                                 <input id="chk-tp" type="checkbox" /> Take Profit
@@ -1274,6 +2313,10 @@ export function registerTradeButton() {
 export function setWorkspaceInstance(ws: VelaWorkspace) {
     wsInstance = ws;
     mountIndependentOrderTicket(ws);
+    ws.on('cell:created', () => syncTradeMarksToCharts());
+    for (const cell of ws.cells()) {
+        cell.chart.on('market:changed', () => syncTradeMarksToCharts());
+    }
 }
 
 export function getWorkspaceInstance(): VelaWorkspace | null {
@@ -1838,7 +2881,7 @@ export function mountBottomAccountStrip(ws: VelaWorkspace) {
     panel.style.cssText = `
         height: 0px;
         display: none;
-        background: var(--vela-bg-bar, #191a1e);
+        background: var(--vela-bg, #202126);
         border-top: 1px solid var(--vela-border, #262629);
         border-bottom: 1px solid var(--vela-border, #262629);
         flex-direction: column;
@@ -1873,15 +2916,18 @@ export function mountBottomAccountStrip(ws: VelaWorkspace) {
         spacer.innerHTML = `
             <div style="display: flex; align-items: center; width: 100%; height: 100%;">
                 <div style="width: 1px; height: 16px; background: var(--vela-border, #262629); margin: 0 8px; flex: none;"></div>
+                <button id="strip-env-badge" title="${state.isTestnet ? 'Binance Testnet (Click to switch to Production Live)' : 'Binance Production Live (Click to switch to Testnet)'}" style="display: inline-flex; align-items: center; justify-content: center; width: 28px; height: 26px; border-radius: 4px; border: 1px solid ${state.isTestnet ? 'rgba(255, 255, 255, 0.2)' : '#f0b90b'}; background: ${state.isTestnet ? 'rgba(255, 255, 255, 0.06)' : 'rgba(240, 185, 11, 0.18)'}; box-shadow: ${state.isTestnet ? 'none' : '0 0 8px rgba(240, 185, 11, 0.3)'}; cursor: pointer; transition: all 0.15s ease; flex: none; padding: 0;">
+                    <img id="strip-env-icon" src="${state.isTestnet ? BINANCE_WHITE_ICON : BINANCE_YELLOW_ICON}" alt="Binance" style="width: 17px; height: 17px; display: block;" />
+                </button>
+                <div style="width: 1px; height: 16px; background: var(--vela-border, #262629); margin: 0 8px; flex: none;"></div>
                 <div id="velo-dock-tabs" style="display: flex; gap: 2px; align-items: center; flex: none;">
                     <button id="tab-positions-btn" style="background: transparent; color: var(--vela-text-secondary, #757882); border: none; font-size: 11px; font-weight: 600; padding: 4px 10px; cursor: pointer; border-radius: 4px; display: inline-flex; align-items: center; gap: 4px;">Positions (<span id="pos-count">0</span>)</button>
                     <button id="tab-orders-btn" style="background: transparent; color: var(--vela-text-secondary, #757882); border: none; font-size: 11px; font-weight: 600; padding: 4px 10px; cursor: pointer; border-radius: 4px; display: inline-flex; align-items: center; gap: 4px;">Orders (<span id="ord-count">0</span>)</button>
-                    <button id="tab-history-btn" style="background: transparent; color: var(--vela-text-secondary, #757882); border: none; font-size: 11px; font-weight: 600; padding: 4px 10px; cursor: pointer; border-radius: 4px;">Order History</button>
-                    <button id="tab-journal-btn" style="background: transparent; color: var(--vela-text-secondary, #757882); border: none; font-size: 11px; font-weight: 600; padding: 4px 10px; cursor: pointer; border-radius: 4px;">Trade Journal</button>
+                    <button id="tab-history-btn" style="background: transparent; color: var(--vela-text-secondary, #757882); border: none; font-size: 11px; font-weight: 600; padding: 4px 10px; cursor: pointer; border-radius: 4px; display: inline-flex; align-items: center; gap: 4px;">Order History (<span id="hist-count">0</span>)</button>
+                    <button id="tab-journal-btn" style="background: transparent; color: var(--vela-text-secondary, #757882); border: none; font-size: 11px; font-weight: 600; padding: 4px 10px; cursor: pointer; border-radius: 4px; display: inline-flex; align-items: center; gap: 4px;">Trade Journal (<span id="journ-count">0</span>)</button>
                 </div>
                 <div style="flex: 1 1 auto;"></div>
                 <div style="display: flex; align-items: center; gap: 8px; flex: none; margin-right: 6px;">
-                    <span id="strip-env-badge" style="color: ${state.isTestnet ? 'var(--vela-warning, #fde047)' : 'var(--vela-up, #a7be94)'}; font-weight: 700; font-size: 10px; background: ${state.isTestnet ? 'var(--vela-warning-bg, #29261a)' : 'var(--vela-up-selected-bg, #363a38)'}; padding: 2px 6px; border-radius: 4px;">${state.isTestnet ? 'BINANCE TESTNET' : 'BINANCE PRODUCTION'}</span>
                     <span id="strip-avail-val" style="color: var(--vela-text-primary, #eeeef1); font-size: 11px; font-weight: 600;">$0.00</span>
                     <button id="strip-toggle-btn" title="Toggle Account Panel" style="background: var(--vela-bg-chip, #292a2f); border: 1px solid var(--vela-border, #262629); color: var(--vela-text-secondary, #757882); font-size: 10px; font-weight: 600; padding: 2px 7px; border-radius: 4px; cursor: pointer; display: inline-flex; align-items: center; gap: 4px;">
                         <span>Panel</span> <span id="strip-toggle-chevron">▲</span>
@@ -1951,10 +2997,19 @@ export function mountBottomAccountStrip(ws: VelaWorkspace) {
         if (historyContainer) historyContainer.style.display = tab === 'history' ? 'block' : 'none';
         if (journalContainer) journalContainer.style.display = tab === 'journal' ? 'block' : 'none';
 
-        if (tab === 'positions') fetchAccount();
-        else if (tab === 'orders') fetchOrders(state.symbol);
-        else if (tab === 'history') fetchOrderHistory(state.symbol);
-        else if (tab === 'journal') fetchTradeHistory(state.symbol);
+        if (tab === 'positions') {
+            updatePositionsUI();
+            fetchAccount();
+        } else if (tab === 'orders') {
+            updateOrdersUI();
+            fetchOrders(state.symbol);
+        } else if (tab === 'history') {
+            updateHistoryUI();
+            fetchOrderHistory(state.symbol);
+        } else if (tab === 'journal') {
+            updateJournalUI();
+            fetchTradeHistory();
+        }
     };
 
     tabPos?.addEventListener('click', () => switchTab('positions'));
@@ -1965,9 +3020,23 @@ export function mountBottomAccountStrip(ws: VelaWorkspace) {
     const envBadge = document.getElementById('strip-env-badge');
     if (envBadge) {
         envBadge.style.cursor = 'pointer';
-        envBadge.title = 'Click to toggle Testnet / Production';
-        envBadge.addEventListener('click', () => {
+        envBadge.addEventListener('click', (e) => {
+            e.stopPropagation();
             setEnvironment(!state.isTestnet);
+        });
+        envBadge.addEventListener('mouseenter', () => {
+            if (state.isTestnet) {
+                envBadge.style.background = 'rgba(255, 255, 255, 0.12)';
+            } else {
+                envBadge.style.background = 'rgba(240, 185, 11, 0.28)';
+            }
+        });
+        envBadge.addEventListener('mouseleave', () => {
+            if (state.isTestnet) {
+                envBadge.style.background = 'rgba(255, 255, 255, 0.06)';
+            } else {
+                envBadge.style.background = 'rgba(240, 185, 11, 0.18)';
+            }
         });
     }
 
@@ -1980,7 +3049,7 @@ export function mountBottomAccountStrip(ws: VelaWorkspace) {
     fetchAccount();
     fetchOrders();
     fetchOrderHistory(state.symbol);
-    fetchTradeHistory(state.symbol);
+    fetchTradeHistory();
     startAccountPolling();
 }
 
