@@ -1263,6 +1263,22 @@ describe('EngineOrchestrator', () => {
         expect((computed[0]!.series[0] as { points: unknown[] }).points).toHaveLength(25_000);
     });
 
+    it('scroll backfill: scrolling near the oldest loaded bar triggers on-demand history backfill', async () => {
+        const renderer = new FakeRenderer();
+        const feed = new DeepHistoryFeed(5000);
+        const chart = new Vela({} as unknown as HTMLElement, { bars: 1000, volume: false }, { renderer, engines: [new MockEngine()], dataFeed: feed });
+        await chart.ready();
+        expect(renderer.bars.length).toBe(1000);
+
+        const initialOldest = renderer.bars[0]!.time;
+        renderer.fireViewport({ from: initialOldest, to: renderer.bars[120]!.time });
+        await flush();
+
+        expect(renderer.bars.length).toBe(2000);
+        expect(renderer.bars[0]!.time).toBeLessThan(initialOldest);
+        expect(renderer.bars[1000]!.time).toBe(initialOldest);
+    });
+
     it('last engine registered for a language wins, warning on the replacement', async () => {
         const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
         const renderer = new FakeRenderer();

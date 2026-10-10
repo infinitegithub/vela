@@ -439,14 +439,76 @@ export async function changeLeverage(symbol: string, leverage: number, isTestnet
     }, apiKey, secretKey);
 }
 
-export async function getOrderHistory(symbol?: string, isTestnet: boolean = true, apiKey?: string, secretKey?: string, limit: number = 50) {
+export async function getOrderHistory(symbol?: string, isTestnet: boolean = true, apiKey?: string, secretKey?: string, limit: number = 1000) {
     const baseUrl = getBaseUrl(isTestnet);
     const query: Record<string, any> = { limit };
     if (symbol) query.symbol = symbol.replace(/\.P$/i, "").toUpperCase();
-    return request(baseUrl, "/fapi/v1/allOrders", "GET", query, apiKey, secretKey);
+
+    const regularOrdersPromise = request(baseUrl, "/fapi/v1/allOrders", "GET", query, apiKey, secretKey).catch(() => []);
+    const algoOrdersPromise = query.symbol
+        ? request(baseUrl, "/fapi/v1/allAlgoOrders", "GET", { symbol: query.symbol, limit }, apiKey, secretKey).catch(() => [])
+        : Promise.resolve([]);
+
+    const [regularOrders, algoOrders] = await Promise.all([regularOrdersPromise, algoOrdersPromise]);
+    const regularList = Array.isArray(regularOrders) ? regularOrders : [];
+    const algoList = Array.isArray(algoOrders) ? algoOrders : [];
+
+    // Map algo orders by actualOrderId and clientAlgoId
+    const algoByActualOrder = new Map<string, any>();
+    const algoByClientId = new Map<string, any>();
+    for (const ao of algoList) {
+        if (ao.actualOrderId) algoByActualOrder.set(String(ao.actualOrderId), ao);
+        if (ao.clientAlgoId) algoByClientId.set(String(ao.clientAlgoId), ao);
+    }
+
+    // Enrich regular orders with algo metadata
+    for (const o of regularList) {
+        const matchedAlgo = algoByActualOrder.get(String(o.orderId)) || (o.clientOrderId ? algoByClientId.get(String(o.clientOrderId)) : null);
+        if (matchedAlgo) {
+            o.isAlgo = true;
+            o.algoId = matchedAlgo.algoId;
+            o.algoOrderType = matchedAlgo.orderType; // e.g. 'STOP_MARKET', 'TAKE_PROFIT_MARKET'
+            o.triggerPrice = matchedAlgo.triggerPrice;
+            o.algoStatus = matchedAlgo.algoStatus;
+            o.origType = matchedAlgo.orderType;
+            if (matchedAlgo.triggerPrice && (!o.stopPrice || parseFloat(o.stopPrice) === 0)) {
+                o.stopPrice = matchedAlgo.triggerPrice;
+            }
+        } else if (o.closePosition === true || o.closePosition === 'true') {
+            o.isBracketClose = true;
+        }
+    }
+
+    const merged = [...regularList];
+    for (const ao of algoList) {
+        // Include standalone / canceled / expired algo orders that didn't produce a regular fill
+        if (!ao.actualOrderId || !regularList.some(r => String(r.orderId) === String(ao.actualOrderId))) {
+            merged.push({
+                orderId: ao.algoId,
+                algoId: ao.algoId,
+                clientOrderId: ao.clientAlgoId,
+                symbol: ao.symbol,
+                side: ao.side,
+                type: ao.orderType,
+                origType: ao.orderType,
+                price: ao.price || '0',
+                stopPrice: ao.triggerPrice || '0',
+                avgPrice: ao.actualPrice || '0',
+                origQty: ao.quantity || '0',
+                executedQty: '0',
+                status: ao.algoStatus,
+                time: ao.createTime || ao.updateTime,
+                updateTime: ao.updateTime,
+                isAlgo: true
+            });
+        }
+    }
+
+    merged.sort((a, b) => Number(b.time || b.updateTime || 0) - Number(a.time || a.updateTime || 0));
+    return merged;
 }
 
-export async function getUserTrades(symbol?: string, isTestnet: boolean = true, apiKey?: string, secretKey?: string, limit: number = 50) {
+export async function getUserTrades(symbol?: string, isTestnet: boolean = true, apiKey?: string, secretKey?: string, limit: number = 1000) {
     const baseUrl = getBaseUrl(isTestnet);
     const query: Record<string, any> = { limit };
     if (symbol) query.symbol = symbol.replace(/\.P$/i, "").toUpperCase();

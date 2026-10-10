@@ -2,6 +2,7 @@ import { registerSidePanel, registerWidgetAction, registerIcon } from '../src/pl
 import type { WidgetContext } from '../src/widget/WidgetContext';
 import type { VelaWorkspace } from '../src/workspace';
 import { Dialog } from '../src/ui';
+import { timeframeToMs } from '../src/data/timeframe';
 import { BINANCE_WHITE_ICON, BINANCE_YELLOW_ICON } from './binance-icons-data';
 
 registerIcon('trade', '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m16 3 4 4-4 4"/><path d="M20 7H4"/><path d="m8 21-4-4 4-4"/><path d="M4 17h16"/></svg>');
@@ -36,6 +37,68 @@ export interface TradeState {
     openOrders: any[];
     orderHistory: any[];
     tradeHistory: any[];
+}
+
+let wsInstance: VelaWorkspace | null = null;
+
+function toast(message: string, kind: 'info' | 'success' | 'warning' | 'error' = 'info') {
+    if (wsInstance?.toast) {
+        wsInstance.toast(message, kind);
+    } else {
+        console.log(`[toast ${kind}]`, message);
+    }
+}
+
+export function getSymbolLogoHtml(symbol: string, size = 16): string {
+    const clean = String(symbol || '').toUpperCase().replace(/^BINANCE:/, '').replace(/\.P$/, '');
+    const base = clean.replace(/[-_/]?(USDT|USDC|USD1|USDS|BUSD|USD|EUR|PERP)$/i, '') || clean;
+    const url = `https://crypto-icons.ledger.com/${encodeURIComponent(base)}.png`;
+    const initials = base.slice(0, 2);
+    const colors = ['#2962ff', '#00b0ff', '#26a69a', '#7e57c2', '#f0b90b', '#e573b5', '#ff6d00'];
+    let hash = 0;
+    for (let i = 0; i < base.length; i++) hash = (hash * 31 + base.charCodeAt(i)) >>> 0;
+    const bgColor = colors[hash % colors.length];
+
+    return `<span style="display: inline-flex; align-items: center; justify-content: center; width: ${size}px; height: ${size}px; border-radius: 50%; overflow: hidden; background: ${bgColor}; flex: none; vertical-align: middle; margin-right: 6px; box-shadow: 0 1px 3px rgba(0,0,0,0.3);">` +
+        `<img src="${url}" alt="${base}" style="width: 100%; height: 100%; border-radius: 50%; display: block; object-fit: cover;" onerror="this.style.display='none'; if(this.nextElementSibling) this.nextElementSibling.style.display='inline-block';" />` +
+        `<span style="display: none; font-size: ${Math.round(size * 0.52)}px; font-weight: 700; color: #ffffff; line-height: 1; text-transform: uppercase;">${initials}</span>` +
+    `</span>`;
+}
+
+export function switchChartToSymbol(symbol: string, targetPrice?: number) {
+    if (!symbol) return;
+    const clean = symbol.replace(/.*:/, '').replace(/\.P$/i, '').toUpperCase().trim();
+    if (!clean) return;
+
+    if (wsInstance) {
+        let targetCell = wsInstance.cells().find(c => {
+            const cSym = (c.symbol || '').toUpperCase().replace(/^BINANCE:/, '').replace(/\.P$/, '');
+            return cSym === clean;
+        });
+
+        if (targetCell) {
+            try {
+                wsInstance.setActiveCell(targetCell.id);
+            } catch {}
+        } else {
+            targetCell = wsInstance.active || wsInstance.cells()[0];
+            if (targetCell) {
+                const canonical = `BINANCE:${clean}.P`;
+                void targetCell.chart.setMarket({ symbol: canonical });
+            }
+        }
+
+        if (targetCell && targetPrice && targetPrice > 0) {
+            try {
+                const t = Date.now();
+                const span = 15 * 60_000;
+                targetCell.chart.setVisibleRange({ from: t - span, to: t + span });
+            } catch {}
+        }
+    }
+
+    setActiveSymbol(clean);
+    toast(`Chart switched to ${clean}${targetPrice ? ` ($${targetPrice.toFixed(2)})` : ''}`, 'info');
 }
 
 const savedEnv = typeof localStorage !== "undefined" ? localStorage.getItem("vela-binance-env") : null;
@@ -588,9 +651,12 @@ function updatePositionsUI() {
         const marginUsed = (p.entryPrice * p.size) / (p.leverage || 1);
 
         rowsHtml += `
-            <tr style="border-bottom: 1px solid var(--vela-border, #262629); font-size: 10.5px; transition: background 0.1s;" onmouseover="this.style.background='var(--vela-bg-hover, rgba(255,255,255,0.03))'" onmouseout="this.style.background='transparent'">
+            <tr class="pos-row" data-sym="${p.symbol}" data-price="${p.markPrice}" title="Click to view ${p.symbol} on chart" style="border-bottom: 1px solid var(--vela-border, #262629); font-size: 10.5px; transition: background 0.1s; cursor: pointer;" onmouseover="this.style.background='var(--vela-bg-hover, rgba(255,255,255,0.03))'" onmouseout="this.style.background='transparent'">
                 <td style="padding: 5px 8px; font-weight: 700; color: var(--vela-text-primary, #eeeef1); white-space: nowrap;">
-                    ${p.symbol}
+                    <div style="display: inline-flex; align-items: center;">
+                        ${getSymbolLogoHtml(p.symbol, 16)}
+                        <span>${p.symbol}</span>
+                    </div>
                 </td>
                 <td style="padding: 5px 8px; white-space: nowrap;">
                     <span style="font-size: 9.5px; font-weight: 700; padding: 1px 5px; border-radius: 2px; background: ${sideBg}; color: ${sideColor}; border: 1px solid ${sideBorder};">${p.side} ${p.leverage}x</span>
@@ -610,7 +676,7 @@ function updatePositionsUI() {
                     <div style="font-size: 9.5px; color: ${rowPnlColor}; font-weight: 600;">${p.roe >= 0 ? '+' : ''}${p.roe.toFixed(2)}%</div>
                 </td>
                 <td style="padding: 5px 8px; text-align: right; white-space: nowrap;">
-                    <button class="jump-pos-btn" data-sym="${p.symbol}" data-price="${p.markPrice}" title="Jump chart to ${p.symbol}" style="background: var(--vela-bg-chip, #292a2f); border: 1px solid var(--vela-border, #262629); color: var(--vela-text-secondary, #757882); font-size: 10px; padding: 2px 6px; border-radius: 3px; cursor: pointer; margin-right: 4px;">⤢</button>
+                    <button class="jump-pos-btn" data-sym="${p.symbol}" data-price="${p.markPrice}" title="Switch chart to ${p.symbol}" style="background: var(--vela-bg-chip, #292a2f); border: 1px solid var(--vela-border, #262629); color: var(--vela-text-secondary, #757882); font-size: 10px; padding: 2px 6px; border-radius: 3px; cursor: pointer; margin-right: 4px;">⤢</button>
                     <button class="close-pos-btn" data-sym="${p.symbol}" data-side="${p.side}" data-size="${p.size}" style="background: rgba(175,104,112,0.12); border: 1px solid rgba(175,104,112,0.25); color: var(--vela-down, #af6870); font-size: 10px; font-weight: 600; padding: 2px 8px; border-radius: 3px; cursor: pointer;">Close</button>
                 </td>
             </tr>
@@ -678,11 +744,21 @@ function updatePositionsUI() {
         await fetchAccount();
     });
 
+    positionsContainer.querySelectorAll('.pos-row').forEach(row => {
+        row.addEventListener('click', (e) => {
+            if ((e.target as HTMLElement).closest('.close-pos-btn') || (e.target as HTMLElement).closest('.jump-pos-btn')) return;
+            const sym = (row as HTMLElement).dataset.sym || '';
+            const price = parseFloat((row as HTMLElement).dataset.price || '0');
+            switchChartToSymbol(sym, price);
+        });
+    });
+
     positionsContainer.querySelectorAll('.jump-pos-btn').forEach(btn => {
-        btn.addEventListener('click', () => {
+        btn.addEventListener('click', (e) => {
+            e.stopPropagation();
             const sym = (btn as HTMLElement).dataset.sym || '';
             const price = parseFloat((btn as HTMLElement).dataset.price || '0');
-            jumpChartToFill(Date.now(), sym, price);
+            switchChartToSymbol(sym, price);
         });
     });
 
@@ -763,9 +839,14 @@ function updateOrdersUI() {
         const filledVal = parseFloat(o.executedQty || '0');
 
         rowsHtml += `
-            <tr style="border-bottom: 1px solid var(--vela-border, #262629); font-size: 10.5px; transition: background 0.1s;" onmouseover="this.style.background='var(--vela-bg-hover, rgba(255,255,255,0.03))'" onmouseout="this.style.background='transparent'">
+            <tr class="ord-row" data-sym="${o.symbol}" data-price="${trigPrice || priceVal}" title="Click to view ${o.symbol} on chart" style="border-bottom: 1px solid var(--vela-border, #262629); font-size: 10.5px; transition: background 0.1s; cursor: pointer;" onmouseover="this.style.background='var(--vela-bg-hover, rgba(255,255,255,0.03))'" onmouseout="this.style.background='transparent'">
                 <td style="padding: 5px 8px; color: var(--vela-text-muted, #757882); white-space: nowrap;">${dateStr}</td>
-                <td style="padding: 5px 8px; font-weight: 700; color: var(--vela-text-primary, #eeeef1); white-space: nowrap;">${o.symbol}</td>
+                <td style="padding: 5px 8px; font-weight: 700; color: var(--vela-text-primary, #eeeef1); white-space: nowrap;">
+                    <div style="display: inline-flex; align-items: center;">
+                        ${getSymbolLogoHtml(o.symbol, 16)}
+                        <span>${o.symbol}</span>
+                    </div>
+                </td>
                 <td style="padding: 5px 8px; white-space: nowrap;">
                     <span style="font-size: 9.5px; font-weight: 700; padding: 1px 5px; border-radius: 2px; background: ${sideBg}; color: ${sideColor}; border: 1px solid ${sideBorder};">${o.side}</span>
                 </td>
@@ -778,7 +859,7 @@ function updateOrdersUI() {
                     <span style="font-size: 9.5px; font-weight: 700; padding: 1px 5px; border-radius: 2px; background: rgba(253,224,71,0.15); color: var(--vela-warning, #fde047); border: 1px solid rgba(253,224,71,0.25);">${o.status || 'NEW'}</span>
                 </td>
                 <td style="padding: 5px 8px; text-align: right; white-space: nowrap;">
-                    <button class="jump-ord-btn" data-sym="${o.symbol}" data-price="${trigPrice || priceVal}" title="Jump chart to ${o.symbol}" style="background: var(--vela-bg-chip, #292a2f); border: 1px solid var(--vela-border, #262629); color: var(--vela-text-secondary, #757882); font-size: 10px; padding: 2px 6px; border-radius: 3px; cursor: pointer; margin-right: 4px;">⤢</button>
+                    <button class="jump-ord-btn" data-sym="${o.symbol}" data-price="${trigPrice || priceVal}" title="Switch chart to ${o.symbol}" style="background: var(--vela-bg-chip, #292a2f); border: 1px solid var(--vela-border, #262629); color: var(--vela-text-secondary, #757882); font-size: 10px; padding: 2px 6px; border-radius: 3px; cursor: pointer; margin-right: 4px;">⤢</button>
                     <button class="cancel-ord-btn" data-sym="${o.symbol}" data-id="${o.orderId}" style="background: rgba(175,104,112,0.12); border: 1px solid rgba(175,104,112,0.25); color: var(--vela-down, #af6870); font-size: 10px; font-weight: 600; padding: 2px 8px; border-radius: 3px; cursor: pointer;">Cancel</button>
                 </td>
             </tr>
@@ -843,11 +924,21 @@ function updateOrdersUI() {
         await fetchOrders(state.symbol);
     });
 
+    ordersContainer.querySelectorAll('.ord-row').forEach(row => {
+        row.addEventListener('click', (e) => {
+            if ((e.target as HTMLElement).closest('.cancel-ord-btn') || (e.target as HTMLElement).closest('.jump-ord-btn')) return;
+            const sym = (row as HTMLElement).dataset.sym || '';
+            const price = parseFloat((row as HTMLElement).dataset.price || '0');
+            switchChartToSymbol(sym, price);
+        });
+    });
+
     ordersContainer.querySelectorAll('.jump-ord-btn').forEach(btn => {
-        btn.addEventListener('click', () => {
+        btn.addEventListener('click', (e) => {
+            e.stopPropagation();
             const sym = (btn as HTMLElement).dataset.sym || '';
             const price = parseFloat((btn as HTMLElement).dataset.price || '0');
-            jumpChartToFill(Date.now(), sym, price);
+            switchChartToSymbol(sym, price);
         });
     });
 
@@ -954,9 +1045,14 @@ function updateHistoryUI() {
         const origQty = parseFloat(o.origQty || o.quantity || '0');
 
         rowsHtml += `
-            <tr style="border-bottom: 1px solid var(--vela-border, #262629); font-size: 10.5px; transition: background 0.1s;" onmouseover="this.style.background='var(--vela-bg-hover, rgba(255,255,255,0.03))'" onmouseout="this.style.background='transparent'">
+            <tr class="hist-row" data-sym="${o.symbol}" data-price="${avgPrice || trigPrice || orderPrice}" data-time="${o.time || o.updateTime}" title="Click to view ${o.symbol} on chart" style="border-bottom: 1px solid var(--vela-border, #262629); font-size: 10.5px; transition: background 0.1s; cursor: pointer;" onmouseover="this.style.background='var(--vela-bg-hover, rgba(255,255,255,0.03))'" onmouseout="this.style.background='transparent'">
                 <td style="padding: 5px 8px; color: var(--vela-text-muted, #757882); white-space: nowrap;">${dateStr}</td>
-                <td style="padding: 5px 8px; font-weight: 700; color: var(--vela-text-primary, #eeeef1); white-space: nowrap;">${o.symbol}</td>
+                <td style="padding: 5px 8px; font-weight: 700; color: var(--vela-text-primary, #eeeef1); white-space: nowrap;">
+                    <div style="display: inline-flex; align-items: center;">
+                        ${getSymbolLogoHtml(o.symbol, 16)}
+                        <span>${o.symbol}</span>
+                    </div>
+                </td>
                 <td style="padding: 5px 8px; white-space: nowrap;">
                     <span style="font-size: 9.5px; font-weight: 700; padding: 1px 5px; border-radius: 2px; background: ${sideBg}; color: ${sideColor}; border: 1px solid ${sideBorder};">${o.side}</span>
                 </td>
@@ -970,7 +1066,7 @@ function updateHistoryUI() {
                     <span style="font-size: 9.5px; font-weight: 700; padding: 1px 5px; border-radius: 2px; background: ${statusBg}; color: ${statusFg}; border: 1px solid ${statusBorder};">${status}</span>
                 </td>
                 <td style="padding: 5px 8px; text-align: right; white-space: nowrap;">
-                    <button class="jump-hist-btn" data-sym="${o.symbol}" data-price="${avgPrice || trigPrice || orderPrice}" data-time="${o.time || o.updateTime}" title="Jump chart to order" style="background: var(--vela-bg-chip, #292a2f); border: 1px solid var(--vela-border, #262629); color: var(--vela-text-secondary, #757882); font-size: 10px; padding: 2px 6px; border-radius: 3px; cursor: pointer;">⤢</button>
+                    <button class="jump-hist-btn" data-sym="${o.symbol}" data-price="${avgPrice || trigPrice || orderPrice}" data-time="${o.time || o.updateTime}" title="Switch chart to ${o.symbol}" style="background: var(--vela-bg-chip, #292a2f); border: 1px solid var(--vela-border, #262629); color: var(--vela-text-secondary, #757882); font-size: 10px; padding: 2px 6px; border-radius: 3px; cursor: pointer;">⤢</button>
                 </td>
             </tr>
         `;
@@ -1038,12 +1134,31 @@ function updateHistoryUI() {
         updateHistoryUI();
     });
 
+    historyContainer.querySelectorAll('.hist-row').forEach(row => {
+        row.addEventListener('click', (e) => {
+            if ((e.target as HTMLElement).closest('.jump-hist-btn')) return;
+            const sym = (row as HTMLElement).dataset.sym || '';
+            const price = parseFloat((row as HTMLElement).dataset.price || '0');
+            const time = Number((row as HTMLElement).dataset.time || '0');
+            if (time > 0) {
+                void jumpChartToFill(time, sym, price);
+            } else {
+                switchChartToSymbol(sym, price);
+            }
+        });
+    });
+
     historyContainer.querySelectorAll('.jump-hist-btn').forEach(btn => {
-        btn.addEventListener('click', () => {
+        btn.addEventListener('click', (e) => {
+            e.stopPropagation();
             const sym = (btn as HTMLElement).dataset.sym || '';
             const price = parseFloat((btn as HTMLElement).dataset.price || '0');
-            const time = Number((btn as HTMLElement).dataset.time || Date.now());
-            jumpChartToFill(time, sym, price);
+            const time = Number((btn as HTMLElement).dataset.time || '0');
+            if (time > 0) {
+                void jumpChartToFill(time, sym, price);
+            } else {
+                switchChartToSymbol(sym, price);
+            }
         });
     });
 }
@@ -1233,7 +1348,26 @@ function aggregateClosedTrades(trades: any[], orders: any[]): ClosedTradeSession
     return closedTrades.sort((a, b) => b.closeTime - a.closeTime);
 }
 
-function jumpChartToTrade(t: ClosedTradeSession | any) {
+function chooseOptimalTimeframe(durationMs: number, currentTf: string): string {
+    const currentMs = Math.max(1000, timeframeToMs(currentTf));
+    const barsOnCurrent = Math.max(1, Math.round(durationMs / currentMs));
+
+    // If trade spans between 2 and 180 bars on the user's current timeframe, preserve it
+    if (barsOnCurrent >= 2 && barsOnCurrent <= 180) {
+        return currentTf;
+    }
+
+    // Otherwise, adapt to a timeframe that frames the trade between ~30 and 90 bars:
+    if (durationMs <= 15 * 60_000) return '1';          // <= 15m duration -> 1m
+    if (durationMs <= 60 * 60_000) return '3';          // <= 1h duration -> 3m
+    if (durationMs <= 4 * 3600_000) return '5';         // <= 4h duration -> 5m
+    if (durationMs <= 16 * 3600_000) return '15';       // <= 16h duration -> 15m
+    if (durationMs <= 3 * 86400_000) return '60';       // <= 3 days duration -> 1h (60)
+    if (durationMs <= 14 * 86400_000) return '240';     // <= 2 weeks duration -> 4h (240)
+    return 'D';                                         // > 2 weeks -> 1D
+}
+
+async function jumpChartToTrade(t: ClosedTradeSession | any) {
     if (!wsInstance) return;
     const cleanSym = String(t.symbol || '').toUpperCase().replace(/^BINANCE:/, '').replace(/\.P$/, '');
     let targetCell = wsInstance.cells().find(c => {
@@ -1243,22 +1377,86 @@ function jumpChartToTrade(t: ClosedTradeSession | any) {
 
     if (!targetCell) {
         targetCell = wsInstance.active || wsInstance.cells()[0];
-        if (targetCell) {
-            void targetCell.chart.setMarket({ symbol: cleanSym });
-        }
     }
-
     if (!targetCell) return;
+
     try {
         wsInstance.setActiveCell(targetCell.id);
     } catch {}
 
     const openT = Number(t.openTime || t.time || Date.now());
     const closeT = Number(t.closeTime || t.time || (openT + 60_000));
+    const durationMs = Math.max(0, closeT - openT);
+
+    const currentCellSym = (targetCell.symbol || '').toUpperCase().replace(/^BINANCE:/, '').replace(/\.P$/, '');
+    const symMismatch = currentCellSym !== cleanSym;
+    const currentTf = targetCell.timeframe || '60';
+    const optimalTf = chooseOptimalTimeframe(durationMs, currentTf);
+    const tfChanged = optimalTf !== currentTf;
+
+    // 1. Switch market if symbol changed or timeframe needed harmonization
+    if (symMismatch || tfChanged) {
+        const marketSwitch: any = {};
+        if (symMismatch) marketSwitch.symbol = `BINANCE:${cleanSym}.P`;
+        if (tfChanged) marketSwitch.timeframe = optimalTf;
+        try {
+            await targetCell.chart.setMarket(marketSwitch);
+            await targetCell.chart.ready();
+        } catch (e) {
+            console.warn('[journal] Market switch before trade jump failed:', e);
+        }
+    }
+
+    const activeTf = targetCell.timeframe || optimalTf;
+    const tfMs = Math.max(1000, timeframeToMs(activeTf));
+    const tradeBarCount = Math.max(1, Math.round(durationMs / tfMs));
+
+    // 2. Dynamic horizontal context padding based on trade length
+    let contextBars = 25;
+    if (tradeBarCount > 20 && tradeBarCount <= 100) {
+        contextBars = Math.max(20, Math.round(tradeBarCount * 0.35));
+    } else if (tradeBarCount > 100) {
+        contextBars = Math.max(15, Math.round(tradeBarCount * 0.15));
+    }
+
+    const padMs = contextBars * tfMs;
+    const from = openT - padMs;
+    const to = closeT + padMs;
+
+    // 3. Check if historical candles covering [from, to] are loaded in memory; if not, pre-load them!
+    const rawBars: any[] = (targetCell.chart as any).orchestrator?.rawBars || (targetCell.chart as any).orchestrator?.bars || [];
+    const oldestBarTime = rawBars.length > 0 ? rawBars[0].time : Infinity;
+
+    if (from < oldestBarTime) {
+        const barsNeeded = Math.min(Math.ceil((Date.now() - from) / tfMs) + 120, 15000);
+        try {
+            await targetCell.chart.setMarket({ bars: barsNeeded });
+            await Promise.race([
+                targetCell.chart.historyComplete(),
+                new Promise(r => setTimeout(r, 4000))
+            ]);
+        } catch (err) {
+            console.warn('[journal] History pre-load error:', err);
+        }
+    }
+
+    // 4. Measure intra-trade price excursions from the loaded candles for vertical bounds
+    const updatedRaw: any[] = (targetCell.chart as any).orchestrator?.rawBars || (targetCell.chart as any).orchestrator?.bars || [];
     const entryPrice = parseFloat(t.entryPrice || t.price || '0');
     const exitPrice = parseFloat(t.exitPrice || t.price || '0');
     const side = (t.side || (t.grossPnl >= 0 ? 'LONG' : 'SHORT')).toUpperCase();
     const isLong = side === 'LONG';
+
+    let intraHigh = Math.max(entryPrice, exitPrice);
+    let intraLow = Math.min(entryPrice, exitPrice);
+    if (updatedRaw.length > 0) {
+        for (const b of updatedRaw) {
+            if (b.time >= openT && b.time <= closeT) {
+                if (b.high > intraHigh) intraHigh = b.high;
+                if (b.low < intraLow) intraLow = b.low;
+            }
+        }
+    }
 
     const priceDiff = Math.abs(exitPrice - entryPrice);
     const offset = priceDiff > 0 ? priceDiff : (entryPrice * 0.005 || 1);
@@ -1267,23 +1465,14 @@ function jumpChartToTrade(t: ClosedTradeSession | any) {
     let targetPrice: number;
 
     if (isLong) {
-        if (exitPrice >= entryPrice) {
-            targetPrice = exitPrice;
-            stopPrice = entryPrice - offset * 0.5;
-        } else {
-            stopPrice = exitPrice;
-            targetPrice = entryPrice + offset * 1.5;
-        }
+        targetPrice = exitPrice >= entryPrice ? exitPrice : (intraHigh > entryPrice ? intraHigh : entryPrice + offset * 1.5);
+        stopPrice = exitPrice < entryPrice ? exitPrice : (intraLow < entryPrice ? intraLow : entryPrice - offset * 0.5);
     } else {
-        if (exitPrice <= entryPrice) {
-            targetPrice = exitPrice;
-            stopPrice = entryPrice + offset * 0.5;
-        } else {
-            stopPrice = exitPrice;
-            targetPrice = entryPrice - offset * 1.5;
-        }
+        targetPrice = exitPrice <= entryPrice ? exitPrice : (intraLow < entryPrice ? intraLow : entryPrice - offset * 1.5);
+        stopPrice = exitPrice > entryPrice ? exitPrice : (intraHigh > entryPrice ? intraHigh : entryPrice + offset * 0.5);
     }
 
+    // 5. Place or select the trade position drawing & intermediate execution markers
     try {
         const drawingsCtrl = targetCell.chart.drawings;
         if (drawingsCtrl && typeof drawingsCtrl.all === 'function') {
@@ -1291,7 +1480,7 @@ function jumpChartToTrade(t: ClosedTradeSession | any) {
             const existing = allDrawings.find(d => {
                 if (d.type !== 'position') return false;
                 const a0 = d.anchors?.[0];
-                return a0 && Math.abs(a0.time - openT) < 10000 && Math.abs(a0.price - entryPrice) < (entryPrice * 0.001);
+                return a0 && Math.abs(a0.time - openT) < (tfMs * 2) && Math.abs(a0.price - entryPrice) < (entryPrice * 0.005);
             });
 
             if (existing) {
@@ -1320,17 +1509,36 @@ function jumpChartToTrade(t: ClosedTradeSession | any) {
                 if (added) {
                     drawingsCtrl.select(added.id);
                 }
+
+                // If multiple partial fills exist, stamp directional arrow markers on intermediate fills
+                if (Array.isArray(t.fills) && t.fills.length > 2) {
+                    const intermediate = t.fills.slice(1, -1);
+                    for (const fill of intermediate) {
+                        const fTime = Number(fill.time);
+                        const fPrice = parseFloat(fill.price);
+                        const fSide = (fill.side || '').toUpperCase();
+                        const isBuy = fSide === 'BUY';
+                        drawingsCtrl.add(isBuy ? 'arrowmarkup' : 'arrowmarkdown', {
+                            paneId: 'price',
+                            anchors: [{ time: fTime, price: fPrice }],
+                            props: {
+                                color: isBuy ? '#2ebd85' : '#f6465d'
+                            }
+                        });
+                    }
+                }
             }
         }
     } catch (err) {
         console.warn('[journal] Failed to place position drawing:', err);
     }
 
-    const span = Math.max(Math.abs(closeT - openT), 30 * 60_000);
-    const pad = span * 0.6;
-    const from = openT - pad;
-    const to = closeT + pad;
+    // 6. Reset vertical price scaling so autoscale automatically envelopes all wicks and target lines
+    try {
+        targetCell.chart.renderer.set('autoScale', true);
+    } catch {}
 
+    // 7. Apply the visible range (candles are fully loaded so clampViewport will not truncate)
     try {
         targetCell.chart.setVisibleRange({ from, to });
     } catch (e) {
@@ -1341,10 +1549,14 @@ function jumpChartToTrade(t: ClosedTradeSession | any) {
         toggleJournalPanelMaximize();
     }
 
-    toast(`Chart focused on ${cleanSym} trade: ${side} @ $${entryPrice.toFixed(2)} → $${exitPrice.toFixed(2)}`, 'info');
+    const durationStr = formatDuration(durationMs);
+    const barsStr = `${tradeBarCount} bar${tradeBarCount > 1 ? 's' : ''}`;
+    const fillsCount = Array.isArray(t.fills) ? t.fills.length : 1;
+    const fillSuffix = fillsCount > 1 ? ` (${fillsCount} fills)` : '';
+    toast(`Chart framed ${cleanSym} ${side} trade: $${entryPrice.toFixed(2)} → $${exitPrice.toFixed(2)} [${durationStr}, ${barsStr} on ${activeTf}]${fillSuffix}`, 'info');
 }
 
-function jumpChartToFill(fillTime: number, fillSym: string, fillPrice?: number) {
+async function jumpChartToFill(fillTime: number, fillSym: string, fillPrice?: number) {
     if (!wsInstance) return;
     const cleanSym = String(fillSym || '').toUpperCase().replace(/^BINANCE:/, '').replace(/\.P$/, '');
     let targetCell = wsInstance.cells().find(c => {
@@ -1354,20 +1566,69 @@ function jumpChartToFill(fillTime: number, fillSym: string, fillPrice?: number) 
 
     if (!targetCell) {
         targetCell = wsInstance.active || wsInstance.cells()[0];
-        if (targetCell) {
-            void targetCell.chart.setMarket({ symbol: cleanSym });
-        }
     }
-
     if (!targetCell) return;
+
     try {
         wsInstance.setActiveCell(targetCell.id);
     } catch {}
 
+    const currentCellSym = (targetCell.symbol || '').toUpperCase().replace(/^BINANCE:/, '').replace(/\.P$/, '');
+    if (currentCellSym !== cleanSym) {
+        try {
+            await targetCell.chart.setMarket({ symbol: `BINANCE:${cleanSym}.P` });
+            await targetCell.chart.ready();
+        } catch (e) {
+            console.warn('[journal] Market switch before fill jump failed:', e);
+        }
+    }
+
+    const activeTf = targetCell.timeframe || '60';
+    const tfMs = Math.max(1000, timeframeToMs(activeTf));
     const t = Number(fillTime || Date.now());
-    const span = 15 * 60_000;
-    const from = t - span;
-    const to = t + span;
+    const contextBars = 25;
+    const padMs = contextBars * tfMs;
+    const from = t - padMs;
+    const to = t + padMs;
+
+    // Check if candles covering [from, to] are in memory; pre-load if needed
+    const rawBars: any[] = (targetCell.chart as any).orchestrator?.rawBars || (targetCell.chart as any).orchestrator?.bars || [];
+    const oldestBarTime = rawBars.length > 0 ? rawBars[0].time : Infinity;
+
+    if (from < oldestBarTime) {
+        const barsNeeded = Math.min(Math.ceil((Date.now() - from) / tfMs) + 120, 15000);
+        try {
+            await targetCell.chart.setMarket({ bars: barsNeeded });
+            await Promise.race([
+                targetCell.chart.historyComplete(),
+                new Promise(r => setTimeout(r, 4000))
+            ]);
+        } catch (err) {
+            console.warn('[journal] History pre-load error for fill:', err);
+        }
+    }
+
+    // Place a signpost drawing on the fill price if provided
+    if (fillPrice && fillPrice > 0) {
+        try {
+            const drawingsCtrl = targetCell.chart.drawings;
+            if (drawingsCtrl && typeof drawingsCtrl.add === 'function') {
+                drawingsCtrl.add('signpost', {
+                    paneId: 'price',
+                    anchors: [{ time: t, price: fillPrice }],
+                    props: {
+                        text: `Fill $${fillPrice.toFixed(2)}`,
+                        color: '#f0b90b'
+                    }
+                });
+            }
+        } catch {}
+    }
+
+    // Auto-scale price axis
+    try {
+        targetCell.chart.renderer.set('autoScale', true);
+    } catch {}
 
     try {
         targetCell.chart.setVisibleRange({ from, to });
@@ -1379,7 +1640,7 @@ function jumpChartToFill(fillTime: number, fillSym: string, fillPrice?: number) 
         toggleJournalPanelMaximize();
     }
 
-    toast(`Chart focused on ${cleanSym} execution fill${fillPrice ? ` @ $${fillPrice.toFixed(2)}` : ''}`, 'info');
+    toast(`Chart focused on ${cleanSym} execution fill${fillPrice ? ` @ $${fillPrice.toFixed(2)}` : ''} on ${activeTf}`, 'info');
 }
 
 function toggleJournalPanelMaximize() {
@@ -1493,13 +1754,16 @@ function updateJournalUI() {
                 }
 
                 rowsHtml += `
-                    <tr style="border-bottom: 1px solid var(--vela-border, #262629); font-size: 10.5px; transition: background 0.1s;" onmouseover="this.style.background='var(--vela-bg-hover, rgba(255,255,255,0.03))'" onmouseout="this.style.background='transparent'">
+                    <tr class="journ-trade-row" data-trade-id="${t.id}" title="Click to view trade on chart" style="border-bottom: 1px solid var(--vela-border, #262629); font-size: 10.5px; transition: background 0.1s; cursor: pointer;" onmouseover="this.style.background='var(--vela-bg-hover, rgba(255,255,255,0.03))'" onmouseout="this.style.background='transparent'">
                         <td style="padding: 4px 8px; color: var(--vela-text-secondary, #757882); white-space: nowrap;">
                             <div>${dateStr}</div>
                             <div style="font-size: 9.5px; color: var(--vela-text-muted, #757882); margin-top: 1px;">${durationStr}</div>
                         </td>
                         <td style="padding: 4px 8px; font-weight: 700; color: var(--vela-text-primary, #eeeef1); white-space: nowrap;">
-                            ${t.symbol}
+                            <div style="display: inline-flex; align-items: center;">
+                                ${getSymbolLogoHtml(t.symbol, 16)}
+                                <span>${t.symbol}</span>
+                            </div>
                         </td>
                         <td style="padding: 4px 8px; white-space: nowrap;">
                             <span style="font-size: 9.5px; font-weight: 700; padding: 1px 5px; border-radius: 2px; background: ${sideBg}; color: ${sideColor};">${t.side}</span>
@@ -1558,9 +1822,14 @@ function updateJournalUI() {
             const fee = parseFloat(f.commission || '0');
 
             fillsRows += `
-                <tr style="border-bottom: 1px solid var(--vela-border, #262629); font-size: 10.5px; transition: background 0.1s;" onmouseover="this.style.background='var(--vela-bg-hover, rgba(255,255,255,0.03))'" onmouseout="this.style.background='transparent'">
+                <tr class="journ-fill-row" data-fill-time="${f.time}" data-fill-sym="${f.symbol}" data-fill-price="${price}" title="Click to view fill on chart" style="border-bottom: 1px solid var(--vela-border, #262629); font-size: 10.5px; transition: background 0.1s; cursor: pointer;" onmouseover="this.style.background='var(--vela-bg-hover, rgba(255,255,255,0.03))'" onmouseout="this.style.background='transparent'">
                     <td style="padding: 4px 8px; color: var(--vela-text-muted, #757882); white-space: nowrap;">${dateStr}</td>
-                    <td style="padding: 4px 8px; font-weight: 700; color: var(--vela-text-primary, #eeeef1); white-space: nowrap;">${f.symbol}</td>
+                    <td style="padding: 4px 8px; font-weight: 700; color: var(--vela-text-primary, #eeeef1); white-space: nowrap;">
+                        <div style="display: inline-flex; align-items: center;">
+                            ${getSymbolLogoHtml(f.symbol, 16)}
+                            <span>${f.symbol}</span>
+                        </div>
+                    </td>
                     <td style="padding: 4px 8px; white-space: nowrap;">
                         <span style="font-size: 9.5px; font-weight: 700; padding: 1px 5px; border-radius: 2px; background: ${isBuy ? 'rgba(167,190,148,0.15)' : 'rgba(175,104,112,0.15)'}; color: ${sideColor};">${f.side}</span>
                     </td>
@@ -1738,37 +2007,49 @@ function updateJournalUI() {
         updateJournalUI();
     });
 
-    // Bind jump buttons
+    // Bind jump buttons and row clicks
+    journalContainer.querySelectorAll('.journ-trade-row').forEach(row => {
+        row.addEventListener('click', (e) => {
+            if ((e.target as HTMLElement).closest('.jump-trade-btn')) return;
+            const id = (row as HTMLElement).dataset.tradeId;
+            const target = activeClosed.find(t => String(t.id) === String(id));
+            if (target) void jumpChartToTrade(target);
+        });
+    });
+
     journalContainer.querySelectorAll('.jump-trade-btn').forEach(btn => {
-        btn.addEventListener('click', () => {
+        btn.addEventListener('click', (e) => {
+            e.stopPropagation();
             const id = (btn as HTMLElement).dataset.tradeId;
             const target = activeClosed.find(t => String(t.id) === String(id));
-            if (target) jumpChartToTrade(target);
+            if (target) void jumpChartToTrade(target);
+        });
+    });
+
+    journalContainer.querySelectorAll('.journ-fill-row').forEach(row => {
+        row.addEventListener('click', (e) => {
+            if ((e.target as HTMLElement).closest('.jump-fill-btn')) return;
+            const time = Number((row as HTMLElement).dataset.fillTime || 0);
+            const sym = (row as HTMLElement).dataset.fillSym || '';
+            const price = parseFloat((row as HTMLElement).dataset.fillPrice || '0');
+            void jumpChartToFill(time, sym, price);
         });
     });
 
     journalContainer.querySelectorAll('.jump-fill-btn').forEach(btn => {
-        btn.addEventListener('click', () => {
+        btn.addEventListener('click', (e) => {
+            e.stopPropagation();
             const time = Number((btn as HTMLElement).dataset.fillTime || 0);
             const sym = (btn as HTMLElement).dataset.fillSym || '';
             const price = parseFloat((btn as HTMLElement).dataset.fillPrice || '0');
-            jumpChartToFill(time, sym, price);
+            void jumpChartToFill(time, sym, price);
         });
     });
 }
 
-let wsInstance: VelaWorkspace | null = null;
 let orderTicketPanelEl: HTMLElement | null = null;
 let isOrderTicketOpen = false;
 let orderTicketWidth = 330;
-
-function toast(message: string, kind: 'info' | 'success' | 'error' = 'info') {
-    if (wsInstance?.toast) {
-        wsInstance.toast(message, kind);
-    } else {
-        console.log(`[toast ${kind}]`, message);
-    }
-}
 
 export function updateTradeButtonActiveState(active: boolean) {
     const actionBtn = document.querySelector<HTMLButtonElement>("[data-action-id='trade.toggle']");
@@ -2916,10 +3197,6 @@ export function mountBottomAccountStrip(ws: VelaWorkspace) {
         spacer.innerHTML = `
             <div style="display: flex; align-items: center; width: 100%; height: 100%;">
                 <div style="width: 1px; height: 16px; background: var(--vela-border, #262629); margin: 0 8px; flex: none;"></div>
-                <button id="strip-env-badge" title="${state.isTestnet ? 'Binance Testnet (Click to switch to Production Live)' : 'Binance Production Live (Click to switch to Testnet)'}" style="display: inline-flex; align-items: center; justify-content: center; width: 28px; height: 26px; border-radius: 4px; border: 1px solid ${state.isTestnet ? 'rgba(255, 255, 255, 0.2)' : '#f0b90b'}; background: ${state.isTestnet ? 'rgba(255, 255, 255, 0.06)' : 'rgba(240, 185, 11, 0.18)'}; box-shadow: ${state.isTestnet ? 'none' : '0 0 8px rgba(240, 185, 11, 0.3)'}; cursor: pointer; transition: all 0.15s ease; flex: none; padding: 0;">
-                    <img id="strip-env-icon" src="${state.isTestnet ? BINANCE_WHITE_ICON : BINANCE_YELLOW_ICON}" alt="Binance" style="width: 17px; height: 17px; display: block;" />
-                </button>
-                <div style="width: 1px; height: 16px; background: var(--vela-border, #262629); margin: 0 8px; flex: none;"></div>
                 <div id="velo-dock-tabs" style="display: flex; gap: 2px; align-items: center; flex: none;">
                     <button id="tab-positions-btn" style="background: transparent; color: var(--vela-text-secondary, #757882); border: none; font-size: 11px; font-weight: 600; padding: 4px 10px; cursor: pointer; border-radius: 4px; display: inline-flex; align-items: center; gap: 4px;">Positions (<span id="pos-count">0</span>)</button>
                     <button id="tab-orders-btn" style="background: transparent; color: var(--vela-text-secondary, #757882); border: none; font-size: 11px; font-weight: 600; padding: 4px 10px; cursor: pointer; border-radius: 4px; display: inline-flex; align-items: center; gap: 4px;">Orders (<span id="ord-count">0</span>)</button>
@@ -2928,6 +3205,9 @@ export function mountBottomAccountStrip(ws: VelaWorkspace) {
                 </div>
                 <div style="flex: 1 1 auto;"></div>
                 <div style="display: flex; align-items: center; gap: 8px; flex: none; margin-right: 6px;">
+                    <button id="strip-env-badge" title="${state.isTestnet ? 'Binance Testnet (Click to switch to Production Live)' : 'Binance Production Live (Click to switch to Testnet)'}" style="display: inline-flex; align-items: center; justify-content: center; width: 28px; height: 26px; border-radius: 4px; border: 1px solid ${state.isTestnet ? 'rgba(255, 255, 255, 0.2)' : '#f0b90b'}; background: ${state.isTestnet ? 'rgba(255, 255, 255, 0.06)' : 'rgba(240, 185, 11, 0.18)'}; box-shadow: ${state.isTestnet ? 'none' : '0 0 8px rgba(240, 185, 11, 0.3)'}; cursor: pointer; transition: all 0.15s ease; flex: none; padding: 0;">
+                        <img id="strip-env-icon" src="${state.isTestnet ? BINANCE_WHITE_ICON : BINANCE_YELLOW_ICON}" alt="Binance" style="width: 17px; height: 17px; display: block;" />
+                    </button>
                     <span id="strip-avail-val" style="color: var(--vela-text-primary, #eeeef1); font-size: 11px; font-weight: 600;">$0.00</span>
                     <button id="strip-toggle-btn" title="Toggle Account Panel" style="background: var(--vela-bg-chip, #292a2f); border: 1px solid var(--vela-border, #262629); color: var(--vela-text-secondary, #757882); font-size: 10px; font-weight: 600; padding: 2px 7px; border-radius: 4px; cursor: pointer; display: inline-flex; align-items: center; gap: 4px;">
                         <span>Panel</span> <span id="strip-toggle-chevron">▲</span>

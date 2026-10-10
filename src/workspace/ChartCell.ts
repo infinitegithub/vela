@@ -303,7 +303,7 @@ export class ChartCell {
             provider: parseSymbol(symbol ?? '').provider ?? undefined,
             timeframe: seed.timeframe,
             priceStyle: seed.priceStyle,
-            bars: seed.bars,
+            bars: seed.bars ?? 1000,
             session: normalizeSession(seed.session),
         };
         const doc = gridHost.ownerDocument;
@@ -323,7 +323,7 @@ export class ChartCell {
                 ...deps.chartDefaults,
                 symbol,
                 timeframe: seed.timeframe,
-                bars: seed.bars,
+                bars: this.state.bars,
                 priceStyle: seed.priceStyle,
                 session: normalizeSession(seed.session),
                 data: seed.data,
@@ -777,9 +777,9 @@ export class ChartCell {
             rows: [
                 {
                     kind: 'select' as const,
-                    label: 'Bars to fetch',
+                    label: 'Initial bars to fetch',
                     id: 'bars',
-                    options: ['500', '1000', '2000', '5000', '10000', '20000', '50000', '60000', '80000', '100000'],
+                    options: ['500', '1000', '2000', '5000', '10000', '20000'],
                     get: () => String(this.state.bars ?? 1000),
                     set: (v: string) => {
                         this.state.bars = Number(v);
@@ -1035,12 +1035,12 @@ export class ChartCell {
         if (!this.inner || this.destroyed) return;
         this.activeRangeId = preset.id;
         const tfChanged = preset.tf !== this.timeframe;
-        const deeper = preset.bars > Math.max(this.state.bars ?? 500, this.rangeBars);
+        const deeper = preset.bars > Math.max(this.state.bars ?? 1000, this.rangeBars);
         this.rangeBars = preset.bars;
         if (tfChanged || deeper) {
             this.pendingRange = preset;
             void this.inner
-                .setMarket({ timeframe: preset.tf, bars: Math.max(this.state.bars ?? 500, this.rangeBars), visibleRange: preset.preset })
+                .setMarket({ timeframe: preset.tf, bars: Math.max(this.state.bars ?? 1000, this.rangeBars), visibleRange: preset.preset })
                 .then(() => {
                     if (!this.destroyed && this.pendingRange === preset) {
                         this.inner?.setVisibleRangePreset(preset.preset);

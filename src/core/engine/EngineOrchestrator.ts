@@ -225,6 +225,12 @@ export class EngineOrchestrator implements IndicatorController, PaneController, 
     /** A load is in flight with nothing painted — the state behind the renderer's loading
      *  affordance and the `load:start`/`load:end` event pair (transition-guarded). */
     private loadingUp = false;
+    /** A scroll-triggered history backfill is currently in flight. */
+    private scrollBackfilling = false;
+    /** The scroll backfill has reached the earliest available bar (genesis) for the current market. */
+    private scrollGenesis = false;
+    /** Timestamp of last failed scroll backfill attempt (cooldown guard). */
+    private lastScrollBackfillFailedAt = 0;
 
     constructor(
         container: HTMLElement,
@@ -376,6 +382,7 @@ export class EngineOrchestrator implements IndicatorController, PaneController, 
     private onViewportChange(range: VisibleRange): void {
         this.visibleRange = { left: range.from, right: range.to };
         this.events.emit('viewport:changed', { from: range.from, to: range.to });
+        this.checkScrollBackfill(range);
         if (this.viewportTimer != null) clearTimeout(this.viewportTimer);
         this.viewportTimer = setTimeout(() => {
             this.viewportTimer = null;
@@ -395,6 +402,61 @@ export class EngineOrchestrator implements IndicatorController, PaneController, 
         }, VIEWPORT_DEBOUNCE_MS);
     }
 
+    private checkScrollBackfill(range: VisibleRange): void {
+        if (this.scrollBackfilling || this.scrollGenesis || this.switchingMarket || this.replayLoading || this.replayQueue) return;
+        if (!this.canHeal() || this.rawBars.length === 0) return;
+        if (Date.now() - this.lastScrollBackfillFailedAt < 5000) return;
+
+        // Check if the left edge of the visible range is near the oldest loaded candle (within 150 bars)
+        const thresholdIndex = Math.min(150, this.rawBars.length - 1);
+        const thresholdTime = this.rawBars[thresholdIndex]?.time;
+        if (thresholdTime != null && range.from <= thresholdTime) {
+            void this.triggerScrollBackfill();
+        }
+    }
+
+    private async triggerScrollBackfill(): Promise<void> {
+        if (this.scrollBackfilling || this.scrollGenesis || this.switchingMarket || this.replayLoading || this.replayQueue) return;
+        if (!this.canHeal() || this.rawBars.length === 0) return;
+
+        const gen = this.generation;
+        this.scrollBackfilling = true;
+        try {
+            const oldest = this.rawBars[0]!.time;
+            const step = 1000;
+            const chunk = await this.feed.loadRange!(this.config.market, {
+                to: oldest,
+                limit: step + 1,
+            });
+            if (this.generation !== gen) return;
+
+            const head = chunk.filter((b) => b.time < oldest);
+            if (head.length === 0) {
+                this.scrollGenesis = true;
+                return;
+            }
+
+            for (let i = 1; i < head.length; i += 1) {
+                if (head[i]!.time <= head[i - 1]!.time) {
+                    console.warn('[vela] non-monotonic scroll history chunk');
+                    this.scrollGenesis = true;
+                    return;
+                }
+            }
+
+            this.setBarSeries([...head, ...this.rawBars], { preserveView: true });
+            this.notifySessionsBars('backfill');
+            this.events.emit('history:progress', { loaded: this.rawBars.length, target: this.rawBars.length });
+        } catch (e) {
+            console.warn(`[vela] scroll backfill failed: ${e instanceof Error ? e.message : String(e)}`);
+            this.lastScrollBackfillFailedAt = Date.now();
+        } finally {
+            if (this.generation === gen) {
+                this.scrollBackfilling = false;
+            }
+        }
+    }
+
     private async init(): Promise<void> {
         const gen = this.bumpGeneration();
         this.beginLoad(true); // first load — nothing painted until the first batch
@@ -408,6 +470,9 @@ export class EngineOrchestrator implements IndicatorController, PaneController, 
      *  superseded setMarket awaiters so their promises resolve instead of hanging. */
     private bumpGeneration(): number {
         const gen = ++this.generation;
+        this.scrollBackfilling = false;
+        this.scrollGenesis = false;
+        this.lastScrollBackfillFailedAt = 0;
         this.progressiveAbort?.abort(); // the superseded load's source stops polling promptly
         this.progressiveAbort = null;
         for (const w of this.supersedeWaiters.splice(0)) w();
@@ -617,6 +682,9 @@ export class EngineOrchestrator implements IndicatorController, PaneController, 
         this.resolveHistoryComplete();
         this.historyCompleted = false;
         this.historyState = 'complete';
+        this.scrollBackfilling = false;
+        this.scrollGenesis = false;
+        this.lastScrollBackfillFailedAt = 0;
         this.historyCompletePromise = new Promise<void>((resolve) => {
             this.resolveHistoryComplete = resolve;
         });
