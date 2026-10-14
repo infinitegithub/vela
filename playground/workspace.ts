@@ -39,8 +39,13 @@ import {
     registerIndicatorExplorer,
     setExplorerWorkspaceInstance,
 } from './indicator-explorer';
+import {
+    registerWorkspaceLayoutPicker,
+    createLocalWorkspaceSource,
+} from './workspace-picker';
 
 // 1. Register Extensions
+registerWorkspaceLayoutPicker();
 registerClassicIndicators();
 registerFootprintChartType();
 registerTradingLinesLayer();
@@ -49,7 +54,6 @@ registerTradingSidePanel();
 registerTradeButton();
 registerReplayButton();
 registerPineEditor();
-registerTemplateManager();
 registerThemeSwitcher();
 registerIndicatorExplorer();
 
@@ -128,17 +132,17 @@ const ws = new VelaWorkspace('#workspace', {
     topbar: {
         // Left: Symbol, Timeframes, Style (Candles icon), Layout, Indicators, Replay, Undo/Redo
         left: ['symbol', 'timeframes', 'style', 'layout', 'indicators', 'replay.toggle', 'undo-redo'],
-        // Right: Pine Editor, Screenshot, Theme Toggle (Vela Muted / Standard Classic), Templates, Panels, Trade button
-        right: ['pine.editor', 'screenshot', 'theme.toggle', 'templates.toggle', 'panels', 'trade.toggle'],
+        // Right: Pine Editor, Screenshot, Theme Toggle, Panels, Trade button
+        right: ['pine.editor', 'screenshot', 'theme.toggle', 'panels', 'trade.toggle'],
     },
 });
 
 // 3. Bind workspace instances
 setWorkspaceInstance(ws);
 setWatchlistWorkspaceInstance(ws);
-setTemplateWorkspaceInstance(ws);
 setThemeWorkspaceInstance(ws);
 setExplorerWorkspaceInstance(ws);
+createLocalWorkspaceSource(ws);
 
 // 4. Mount bottom account drawer (starts collapsed at 28px)
 mountBottomAccountStrip(ws);
