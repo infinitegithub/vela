@@ -72,9 +72,7 @@ export function parseTicker(ticker: string): { apiSymbol: string; isFutures: boo
     if (/^(SPY|XAU|QQQ|IWM|NVDA|TSLA|AAPL|AMZN|MSFT|GOLD)/i.test(t)) {
         return { apiSymbol: t.endsWith('USDT') ? t : `${t}USDT`, isFutures: true };
     }
-    // All Binance instruments in this trading workstation default to USD-M Futures
-    // to match trade-suite's futures execution and avoid spot-futures basis mismatch
-    return { apiSymbol: t, isFutures: true };
+    return { apiSymbol: t, isFutures: false };
 }
 
 /** Map raw Binance klines to neutral OHLCV (open-time in epoch ms). */
@@ -379,7 +377,7 @@ export class BinanceProvider implements DataProvider {
                     else if (u.includes('EQUITY')) type = 'stock';
                 }
                 return {
-                    ticker: s.symbol,
+                    ticker: `${s.symbol}.P`,
                     description: `${s.baseAsset} / ${s.quoteAsset} Perpetual`,
                     type,
                 };
