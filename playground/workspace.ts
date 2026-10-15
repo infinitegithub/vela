@@ -1,3 +1,6 @@
+import { applyThemeTokens } from "../src/ui/tokens";
+import { resolveTheme, DARK_THEME } from "../src/core/theme";
+import './quant-watchlist.css';
 import type { Vela } from '../src';
 import { registerSW } from 'virtual:pwa-register';
 import { VelaWorkspace } from '../src/workspace';
@@ -16,6 +19,11 @@ import {
     setWatchlistWorkspaceInstance,
     setWatchlistActiveSymbol,
 } from './watchlist-panel';
+import {
+    registerAlertsSidePanel,
+    setAlertsWorkspaceInstance,
+    setAlertsActiveSymbol,
+} from './alerts-panel';
 import {
     registerTradingSidePanel,
     registerTradeButton,
@@ -43,13 +51,19 @@ import {
     registerWorkspaceLayoutPicker,
     createLocalWorkspaceSource,
 } from './workspace-picker';
+import {
+    registerIndicatorTemplatesPicker,
+    createLocalIndicatorTemplatesSource,
+} from './indicator-templates';
 
 // 1. Register Extensions
 registerWorkspaceLayoutPicker();
+registerIndicatorTemplatesPicker();
 registerClassicIndicators();
 registerFootprintChartType();
 registerTradingLinesLayer();
 registerWatchlistSidePanel();
+registerAlertsSidePanel();
 registerTradingSidePanel();
 registerTradeButton();
 registerReplayButton();
@@ -131,7 +145,7 @@ const ws = new VelaWorkspace('#workspace', {
 
     topbar: {
         // Left: Symbol, Timeframes, Style (Candles icon), Layout, Indicators, Replay, Undo/Redo
-        left: ['symbol', 'timeframes', 'style', 'layout', 'indicators', 'replay.toggle', 'undo-redo'],
+        left: ['symbol', 'timeframes', 'style', 'layout', 'indicators', 'quant:indicator-templates.open', 'replay.toggle', 'undo-redo'],
         // Right: Pine Editor, Screenshot, Theme Toggle, Panels, Trade button
         right: ['pine.editor', 'screenshot', 'theme.toggle', 'panels', 'trade.toggle'],
     },
@@ -140,9 +154,11 @@ const ws = new VelaWorkspace('#workspace', {
 // 3. Bind workspace instances
 setWorkspaceInstance(ws);
 setWatchlistWorkspaceInstance(ws);
+setAlertsWorkspaceInstance(ws);
 setThemeWorkspaceInstance(ws);
 setExplorerWorkspaceInstance(ws);
 createLocalWorkspaceSource(ws);
+createLocalIndicatorTemplatesSource(ws);
 
 // 4. Mount bottom account drawer (starts collapsed at 28px)
 mountBottomAccountStrip(ws);
@@ -152,6 +168,7 @@ const syncActiveSymbol = (sym: string) => {
     if (!sym) return;
     setActiveSymbol(sym);
     setWatchlistActiveSymbol(sym);
+    setAlertsActiveSymbol(sym);
 };
 
 ws.on('cell:active', ({ id }) => {
@@ -206,9 +223,12 @@ void ws.cells()[0]?.chart.ready().then(() => {
 });
 
 // 7. Sync shell theme on changes
-const syncShellTheme = (t: { background: string }): void => {
+const syncShellTheme = (t: any): void => {
     document.body.style.background = t.background;
+    applyThemeTokens(document.body, t);
+    applyThemeTokens(document.documentElement, t);
 };
+syncShellTheme(ws.opts.theme ? resolveTheme(ws.opts.theme) : DARK_THEME);
 for (const cell of ws.cells()) cell.chart.on('theme:changed', syncShellTheme);
 ws.on('cell:created', ({ id }) => ws.cell(id)?.chart.on('theme:changed', syncShellTheme));
 

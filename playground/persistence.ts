@@ -9,6 +9,7 @@ const PREFIX = 'vela-play:';
  * - Saves to localStorage immediately AND synchronizes to LXC 115 backend (/api/workspace/:key).
  */
 export function playgroundStorage(): WidgetStorage {
+    const setTimeouts = new Map<string, any>();
     return {
         get: (key: string): string | null | Promise<string | null> => {
             let cached: string | null = null;
@@ -61,24 +62,27 @@ export function playgroundStorage(): WidgetStorage {
                 return null;
             })();
         },
-
         set: (key: string, value: string): void => {
             try {
                 window.localStorage.setItem(PREFIX + key, value);
             } catch {}
 
-            try {
-                fetch(`/api/workspace/${encodeURIComponent(key)}`, {
-                    method: 'PUT',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: value,
-                    keepalive: true,
-                }).catch((err) => {
-                    console.warn('[VelaStorage] Remote persist error:', err);
-                });
-            } catch (e) {
-                // Best effort
-            }
+            const existing = setTimeouts.get(key);
+            if (existing) clearTimeout(existing);
+            setTimeouts.set(key, setTimeout(() => {
+                try {
+                    fetch(`/api/workspace/${encodeURIComponent(key)}`, {
+                        method: 'PUT',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: value,
+                        keepalive: true,
+                    }).catch((err) => {
+                        console.warn('[VelaStorage] Remote persist error:', err);
+                    });
+                } catch (e) {
+                    // Best effort
+                }
+            }, 300));
         },
 
         remove: (key: string): void => {

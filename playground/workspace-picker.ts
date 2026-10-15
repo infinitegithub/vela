@@ -203,6 +203,9 @@ const triggerInstances = new WeakMap<HTMLElement, () => void>();
 
 export function setWorkspaceLayoutPickerSource(source: WorkspaceLayoutPickerSource | null): void {
     activeSource = source;
+    if (typeof window !== 'undefined') {
+        (window as any).__workspacePickerSource = source;
+    }
     sourceListeners.forEach((fn) => fn());
 }
 
@@ -1165,12 +1168,35 @@ export function createLocalWorkspaceSource(ws: VelaWorkspace): WorkspaceLayoutPi
         return [];
     };
 
-    const saveStored = (list: StoredWorkspace[]) => {
+    let isServerHydrated = false;
+    let syncTimeout: any = null;
+
+    const pushToServer = (list: StoredWorkspace[], currentActiveId: string | null) => {
+        if (typeof window === 'undefined' || !isServerHydrated) return;
+        try {
+            fetch('/api/workspaces', {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ activeId: currentActiveId, workspaces: list }),
+                keepalive: true,
+            }).catch((err) => {
+                console.warn('[Workspace] Remote sync error:', err);
+            });
+        } catch (_) {}
+    };
+
+    const saveStored = (list: StoredWorkspace[], syncRemote = true) => {
         try {
             if (typeof window !== 'undefined') {
                 window.localStorage.setItem(WORKSPACES_STORAGE_KEY, JSON.stringify(list));
             }
         } catch {}
+        if (syncRemote && isServerHydrated) {
+            clearTimeout(syncTimeout);
+            syncTimeout = setTimeout(() => {
+                pushToServer(list, activeId);
+            }, 300);
+        }
     };
 
     let items = loadStored();
@@ -1181,7 +1207,7 @@ export function createLocalWorkspaceSource(ws: VelaWorkspace): WorkspaceLayoutPi
         }
     } catch {}
 
-    // Initialize initial workspace if none exist
+    // Initialize initial workspace if none exist locally
     if (items.length === 0) {
         const initialDoc = ws.getState();
         const initialWs: StoredWorkspace = {
@@ -1192,12 +1218,73 @@ export function createLocalWorkspaceSource(ws: VelaWorkspace): WorkspaceLayoutPi
         };
         items = [initialWs];
         activeId = 'default';
-        saveStored(items);
+        saveStored(items, false);
         if (typeof window !== 'undefined') {
             window.localStorage.setItem(ACTIVE_WORKSPACE_ID_KEY, 'default');
         }
     } else if (!activeId || !items.some((w) => w.id === activeId)) {
         activeId = items[0]!.id;
+    }
+
+    let isHydrating = false;
+
+    const syncFromServer = async (applyActiveDoc = false) => {
+        if (isHydrating) return;
+        isHydrating = true;
+        try {
+            const controller = new AbortController();
+            const timeout = setTimeout(() => controller.abort(), 4000);
+            const res = await fetch('/api/workspaces', { signal: controller.signal });
+            clearTimeout(timeout);
+            if (res.ok) {
+                const data = await res.json();
+                if (data && Array.isArray(data.workspaces) && data.workspaces.length > 0) {
+                    items = data.workspaces;
+                    if (data.activeId && items.some((w: StoredWorkspace) => w.id === data.activeId)) {
+                        activeId = data.activeId;
+                    } else if (!activeId || !items.some((w: StoredWorkspace) => w.id === activeId)) {
+                        activeId = items[0]!.id;
+                    }
+
+                    saveStored(items, false);
+                    if (activeId && typeof window !== 'undefined') {
+                        window.localStorage.setItem(ACTIVE_WORKSPACE_ID_KEY, activeId);
+                    }
+
+                    // On initial hydration or when explicitly requested, apply the active workspace document
+                    const act = items.find((w: StoredWorkspace) => w.id === activeId);
+                    if (act?.document && (applyActiveDoc || (!isServerHydrated && items.length > 1))) {
+                        try {
+                            ws.applyState(act.document);
+                        } catch (err) {
+                            console.warn('[Workspace] Failed applying initial state:', err);
+                        }
+                    }
+
+                    isServerHydrated = true;
+                    isHydrating = false;
+                    setWorkspaceLayoutPickerSource(source);
+                    return;
+                }
+            }
+        } catch (e) {
+            console.warn('[Workspace] Server hydration warning:', e);
+        }
+        isHydrating = false;
+        isServerHydrated = true;
+    };
+
+    // Hydrate immediately from server in background
+    void syncFromServer(false);
+
+    if (typeof window !== 'undefined') {
+        const handleSync = () => {
+            if (document.visibilityState === 'visible') {
+                void syncFromServer(false);
+            }
+        };
+        window.addEventListener('visibilitychange', handleSync);
+        window.addEventListener('focus', handleSync);
     }
 
     const source: WorkspaceLayoutPickerSource = {
@@ -1221,6 +1308,7 @@ export function createLocalWorkspaceSource(ws: VelaWorkspace): WorkspaceLayoutPi
                 ws.applyState(target.document);
             }
             setWorkspaceLayoutPickerSource(source);
+            pushToServer(items, activeId);
         },
         create(name: string) {
             const id = 'ws_' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
@@ -1233,7 +1321,7 @@ export function createLocalWorkspaceSource(ws: VelaWorkspace): WorkspaceLayoutPi
             };
             items.unshift(newWs);
             activeId = id;
-            saveStored(items);
+            saveStored(items, true);
             if (typeof window !== 'undefined') {
                 window.localStorage.setItem(ACTIVE_WORKSPACE_ID_KEY, id);
             }
@@ -1244,7 +1332,7 @@ export function createLocalWorkspaceSource(ws: VelaWorkspace): WorkspaceLayoutPi
             if (!target) return;
             target.name = name.trim() || target.name;
             target.updatedAt = new Date().toISOString();
-            saveStored(items);
+            saveStored(items, true);
             setWorkspaceLayoutPickerSource(source);
         },
         duplicate(id: string, name: string, cb?: (res: boolean) => void) {
@@ -1262,7 +1350,7 @@ export function createLocalWorkspaceSource(ws: VelaWorkspace): WorkspaceLayoutPi
                 document: copyDoc,
             };
             items.splice(items.indexOf(target) + 1, 0, copyWs);
-            saveStored(items);
+            saveStored(items, true);
             setWorkspaceLayoutPickerSource(source);
             cb?.(true);
         },
@@ -1272,6 +1360,14 @@ export function createLocalWorkspaceSource(ws: VelaWorkspace): WorkspaceLayoutPi
                 cb?.(false);
                 return;
             }
+            // Explicit server deletion
+            try {
+                fetch(`/api/workspaces/${encodeURIComponent(id)}`, {
+                    method: 'DELETE',
+                    keepalive: true,
+                }).catch(() => {});
+            } catch (_) {}
+
             items.splice(idx, 1);
             if (activeId === id) {
                 const next = items[idx] ?? items[idx - 1] ?? items[0];
@@ -1286,7 +1382,7 @@ export function createLocalWorkspaceSource(ws: VelaWorkspace): WorkspaceLayoutPi
                     else window.localStorage.removeItem(ACTIVE_WORKSPACE_ID_KEY);
                 }
             }
-            saveStored(items);
+            saveStored(items, false);
             setWorkspaceLayoutPickerSource(source);
             cb?.(true);
         },
@@ -1298,7 +1394,7 @@ export function createLocalWorkspaceSource(ws: VelaWorkspace): WorkspaceLayoutPi
             target.shareToken = token;
             target.includeChart = mode.includeChart;
             target.includeWidgets = mode.includeWidgets;
-            saveStored(items);
+            saveStored(items, true);
             setWorkspaceLayoutPickerSource(source);
             cb(token);
         },
@@ -1307,19 +1403,19 @@ export function createLocalWorkspaceSource(ws: VelaWorkspace): WorkspaceLayoutPi
             if (!target) return;
             target.shared = false;
             target.shareToken = null;
-            saveStored(items);
+            saveStored(items, true);
             setWorkspaceLayoutPickerSource(source);
         },
     };
 
     // Auto-update active workspace document on debounced state:changed
     ws.on('state:changed', () => {
-        if (!activeId) return;
+        if (!isServerHydrated || !activeId) return;
         const target = items.find((w) => w.id === activeId);
         if (target) {
             target.document = ws.getState();
             target.updatedAt = new Date().toISOString();
-            saveStored(items);
+            saveStored(items, true);
         }
     });
 

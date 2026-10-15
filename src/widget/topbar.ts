@@ -483,6 +483,7 @@ export class Topbar {
             this.layoutPicker = new LayoutPicker({
                 trigger: this.layoutButton,
                 host,
+                currentId: () => this.layoutId,
                 shape: () => layout.shape(),
                 presets: () => layout.presets().map((p) => ({ ...p, checked: p.id === this.layoutId })),
                 onSelectGrid: (rows, cols) => layout.onSelectGrid(rows, cols),

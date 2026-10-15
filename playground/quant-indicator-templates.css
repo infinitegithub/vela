@@ -1,0 +1,108 @@
+/* The topbar draws a hairline after every primary control, Indicators included.
+   The templates button is Indicators' companion, so the hairline between them
+   would split one group in two — hide the one that directly precedes the
+   left-aligned contributed actions. */
+.vela-sep:has(+ .vela-widget-actions-left) { display: none; }
+/* Replay shares that slot, and it is its own group: draw a hairline between
+   adjacent left actions, matching .vela-sep (Vela rebuilds the slot's children
+   on refreshActions, so a real .vela-sep element would not survive). */
+.vela-widget-action-left + .vela-widget-action-left { position: relative; margin-left: 5px; }
+.vela-widget-action-left + .vela-widget-action-left::before {
+    content: "";
+    position: absolute;
+    left: -5px;
+    top: 50%;
+    width: 1px;
+    height: 22px;
+    transform: translateY(-50%);
+    background: var(--vela-border-strong);
+    pointer-events: none;
+}
+/* Mobile: Vela projects every left-aligned action as a stop in the bottom bar.
+   Templates live in the three-dots drawer there (see MOBILE_ACTION_ID), so hide
+   the bar stop rather than gating the action (gates only re-evaluate on
+   refreshActions, not on a resize across the breakpoint). */
+[data-layout='mobile'] .vela-mb-actions > .vela-mb-item[aria-label='Indicator Templates'] { display: none; }
+/* ── create view ── deliberately flat: the name field, then two labelled
+   fields — the indicators as read-only tags (the same tags the management list
+   folds out, so a template looks the same everywhere) and the "Chart" toggle
+   chips, whose header carries an info callout to its right. Toggles are told
+   apart from tags by their dashed outline when off and their solid fill when
+   on. */
+.quant-tpl-field { display: flex; flex-direction: column; gap: 7px; min-width: 0; }
+.quant-tpl-label { display: flex; align-items: center; gap: 5px; font-size: 11px; font-weight: 600; color: var(--vela-fg-muted); text-transform: uppercase; letter-spacing: .05em; }
+.quant-tpl-label-count { font-weight: 500; letter-spacing: 0; text-transform: none; }
+.quant-tpl-label-info { all: unset; display: inline-flex; flex: none; padding: 2px; border-radius: 50%; color: inherit; cursor: help; }
+.quant-tpl-label-info:hover, .quant-tpl-label-info[data-state='open'] { color: var(--vela-fg); }
+.quant-tpl-label-info:focus-visible { outline: 2px solid var(--vela-selected-bg); outline-offset: 1px; }
+.quant-tpl-info-tip { max-width: 240px; white-space: normal; }
+.quant-tpl-tags { display: flex; flex-wrap: wrap; gap: 5px; max-height: 26vh; overflow: auto; }
+.quant-tpl-tag {
+    max-width: 100%;
+    padding: 4px 10px;
+    border-radius: 999px;
+    background: var(--vela-surface-elev);
+    border: 1px solid var(--vela-border);
+    color: var(--vela-fg);
+    font-size: 12px;
+    line-height: 1.3;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+.quant-tpl-tags-empty { font-size: 12px; color: var(--vela-fg-muted); line-height: 1.45; }
+.quant-tpl-chips { display: flex; flex-wrap: wrap; gap: 6px; min-width: 0; }
+.quant-tpl-chip {
+    all: unset;
+    box-sizing: border-box;
+    display: inline-flex;
+    align-items: center;
+    gap: 7px;
+    height: 28px;
+    padding: 0 11px 0 6px;
+    border-radius: 999px;
+    border: 1px dashed var(--vela-border-strong);
+    color: var(--vela-fg-muted);
+    font-size: 12px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: background 120ms ease, color 120ms ease, border-color 120ms ease, transform 120ms cubic-bezier(0.23, 1, 0.32, 1);
+}
+.quant-tpl-chip:hover { background: var(--vela-hover); color: var(--vela-fg); }
+.quant-tpl-chip:active { transform: scale(0.97); }
+.quant-tpl-chip:focus-visible { outline: 2px solid var(--vela-selected-bg); outline-offset: 1px; }
+.quant-tpl-chip[aria-pressed='true'] {
+    background: var(--vela-selected-bg);
+    border: 1px solid transparent;
+    color: var(--vela-selected-fg);
+}
+.quant-tpl-chip > .vela-icon { flex: none; color: inherit; opacity: .85; }
+.quant-tpl-chip[aria-pressed='false'] .quant-tpl-symicon { filter: grayscale(1); opacity: .65; }
+.quant-tpl-chip-text { white-space: nowrap; }
+.quant-tpl-chip .quant-tpl-chip-check { flex: none; display: none; }
+.quant-tpl-chip[aria-pressed='true'] .quant-tpl-chip-check { display: inline-flex; }
+.quant-tpl-symicon { width: 16px; height: 16px; border-radius: 50%; flex: none; object-fit: cover; background: var(--vela-hover); transition: filter 120ms ease, opacity 120ms ease; }
+.quant-tpl-symicon-fallback {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    color: var(--vela-fg-bright);
+    font-size: 9px;
+    font-weight: 700;
+    letter-spacing: 0;
+}
+/* ── recents dropdown ── two-line rows (name + market/contents); a kebab on
+   hover opens Rename / Delete — the same affordance as the workspaces dropdown. */
+.quant-tpl-dd .quant-wsp-dd-item { gap: 2px; }
+.quant-tpl-dd-text { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 1px; text-align: left; }
+.quant-tpl-dd-meta { font-size: 11px; color: var(--vela-fg-muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* ── management list ── each row folds out the indicators it carries as a row
+   of tags, aligned under the name. */
+.quant-tpl-item { display: flex; flex-direction: column; }
+.quant-tpl-expand { opacity: 1; }
+.quant-tpl-row-inds { display: flex; flex-wrap: wrap; gap: 4px; padding: 2px 10px 10px 50px; }
+.quant-tpl-row-inds[hidden] { display: none; }
+.quant-tpl-row-inds .quant-tpl-tag { font-size: 11.5px; padding: 3px 9px; }
+.quant-tpl-row-inds-empty { font-size: 12px; color: var(--vela-fg-muted); padding: 2px 0; }
+/* No hover on touch: the row's rename / delete / expand stay visible. */
+[data-layout='mobile'] .quant-tpl-list .quant-tpl-item .quant-wsp-actions .quant-wsp-iconbtn { display: inline-flex; opacity: 1; }

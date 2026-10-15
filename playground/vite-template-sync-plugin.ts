@@ -108,6 +108,11 @@ export function templateSyncPlugin(): Plugin {
             const indicatorsDir = path.resolve(dataDir, 'indicators');
             const pineCacheDir = path.resolve(dataDir, 'pine_cache');
             const luxCatalogFile = path.resolve(dataDir, 'luxalgo_catalog.json');
+            const workspacesListFile = path.resolve(dataDir, 'workspaces.json');
+            const indicatorTemplatesFile = path.resolve(dataDir, 'indicator_templates.json');
+            const watchlistFile = path.resolve(dataDir, 'watchlist.json');
+            const indicatorFavoritesFile = path.resolve(dataDir, 'indicator_favorites.json');
+            const alertsFile = path.resolve(dataDir, 'alerts.json');
 
             fs.mkdirSync(templatesDir, { recursive: true });
             fs.mkdirSync(workspacesDir, { recursive: true });
@@ -117,6 +122,8 @@ export function templateSyncPlugin(): Plugin {
             // Seed default starter templates if empty
             seedDefaultTemplates(templatesDir);
             seedDefaultIndicators(indicatorsDir);
+            seedDefaultIndicatorTemplates(indicatorTemplatesFile);
+            seedDefaultWatchlist(watchlistFile, workspacesDir);
 
             server.middlewares.use(async (req, res, next) => {
                 const url = new URL(req.url || '/', 'http://localhost');
@@ -126,7 +133,13 @@ export function templateSyncPlugin(): Plugin {
                     if (
                         url.pathname.startsWith('/api/templates') ||
                         url.pathname.startsWith('/api/workspace') ||
+                        url.pathname.startsWith('/api/workspaces') ||
                         url.pathname.startsWith('/api/indicators') ||
+                        url.pathname.startsWith('/api/indicator-templates') ||
+                        url.pathname.startsWith('/api/indicator-favorites') ||
+                        url.pathname.startsWith('/api/quant/indicator-favorites') ||
+                        url.pathname.startsWith('/api/watchlist') ||
+                        url.pathname.startsWith('/api/alerts') ||
                         url.pathname.startsWith('/api/lux')
                     ) {
                         res.statusCode = 204;
@@ -144,6 +157,326 @@ export function templateSyncPlugin(): Plugin {
                         res.setHeader('Access-Control-Allow-Origin', '*');
                         res.setHeader('Cache-Control', 'no-cache, no-store');
                         return res.end();
+                    }
+
+                    // ── Multi-Workspace Profiles Endpoints (/api/workspaces) ───────────
+                    if (url.pathname === '/api/workspaces' || url.pathname === '/api/workspaces/') {
+                        if (req.method === 'GET') {
+                            if (fs.existsSync(workspacesListFile)) {
+                                try {
+                                    const data = JSON.parse(fs.readFileSync(workspacesListFile, 'utf-8'));
+                                    return sendJson(res, data);
+                                } catch (e) {
+                                    console.error('Failed to read workspaces.json:', e);
+                                }
+                            }
+                            // Seed default from vela-workspace.json if available
+                            const velaWsPath = path.join(workspacesDir, 'vela-workspace.json');
+                            let defaultDoc: any = null;
+                            if (fs.existsSync(velaWsPath)) {
+                                try { defaultDoc = JSON.parse(fs.readFileSync(velaWsPath, 'utf-8')); } catch (_) {}
+                            }
+                            const initial = {
+                                activeId: 'default',
+                                updatedAt: Date.now(),
+                                workspaces: [
+                                    {
+                                        id: 'default',
+                                        name: 'Default Workspace',
+                                        updatedAt: new Date().toISOString(),
+                                        document: defaultDoc,
+                                    }
+                                ]
+                            };
+                            try {
+                                fs.writeFileSync(workspacesListFile, JSON.stringify(initial, null, 2), 'utf-8');
+                            } catch (_) {}
+                            return sendJson(res, initial);
+                        }
+
+                        if (req.method === 'PUT' || req.method === 'POST') {
+                            const body = await readJsonBody(req);
+                            const incomingWorkspaces: any[] = Array.isArray(body) ? body : (Array.isArray(body?.workspaces) ? body.workspaces : []);
+                            const incomingActiveId = body?.activeId !== undefined ? body.activeId : null;
+
+                            let existing: any = null;
+                            if (fs.existsSync(workspacesListFile)) {
+                                try {
+                                    existing = JSON.parse(fs.readFileSync(workspacesListFile, 'utf-8'));
+                                } catch (_) {}
+                            }
+
+                            let finalWorkspaces: any[] = [];
+                            if (existing && Array.isArray(existing.workspaces) && existing.workspaces.length > 0) {
+                                const map = new Map<string, any>();
+                                for (const w of existing.workspaces) {
+                                    if (w && w.id) map.set(w.id, w);
+                                }
+
+                                for (const inc of incomingWorkspaces) {
+                                    if (inc && inc.id) {
+                                        const prev = map.get(inc.id);
+                                        if (prev) {
+                                            map.set(inc.id, {
+                                                ...prev,
+                                                ...inc,
+                                                document: inc.document || prev.document,
+                                                updatedAt: inc.updatedAt || new Date().toISOString(),
+                                            });
+                                        } else {
+                                            map.set(inc.id, inc);
+                                        }
+                                    }
+                                }
+                                finalWorkspaces = Array.from(map.values());
+                            } else {
+                                finalWorkspaces = incomingWorkspaces;
+                            }
+
+                            if (finalWorkspaces.length === 0) {
+                                finalWorkspaces = [
+                                    {
+                                        id: 'default',
+                                        name: 'Default Workspace',
+                                        updatedAt: new Date().toISOString(),
+                                        document: null,
+                                    }
+                                ];
+                            }
+
+                            const activeId = incomingActiveId && finalWorkspaces.some((w: any) => w.id === incomingActiveId)
+                                ? incomingActiveId
+                                : (existing?.activeId && finalWorkspaces.some((w: any) => w.id === existing.activeId)
+                                    ? existing.activeId
+                                    : finalWorkspaces[0]?.id || 'default');
+
+                            const record = {
+                                activeId,
+                                workspaces: finalWorkspaces,
+                                updatedAt: Date.now()
+                            };
+
+                            const tempPath = path.join(dataDir, `.workspaces.tmp.${Date.now()}`);
+                            try {
+                                fs.writeFileSync(tempPath, JSON.stringify(record, null, 2), 'utf-8');
+                                fs.renameSync(tempPath, workspacesListFile);
+                            } catch (e) {
+                                fs.writeFileSync(workspacesListFile, JSON.stringify(record, null, 2), 'utf-8');
+                            }
+
+                            // Keep active document synced with workspaces/vela-workspace.json
+                            if (activeId) {
+                                const activeWs = finalWorkspaces.find((w: any) => w.id === activeId);
+                                if (activeWs && activeWs.document) {
+                                    try {
+                                        fs.writeFileSync(path.join(workspacesDir, 'vela-workspace.json'), JSON.stringify(activeWs.document, null, 2), 'utf-8');
+                                    } catch (_) {}
+                                }
+                            }
+
+                            return sendJson(res, { success: true, count: finalWorkspaces.length, activeId, updatedAt: record.updatedAt });
+                        }
+                    }
+
+                    if (url.pathname.startsWith('/api/workspaces/')) {
+                        const id = decodeURIComponent(url.pathname.replace('/api/workspaces/', ''));
+                        if (req.method === 'DELETE') {
+                            if (fs.existsSync(workspacesListFile)) {
+                                try {
+                                    const current = JSON.parse(fs.readFileSync(workspacesListFile, 'utf-8'));
+                                    if (current && Array.isArray(current.workspaces)) {
+                                        current.workspaces = current.workspaces.filter((w: any) => w.id !== id);
+                                        if (current.activeId === id) {
+                                            current.activeId = current.workspaces[0]?.id || 'default';
+                                        }
+                                        current.updatedAt = Date.now();
+                                        const tempPath = path.join(dataDir, `.workspaces.tmp.${Date.now()}`);
+                                        try {
+                                            fs.writeFileSync(tempPath, JSON.stringify(current, null, 2), 'utf-8');
+                                            fs.renameSync(tempPath, workspacesListFile);
+                                        } catch (_) {
+                                            fs.writeFileSync(workspacesListFile, JSON.stringify(current, null, 2), 'utf-8');
+                                        }
+                                        return sendJson(res, { success: true, deletedId: id, count: current.workspaces.length });
+                                    }
+                                } catch (e: any) {
+                                    return sendJson(res, { error: e.message }, 500);
+                                }
+                            }
+                            return sendJson(res, { success: true, deletedId: id });
+                        }
+                    }
+
+                    // ── Indicator Templates Endpoints (/api/indicator-templates) ──────────
+                    if (url.pathname === '/api/indicator-templates' || url.pathname === '/api/indicator-templates/') {
+                        if (req.method === 'GET') {
+                            const list = seedDefaultIndicatorTemplates(indicatorTemplatesFile);
+                            return sendJson(res, list);
+                        }
+
+                        if (req.method === 'PUT' || req.method === 'POST') {
+                            const body = await readJsonBody(req);
+                            const incomingTemplates: any[] = Array.isArray(body)
+                                ? body
+                                : (Array.isArray(body?.templates) ? body.templates : []);
+
+                            let existing: any[] = [];
+                            if (fs.existsSync(indicatorTemplatesFile)) {
+                                try {
+                                    const parsed = JSON.parse(fs.readFileSync(indicatorTemplatesFile, 'utf-8'));
+                                    if (Array.isArray(parsed)) existing = parsed;
+                                } catch (_) {}
+                            }
+
+                            let finalTemplates: any[] = [];
+                            if (existing.length > 0) {
+                                const map = new Map<string, any>();
+                                for (const t of existing) {
+                                    if (t && t.id) map.set(t.id, t);
+                                }
+                                for (const inc of incomingTemplates) {
+                                    if (inc && inc.id) {
+                                        const prev = map.get(inc.id);
+                                        map.set(inc.id, { ...(prev || {}), ...inc, updatedAt: inc.updatedAt || Date.now() });
+                                    }
+                                }
+                                finalTemplates = Array.from(map.values());
+                            } else {
+                                finalTemplates = incomingTemplates;
+                            }
+
+                            if (body && body.name && !Array.isArray(body) && !body.templates) {
+                                const id = body.id || `tpl-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
+                                const idx = finalTemplates.findIndex((t: any) => t.id === id);
+                                const entry = { ...body, id, updatedAt: Date.now(), createdAt: body.createdAt || Date.now() };
+                                if (idx >= 0) finalTemplates[idx] = entry;
+                                else finalTemplates.unshift(entry);
+                            }
+
+                            const tempPath = path.join(dataDir, `.indicator_templates.tmp.${Date.now()}`);
+                            try {
+                                fs.writeFileSync(tempPath, JSON.stringify(finalTemplates, null, 2), 'utf-8');
+                                fs.renameSync(tempPath, indicatorTemplatesFile);
+                            } catch (e) {
+                                fs.writeFileSync(indicatorTemplatesFile, JSON.stringify(finalTemplates, null, 2), 'utf-8');
+                            }
+                            return sendJson(res, { success: true, count: finalTemplates.length, updatedAt: Date.now() });
+                        }
+                    }
+
+                    if (url.pathname.startsWith('/api/indicator-templates/')) {
+                        const id = decodeURIComponent(url.pathname.replace('/api/indicator-templates/', ''));
+                        if (req.method === 'DELETE') {
+                            let existing: any[] = [];
+                            if (fs.existsSync(indicatorTemplatesFile)) {
+                                try { existing = JSON.parse(fs.readFileSync(indicatorTemplatesFile, 'utf-8')); } catch (_) {}
+                            }
+                            const filtered = existing.filter((t: any) => t.id !== id);
+                            fs.writeFileSync(indicatorTemplatesFile, JSON.stringify(filtered, null, 2), 'utf-8');
+                            return sendJson(res, { success: true, id, count: filtered.length });
+                        }
+                        if (req.method === 'GET') {
+                            let existing: any[] = [];
+                            if (fs.existsSync(indicatorTemplatesFile)) {
+                                try { existing = JSON.parse(fs.readFileSync(indicatorTemplatesFile, 'utf-8')); } catch (_) {}
+                            }
+                            const found = existing.find((t: any) => t.id === id);
+                            if (found) return sendJson(res, found);
+                            return sendJson(res, { error: 'Indicator template not found', id }, 404);
+                        }
+                    }
+
+                    // ── Watchlist Endpoints (/api/watchlist) ─────────────────────────────
+                    if (url.pathname === '/api/watchlist' || url.pathname === '/api/watchlist/') {
+                        if (req.method === 'GET') {
+                            const list = seedDefaultWatchlist(watchlistFile, workspacesDir);
+                            return sendJson(res, list);
+                        }
+
+                        if (req.method === 'PUT' || req.method === 'POST') {
+                            const body = await readJsonBody(req);
+                            const list = Array.isArray(body) ? body : (Array.isArray(body?.watchlist) ? body.watchlist : (Array.isArray(body?.items) ? body.items : []));
+                            const tempPath = path.join(dataDir, `.watchlist.tmp.${Date.now()}`);
+                            try {
+                                fs.writeFileSync(tempPath, JSON.stringify(list, null, 2), 'utf-8');
+                                fs.renameSync(tempPath, watchlistFile);
+                            } catch (e) {
+                                fs.writeFileSync(watchlistFile, JSON.stringify(list, null, 2), 'utf-8');
+                            }
+                            return sendJson(res, { success: true, count: list.length, updatedAt: Date.now() });
+                        }
+                    }
+
+                    // ── Indicator Favorites / Wishlist Endpoints ─────────────────────────
+                    if (
+                        url.pathname === '/api/indicator-favorites' ||
+                        url.pathname === '/api/indicator-favorites/' ||
+                        url.pathname === '/api/quant/indicator-favorites' ||
+                        url.pathname === '/api/quant/indicator-favorites/'
+                    ) {
+                        if (req.method === 'GET') {
+                            if (fs.existsSync(indicatorFavoritesFile)) {
+                                try {
+                                    const data = JSON.parse(fs.readFileSync(indicatorFavoritesFile, 'utf-8'));
+                                    return sendJson(res, data);
+                                } catch (e) {}
+                            }
+                            return sendJson(res, { favorites: [] });
+                        }
+
+                        if (req.method === 'PUT' || req.method === 'POST') {
+                            const body = await readJsonBody(req);
+                            let favList: string[] = [];
+                            if (Array.isArray(body)) {
+                                favList = body;
+                            } else if (Array.isArray(body?.favorites)) {
+                                favList = body.favorites;
+                            } else if (body?.body && Array.isArray(body.body.favorites)) {
+                                favList = body.body.favorites;
+                            }
+                            const record = {
+                                favorites: Array.from(new Set(favList)),
+                                updatedAt: Date.now()
+                            };
+                            const tempPath = path.join(dataDir, `.indicator_favorites.tmp.${Date.now()}`);
+                            try {
+                                fs.writeFileSync(tempPath, JSON.stringify(record, null, 2), 'utf-8');
+                                fs.renameSync(tempPath, indicatorFavoritesFile);
+                            } catch (e) {
+                                fs.writeFileSync(indicatorFavoritesFile, JSON.stringify(record, null, 2), 'utf-8');
+                            }
+                            return sendJson(res, { success: true, count: record.favorites.length, updatedAt: record.updatedAt });
+                        }
+                    }
+
+                    // ── Alerts Sync Endpoints (/api/alerts) ─────────────────────────
+                    if (url.pathname === '/api/alerts' || url.pathname === '/api/alerts/') {
+                        if (req.method === 'GET') {
+                            if (fs.existsSync(alertsFile)) {
+                                try {
+                                    const data = JSON.parse(fs.readFileSync(alertsFile, 'utf-8'));
+                                    return sendJson(res, data);
+                                } catch (_) {}
+                            }
+                            return sendJson(res, { alerts: [], logs: [] });
+                        }
+
+                        if (req.method === 'PUT' || req.method === 'POST') {
+                            const body = await readJsonBody(req);
+                            const record = {
+                                alerts: Array.isArray(body?.alerts) ? body.alerts : (Array.isArray(body) ? body : []),
+                                logs: Array.isArray(body?.logs) ? body.logs : [],
+                                updatedAt: Date.now()
+                            };
+                            const tempPath = path.join(dataDir, `.alerts.tmp.${Date.now()}`);
+                            try {
+                                fs.writeFileSync(tempPath, JSON.stringify(record, null, 2), 'utf-8');
+                                fs.renameSync(tempPath, alertsFile);
+                            } catch (e) {
+                                fs.writeFileSync(alertsFile, JSON.stringify(record, null, 2), 'utf-8');
+                            }
+                            return sendJson(res, { success: true, count: record.alerts.length, updatedAt: record.updatedAt });
+                        }
                     }
 
                     // ── Workspace State Endpoints (/api/workspace/:key) ──────────────────
@@ -184,7 +517,7 @@ export function templateSyncPlugin(): Plugin {
                             req.on('end', () => {
                                 try {
                                     // Validate JSON
-                                    JSON.parse(body);
+                                    const parsedBody = JSON.parse(body);
                                     fs.writeFileSync(filePath, body, 'utf-8');
                                     return sendJson(res, { success: true, key, updatedAt: Date.now() });
                                 } catch (e: any) {
@@ -677,4 +1010,74 @@ function seedDefaultTemplates(templatesDir: string, force: boolean = false) {
     try {
         fs.writeFileSync(sentinelFile, new Date().toISOString(), 'utf-8');
     } catch (_) {}
+}
+
+
+function seedDefaultIndicatorTemplates(filePath: string) {
+    if (fs.existsSync(filePath)) {
+        try {
+            const data = JSON.parse(fs.readFileSync(filePath, 'utf-8'));
+            if (Array.isArray(data)) {
+                return data;
+            }
+        } catch (_) {}
+    }
+    const empty: any[] = [];
+    try {
+        fs.writeFileSync(filePath, JSON.stringify(empty, null, 2), 'utf-8');
+    } catch (_) {}
+    return empty;
+}
+
+function seedDefaultWatchlist(filePath: string, workspacesDir: string) {
+    if (fs.existsSync(filePath)) {
+        try {
+            return JSON.parse(fs.readFileSync(filePath, 'utf-8'));
+        } catch (_) {}
+    }
+    const velaWorkspacePath = path.join(workspacesDir, 'vela-workspace.json');
+    if (fs.existsSync(velaWorkspacePath)) {
+        try {
+            const doc = JSON.parse(fs.readFileSync(velaWorkspacePath, 'utf-8'));
+            const lists = doc?.ext?.['vela.watchlist']?.lists;
+            const activeListName = doc?.ext?.['vela.watchlist']?.activeList;
+            if (lists && activeListName && Array.isArray(lists[activeListName])) {
+                const items = lists[activeListName].map((item: any) => ({
+                    symbol: item.symbol || item.canonicalSymbol || 'BTCUSDT',
+                    name: item.name || item.symbol || 'Asset',
+                    category: 'Crypto',
+                    binanceSymbol: item.binanceSymbol || item.symbol?.replace(/[^A-Z0-9]/g, '') || 'BTCUSDT',
+                    isFutures: item.isFutures === true,
+                    price: 0,
+                    change: 0,
+                    changePercent: 0,
+                    high: 0,
+                    low: 0,
+                    open: 0,
+                    volume: 0,
+                }));
+                fs.writeFileSync(filePath, JSON.stringify(items, null, 2), 'utf-8');
+                return items;
+            }
+        } catch (_) {}
+    }
+
+    const defaultList = [
+        { symbol: 'BTCUSDT', name: 'Bitcoin', category: 'Crypto', binanceSymbol: 'BTCUSDT', isFutures: false, price: 81870.01, change: -1298.99, changePercent: -1.56, high: 84146.72, low: 81514.28, open: 83169.01, volume: 16200 },
+        { symbol: 'ETHUSDT', name: 'Ethereum', category: 'Crypto', binanceSymbol: 'ETHUSDT', isFutures: false, price: 2431.33, change: -66.62, changePercent: -2.67, high: 2510.50, low: 2415.00, open: 2497.95, volume: 84000 },
+        { symbol: 'SOLUSDT', name: 'Solana', category: 'Crypto', binanceSymbol: 'SOLUSDT', isFutures: false, price: 104.21, change: -2.62, changePercent: -2.45, high: 107.80, low: 103.50, open: 106.83, volume: 92000 },
+        { symbol: 'BNBUSDT', name: 'Binance Coin', category: 'Crypto', binanceSymbol: 'BNBUSDT', isFutures: false, price: 729.46, change: -12.26, changePercent: -1.65, high: 745.00, low: 722.00, open: 741.72, volume: 45000 },
+        { symbol: 'DOGEUSDT', name: 'Dogecoin', category: 'Crypto', binanceSymbol: 'DOGEUSDT', isFutures: false, price: 0.08208, change: -0.00231, changePercent: -2.74, high: 0.0855, low: 0.0812, open: 0.08439, volume: 15400000 },
+        { symbol: 'NVDA', name: 'NVIDIA', category: 'Stocks', binanceSymbol: '', isFutures: false, price: 221.30, change: -7.22, changePercent: -3.16, high: 226.00, low: 219.64, open: 228.52, volume: 117714200 },
+        { symbol: 'AAPL', name: 'Apple', category: 'Stocks', binanceSymbol: '', isFutures: false, price: 342.96, change: 1.69, changePercent: 0.50, high: 347.07, low: 341.72, open: 341.27, volume: 49888500 },
+        { symbol: 'TSLA', name: 'Tesla', category: 'Stocks', binanceSymbol: '', isFutures: false, price: 367.16, change: -8.07, changePercent: -2.15, high: 371.39, low: 363.82, open: 375.23, volume: 30862900 },
+        { symbol: 'EURUSD', name: 'Euro / U.S. Dollar', category: 'Forex', binanceSymbol: '', isFutures: false, price: 1.1167, change: -0.0036, changePercent: -0.32, high: 1.1168, low: 1.1157, open: 1.1203, volume: 258400 },
+        { symbol: 'XAUUSD', name: 'Gold / U.S. Dollar', category: 'Commodities', binanceSymbol: '', isFutures: false, price: 4128.10, change: 20.20, changePercent: 0.49, high: 4129.80, low: 4122.70, open: 4107.90, volume: 57200 },
+    ];
+    try {
+        fs.writeFileSync(filePath, JSON.stringify(defaultList, null, 2), 'utf-8');
+    } catch (e) {
+        console.error('Failed to write default watchlist:', e);
+    }
+    return defaultList;
 }

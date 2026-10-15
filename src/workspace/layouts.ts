@@ -63,17 +63,261 @@ export function layouts(): LayoutDefinition[] {
 }
 
 /** Canonical slot ids `c1`…`cN`. */
-function slots(n: number): Array<{ id: string }> {
+export function slots(n: number): Array<{ id: string }> {
     return Array.from({ length: n }, (_, i) => ({ id: `c${i + 1}` }));
 }
 
+/** All TradingView & OpenMarket-grade layout presets matching the visual selector grid. */
+export const TV_LAYOUT_PRESETS: LayoutDefinition[] = [
+    // ── 1 chart ──
+    {
+        id: '1',
+        label: 'Single',
+        cols: [1],
+        rows: [1],
+        cells: slots(1),
+    },
+
+    // ── 2 charts ──
+    {
+        id: '2h',
+        label: '2 side by side',
+        cols: [1, 1],
+        rows: [1],
+        cells: slots(2),
+    },
+    {
+        id: '2v',
+        label: '2 stacked',
+        cols: [1],
+        rows: [1, 1],
+        cells: slots(2),
+    },
+
+    // ── 3 charts ──
+    {
+        id: '3v',
+        label: '3 columns',
+        cols: [1, 1, 1],
+        rows: [1],
+        cells: slots(3),
+    },
+    {
+        id: '3h',
+        label: '3 rows',
+        cols: [1],
+        rows: [1, 1, 1],
+        cells: slots(3),
+    },
+    {
+        id: '3-left-main',
+        label: '3 (1 left, 2 right)',
+        cols: [1, 1],
+        rows: [1, 1],
+        areas: ['c1 c2', 'c1 c3'],
+        cells: [{ id: 'c1', area: 'c1' }, { id: 'c2', area: 'c2' }, { id: 'c3', area: 'c3' }],
+    },
+    {
+        id: '3-right-main',
+        label: '3 (2 left, 1 right)',
+        cols: [1, 1],
+        rows: [1, 1],
+        areas: ['c1 c3', 'c2 c3'],
+        cells: [{ id: 'c1', area: 'c1' }, { id: 'c2', area: 'c2' }, { id: 'c3', area: 'c3' }],
+    },
+    {
+        id: '3-top-main',
+        label: '3 (1 top, 2 bottom)',
+        cols: [1, 1],
+        rows: [1, 1],
+        areas: ['c1 c1', 'c2 c3'],
+        cells: [{ id: 'c1', area: 'c1' }, { id: 'c2', area: 'c2' }, { id: 'c3', area: 'c3' }],
+    },
+    {
+        id: '3-bottom-main',
+        label: '3 (2 top, 1 bottom)',
+        cols: [1, 1],
+        rows: [1, 1],
+        areas: ['c1 c2', 'c3 c3'],
+        cells: [{ id: 'c1', area: 'c1' }, { id: 'c2', area: 'c2' }, { id: 'c3', area: 'c3' }],
+    },
+
+    // ── 4 charts ──
+    {
+        id: '4',
+        label: '4 grid',
+        cols: [1, 1],
+        rows: [1, 1],
+        cells: slots(4),
+    },
+    {
+        id: '4-left-main',
+        label: '4 (1 left, 3 right)',
+        cols: [1, 1],
+        rows: [1, 1, 1],
+        areas: ['c1 c2', 'c1 c3', 'c1 c4'],
+        cells: [{ id: 'c1', area: 'c1' }, { id: 'c2', area: 'c2' }, { id: 'c3', area: 'c3' }, { id: 'c4', area: 'c4' }],
+    },
+    {
+        id: '4-right-main',
+        label: '4 (3 left, 1 right)',
+        cols: [1, 1],
+        rows: [1, 1, 1],
+        areas: ['c1 c4', 'c2 c4', 'c3 c4'],
+        cells: [{ id: 'c1', area: 'c1' }, { id: 'c2', area: 'c2' }, { id: 'c3', area: 'c3' }, { id: 'c4', area: 'c4' }],
+    },
+    {
+        id: '4-top-main',
+        label: '4 (1 top, 3 bottom)',
+        cols: [1, 1, 1],
+        rows: [1, 1],
+        areas: ['c1 c1 c1', 'c2 c3 c4'],
+        cells: [{ id: 'c1', area: 'c1' }, { id: 'c2', area: 'c2' }, { id: 'c3', area: 'c3' }, { id: 'c4', area: 'c4' }],
+    },
+    {
+        id: '4-bottom-main',
+        label: '4 (3 top, 1 bottom)',
+        cols: [1, 1, 1],
+        rows: [1, 1],
+        areas: ['c1 c2 c3', 'c4 c4 c4'],
+        cells: [{ id: 'c1', area: 'c1' }, { id: 'c2', area: 'c2' }, { id: 'c3', area: 'c3' }, { id: 'c4', area: 'c4' }],
+    },
+
+    // ── 5 charts ──
+    {
+        id: '5-left-main',
+        label: '5 (1 left, 4 right)',
+        cols: [1, 1],
+        rows: [1, 1, 1, 1],
+        areas: ['c1 c2', 'c1 c3', 'c1 c4', 'c1 c5'],
+        cells: [
+            { id: 'c1', area: 'c1' },
+            { id: 'c2', area: 'c2' },
+            { id: 'c3', area: 'c3' },
+            { id: 'c4', area: 'c4' },
+            { id: 'c5', area: 'c5' },
+        ],
+    },
+    {
+        id: '5-right-main',
+        label: '5 (4 left, 1 right)',
+        cols: [1, 1],
+        rows: [1, 1, 1, 1],
+        areas: ['c1 c5', 'c2 c5', 'c3 c5', 'c4 c5'],
+        cells: [
+            { id: 'c1', area: 'c1' },
+            { id: 'c2', area: 'c2' },
+            { id: 'c3', area: 'c3' },
+            { id: 'c4', area: 'c4' },
+            { id: 'c5', area: 'c5' },
+        ],
+    },
+    {
+        id: '5-top-main',
+        label: '5 (1 top, 4 bottom)',
+        cols: [1, 1, 1, 1],
+        rows: [1, 1],
+        areas: ['c1 c1 c1 c1', 'c2 c3 c4 c5'],
+        cells: [
+            { id: 'c1', area: 'c1' },
+            { id: 'c2', area: 'c2' },
+            { id: 'c3', area: 'c3' },
+            { id: 'c4', area: 'c4' },
+            { id: 'c5', area: 'c5' },
+        ],
+    },
+
+    // ── 6 charts ──
+    {
+        id: '6-3x2',
+        label: '6 (3 × 2)',
+        cols: [1, 1, 1],
+        rows: [1, 1],
+        cells: slots(6),
+    },
+    {
+        id: '6-2x3',
+        label: '6 (2 × 3)',
+        cols: [1, 1],
+        rows: [1, 1, 1],
+        cells: slots(6),
+    },
+    {
+        id: '6-asym-tv',
+        label: '6 asymmetric',
+        cols: [1, 1, 1],
+        rows: [1, 1, 1],
+        areas: [
+            'c1 c1 c4',
+            'c1 c1 c5',
+            'c2 c3 c6',
+        ],
+        cells: [
+            { id: 'c1', area: 'c1' },
+            { id: 'c2', area: 'c2' },
+            { id: 'c3', area: 'c3' },
+            { id: 'c4', area: 'c4' },
+            { id: 'c5', area: 'c5' },
+            { id: 'c6', area: 'c6' },
+        ],
+    },
+
+    // ── 8 charts ──
+    {
+        id: '8',
+        label: '8 (2 × 4)',
+        cols: [1, 1],
+        rows: [1, 1, 1, 1],
+        cells: slots(8),
+    },
+    {
+        id: '8-4x2',
+        label: '8 (4 × 2)',
+        cols: [1, 1, 1, 1],
+        rows: [1, 1],
+        cells: slots(8),
+    },
+
+    // ── 9 charts ──
+    {
+        id: '9',
+        label: '9 (3 × 3)',
+        cols: [1, 1, 1],
+        rows: [1, 1, 1],
+        cells: slots(9),
+    },
+
+    // ── 12 charts ──
+    {
+        id: '12-4x3',
+        label: '12 (4 × 3)',
+        cols: [1, 1, 1, 1],
+        rows: [1, 1, 1],
+        cells: slots(12),
+    },
+    {
+        id: '12-3x4',
+        label: '12 (3 × 4)',
+        cols: [1, 1, 1],
+        rows: [1, 1, 1, 1],
+        cells: slots(12),
+    },
+
+    // ── 16 charts ──
+    {
+        id: '16',
+        label: '16 (4 × 4)',
+        cols: [1, 1, 1, 1],
+        rows: [1, 1, 1, 1],
+        cells: slots(16),
+    },
+];
+
 /** Register the built-in presets (idempotent — called by the workspace entry point). */
 export function registerBuiltinLayouts(): void {
-    registerLayout({ id: '1', label: 'Single', cols: [1], rows: [1], cells: slots(1) });
-    registerLayout({ id: '2h', label: '2 side by side', cols: [1, 1], rows: [1], cells: slots(2) });
-    registerLayout({ id: '2v', label: '2 stacked', cols: [1], rows: [1, 1], cells: slots(2) });
-    registerLayout({ id: '4', label: '4 grid', cols: [1, 1], rows: [1, 1], cells: slots(4) });
-    registerLayout({ id: '8', label: '8 grid', cols: [1, 1, 1, 1], rows: [1, 1], cells: slots(8) });
+    for (const preset of TV_LAYOUT_PRESETS) {
+        registerLayout(preset);
+    }
 }
 
 // ── dynamic layouts (the topbar's grid picker) ──────────────────────────────
@@ -92,8 +336,17 @@ const GRID_BUILTIN_IDS: Record<string, string> = {
     '1x1': '1',
     '1x2': '2h',
     '2x1': '2v',
+    '1x3': '3v',
+    '3x1': '3h',
     '2x2': '4',
-    '2x4': '8',
+    '2x3': '6-3x2',
+    '3x2': '6-2x3',
+    '4x2': '8',
+    '2x4': '8-4x2',
+    '3x3': '9',
+    '3x4': '12-4x3',
+    '4x3': '12-3x4',
+    '4x4': '16',
 };
 
 const clampTrack = (n: number): number => Math.max(1, Math.min(GRID_PICKER_MAX, Math.round(n)));

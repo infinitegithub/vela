@@ -41,13 +41,104 @@ function sendJson(res: any, data: any, status: number = 200) {
     res.end(JSON.stringify(data));
 }
 
+// ── Live Market Quotes Service (Yahoo Finance) ──────────────────────────────
+async function fetchMarketQuotes(symbolList: string[]): Promise<Record<string, any>> {
+    const symbolMap: Record<string, string> = {
+        'EURUSD': 'EURUSD=X',
+        'XAUUSD': 'GC=F',
+        'SPY': 'SPY',
+        'QQQ': 'QQQ',
+    };
+    const results: Record<string, any> = {};
+
+    await Promise.all(
+        symbolList.map(async (rawSym) => {
+            const sym = rawSym.trim().toUpperCase();
+            const querySym = symbolMap[sym] || sym;
+            try {
+                const resp = await fetch(`https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(querySym)}?interval=1d&range=1d`, {
+                    headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36' },
+                    signal: AbortSignal.timeout(6000),
+                });
+                if (resp.ok) {
+                    const json = await resp.json();
+                    const meta = json?.chart?.result?.[0]?.meta;
+                    if (meta) {
+                        const price = meta.regularMarketPrice ?? meta.chartPreviousClose ?? 0;
+                        const prev = meta.chartPreviousClose ?? price;
+                        const change = price - prev;
+                        const changePercent = prev ? (change / prev) * 100 : 0;
+                        results[sym] = {
+                            symbol: sym,
+                            price: parseFloat(price.toFixed(sym === 'EURUSD' ? 4 : 2)),
+                            change: parseFloat(change.toFixed(sym === 'EURUSD' ? 4 : 2)),
+                            changePercent: parseFloat(changePercent.toFixed(2)),
+                            high: parseFloat((meta.regularMarketDayHigh ?? price).toFixed(sym === 'EURUSD' ? 4 : 2)),
+                            low: parseFloat((meta.regularMarketDayLow ?? price).toFixed(sym === 'EURUSD' ? 4 : 2)),
+                            open: parseFloat((meta.regularMarketDayLow ?? prev).toFixed(sym === 'EURUSD' ? 4 : 2)),
+                            volume: meta.regularMarketVolume ?? 0,
+                            prevClose: prev,
+                        };
+                    }
+                }
+            } catch (e) {
+                // Silently handle offline/timeouts
+            }
+        })
+    );
+
+    return results;
+}
+
+// ── Live Market News Service ────────────────────────────────────────────────
+async function fetchMarketNews(symbol: string): Promise<any[]> {
+    const cleanSym = symbol.replace(/USDT(\.P)?$/, '').replace(/-USD$/, '').replace(/\.P$/, '').trim().toUpperCase();
+    let category = 'crypto';
+    if (['NVDA', 'AAPL', 'TSLA', 'MSFT', 'AMZN', 'GOOGL', 'META'].includes(cleanSym)) category = 'stock';
+    else if (['EURUSD', 'GBPUSD', 'USDJPY', 'AUDUSD'].includes(cleanSym)) category = 'forex';
+    else if (['XAUUSD', 'XAGUSD', 'WTI'].includes(cleanSym)) category = 'commodity';
+
+    const tickerParam = `${cleanSym === 'BTC' ? 'BTCUSD' : cleanSym === 'ETH' ? 'ETHUSD' : cleanSym === 'SOL' ? 'SOLUSD' : cleanSym}:${category}`;
+    try {
+        const resp = await fetch(`https://vela.luxalgo.com/api/markets/public-get-ticker-news?symbols=${encodeURIComponent(tickerParam)}`, {
+            headers: { 'User-Agent': 'Mozilla/5.0' },
+            signal: AbortSignal.timeout(6000),
+        });
+        if (resp.ok) {
+            const data = await resp.json();
+            return data?.data?.articles || [];
+        }
+    } catch (e) {
+        // Fallback
+    }
+    return [];
+}
+
+// ── Symbol Search Service ───────────────────────────────────────────────────
+async function searchMarketSymbols(query: string): Promise<any[]> {
+    if (!query || query.length < 2) return [];
+    try {
+        const resp = await fetch(`https://vela.luxalgo.com/api/markets/public-get-market-list?query=${encodeURIComponent(query)}`, {
+            headers: { 'User-Agent': 'Mozilla/5.0' },
+            signal: AbortSignal.timeout(6000),
+        });
+        if (resp.ok) {
+            const data = await resp.json();
+            if (Array.isArray(data)) return data;
+        }
+    } catch (e) {
+        // Fallback
+    }
+    return [];
+}
+
 export function binanceApiPlugin(): Plugin {
     return {
         name: 'binance-api-plugin',
         configureServer(server) {
             server.middlewares.use(async (req, res, next) => {
                 const url = new URL(req.url || '/', 'http://localhost');
-                if (!url.pathname.startsWith('/api/binance/')) {
+                if (!url.pathname.startsWith('/api/binance/') && !url.pathname.startsWith('/api/markets/')) {
                     return next();
                 }
 
@@ -57,6 +148,26 @@ export function binanceApiPlugin(): Plugin {
                     res.setHeader('Access-Control-Allow-Headers', '*');
                     res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
                     return res.end();
+                }
+
+                // ── Public Markets Endpoints ─────────────────────────────────────────
+                if (url.pathname === '/api/markets/quotes') {
+                    const symbolsParam = url.searchParams.get('symbols') || 'NVDA,AAPL,TSLA,EURUSD,XAUUSD';
+                    const list = symbolsParam.split(',').map(s => s.trim()).filter(Boolean);
+                    const quotes = await fetchMarketQuotes(list);
+                    return sendJson(res, quotes);
+                }
+
+                if (url.pathname === '/api/markets/news') {
+                    const symbol = url.searchParams.get('symbol') || 'BTCUSDT';
+                    const articles = await fetchMarketNews(symbol);
+                    return sendJson(res, { articles });
+                }
+
+                if (url.pathname === '/api/markets/search') {
+                    const query = url.searchParams.get('query') || url.searchParams.get('q') || '';
+                    const results = await searchMarketSymbols(query);
+                    return sendJson(res, results);
                 }
 
                 // Defense-in-depth: If request arrives via Cloudflare Zero Trust, verify authorized email
@@ -95,7 +206,7 @@ export function binanceApiPlugin(): Plugin {
                         return sendJson(res, trades);
                     }
 
-                                        if (url.pathname === '/api/binance/order/replace-bracket' && req.method === 'POST') {
+                    if (url.pathname === '/api/binance/order/replace-bracket' && req.method === 'POST') {
                         const body = await readJsonBody(req);
                         const result = await replaceBracketOrder({
                             symbol: body.symbol,
