@@ -1,0 +1,16 @@
+
+[1m[30m[46m RUN [49m[39m[22m [36mv4.1.10 [39m[90m/opt/vela[39m
+
+[90mstdout[2m | test/footprint-api.test.ts[2m > [22m[2mFootprint Read API & Query Validation[2m > [22m[2m3. HTTP Server Endpoints[2m > [22m[2mresponds 200 to /api/footprint/health
+[22m[39m[FootprintApiServer] HTTP & Live Stream listening on http://127.0.0.1:3199/api/footprint
+
+[90mstdout[2m | test/footprint-api.test.ts[2m > [22m[2mFootprint Read API & Query Validation[2m > [22m[2m3. HTTP Server Endpoints[2m > [22m[2mresponds 200 to /api/footprint query
+[22m[39m[FootprintApiServer] HTTP & Live Stream listening on http://127.0.0.1:3199/api/footprint
+
+ [32m✓[39m test/footprint-api.test.ts [2m([22m[2m5 tests[22m[2m)[22m[32m 195[2mms[22m[39m
+
+[2m Test Files [22m [1m[32m1 passed[39m[22m[90m (1)[39m
+[2m      Tests [22m [1m[32m5 passed[39m[22m[90m (5)[39m
+[2m   Start at [22m 22:00:57
+[2m   Duration [22m 566ms[2m (transform 121ms, setup 0ms, import 203ms, tests 195ms, environment 0ms)[22m
+

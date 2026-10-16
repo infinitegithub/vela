@@ -2,16 +2,22 @@ import { loadConfig } from './config';
 import { FootprintStorage } from './storage';
 import { BinanceFuturesRestClient } from './rest';
 import { BinanceFuturesStream } from './stream';
+import { FootprintApiServer } from './api';
 import { resolveBucketSize } from './bucketing';
 import { aggregateTradesToBar } from './aggregator';
 
 async function main() {
-    console.log('[Collector] Initializing Footprint Data Pipeline...');
+    console.log('[Collector] Initializing Footprint Data Pipeline & Read API Server...');
     const config = loadConfig();
 
     const storage = new FootprintStorage(config.dbPath);
     const restClient = new BinanceFuturesRestClient();
+    const apiServer = new FootprintApiServer(storage, config);
 
+    // Start API Server on 127.0.0.1:3101
+    await apiServer.listen(config.port, config.host);
+
+    // Compute effective bucket sizes
     const bucketSizes: Record<string, number> = {};
     for (const sym of config.symbols) {
         const tick = config.tickSizes[sym] || 0.01;
@@ -20,6 +26,7 @@ async function main() {
         console.log(`[Collector] Symbol ${sym}: tick=${tick}, mult=${mult} -> bucketSize=${bucketSizes[sym]}`);
     }
 
+    // Initial gap backfill from REST (recent 1 hour to seed immediate history)
     const now = Date.now();
     const oneHourAgo = now - 3600000;
     console.log('[Collector] Seeding initial history for configured symbols from REST (1 hour window)...');
@@ -56,15 +63,20 @@ async function main() {
         }
     }
 
+    // Start WebSocket Stream
     const stream = new BinanceFuturesStream(config.symbols, storage, restClient, bucketSizes, {
-        onTrade: (_t) => {},
+        onTrade: (trade) => {
+            apiServer.broadcastTrade(trade);
+        },
         onSliceCompleted: (bar) => {
             console.log(`[Collector] 1m slice completed: ${bar.symbol} @ ${new Date(bar.time).toISOString()} | Vol: ${bar.volume} | Delta: ${bar.delta} | Levels: ${bar.levels.length}`);
+            apiServer.broadcastBar(bar);
         },
     });
 
     stream.start();
 
+    // Retention prune schedule every 6 hours
     const pruneTimer = setInterval(() => {
         console.log('[Collector] Running retention pruning...');
         storage.pruneRetention(config.retentionDays, config.maxDiskUsageMb, config.dbPath);
@@ -72,10 +84,12 @@ async function main() {
 
     storage.pruneRetention(config.retentionDays, config.maxDiskUsageMb, config.dbPath);
 
-    const shutdown = () => {
+    // Graceful shutdown
+    const shutdown = async () => {
         console.log('[Collector] Shutting down cleanly...');
         clearInterval(pruneTimer);
         stream.stop();
+        await apiServer.close();
         storage.close();
         process.exit(0);
     };
@@ -83,7 +97,7 @@ async function main() {
     process.on('SIGINT', shutdown);
     process.on('SIGTERM', shutdown);
 
-    console.log('[Collector] Footprint Data Pipeline is ACTIVE and running on 127.0.0.1.');
+    console.log(`[Collector] Footprint Data Pipeline & Read API Server is ACTIVE on http://${config.host}:${config.port}`);
 }
 
 main().catch((err) => {

@@ -82,6 +82,13 @@ export default defineConfig(({ mode }) => {
                 clientPort: 443,
                 overlay: false,
             },
+            proxy: {
+                '/api/footprint': {
+                    target: 'http://127.0.0.1:3101',
+                    changeOrigin: true,
+                    ws: true,
+                },
+            },
         },
         build: {
             rollupOptions: {
