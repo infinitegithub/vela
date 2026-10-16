@@ -12,7 +12,6 @@ import { DemoEngine } from './demo-engine';
 import { playgroundStorage } from './persistence';
 import { addSampleMarks } from './marks';
 import { registerClassicIndicators } from '../src/core/native-indicators/classics';
-import { registerFootprintChartType } from './footprint-style';
 import { registerTradingLinesLayer } from './trading-lines';
 import {
     registerWatchlistSidePanel,
@@ -62,7 +61,6 @@ registerIndicatorsPersistence();
 registerWorkspaceLayoutPicker();
 registerIndicatorTemplatesPicker();
 registerClassicIndicators();
-registerFootprintChartType();
 registerTradingLinesLayer();
 registerWatchlistSidePanel();
 registerAlertsSidePanel();

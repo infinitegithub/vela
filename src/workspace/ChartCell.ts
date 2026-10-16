@@ -1,3 +1,4 @@
+import { chartType } from '../chart-types/registry';
 // One workspace CELL — a stable IDENTITY (its declared name, or `c<N>` for a slot no
 // entry declared) holding a full Vela chart plus its per-cell overlays and per-cell
 // state: statusline, watermark, context menu, its own undo timeline, and its indicator
@@ -211,6 +212,13 @@ function instanceDeltas(handle: IndicatorHandle | null): { inputs?: Record<strin
     return inputs || props ? { ...(inputs ? { inputs } : {}), ...(props ? { props } : {}) } : undefined;
 }
 
+
+function safePriceStyle(style?: string): string | undefined {
+    if (!style) return undefined;
+    if (style === 'footprint' && !chartType('footprint')) return 'candles';
+    return style;
+}
+
 export class ChartCell {
     /** The grid item this cell renders into (owned; removed on destroy). */
     readonly host: HTMLElement;
@@ -302,7 +310,7 @@ export class ChartCell {
             symbol,
             provider: parseSymbol(symbol ?? '').provider ?? undefined,
             timeframe: seed.timeframe,
-            priceStyle: seed.priceStyle,
+            priceStyle: safePriceStyle(seed.priceStyle),
             bars: seed.bars ?? 1000,
             session: normalizeSession(seed.session),
         };
@@ -324,7 +332,7 @@ export class ChartCell {
                 symbol,
                 timeframe: seed.timeframe,
                 bars: this.state.bars,
-                priceStyle: seed.priceStyle,
+                priceStyle: safePriceStyle(seed.priceStyle),
                 session: normalizeSession(seed.session),
                 data: seed.data,
                 visibleRange: seed.visibleRange,
@@ -969,7 +977,9 @@ export class ChartCell {
 
     get priceStyle(): string {
         const live = this.inner?.renderer.get('priceStyle');
-        return typeof live === 'string' ? live : (this.state.priceStyle ?? 'candles');
+        const candidate = typeof live === 'string' ? live : (this.state.priceStyle ?? 'candles');
+        if (candidate === 'footprint' && !chartType('footprint')) return 'candles';
+        return candidate;
     }
 
     /** Manifest instances + native instances — the topbar indicator count. */
@@ -1000,9 +1010,10 @@ export class ChartCell {
 
     /** Applied live (renderer feature) — no reload. */
     setPriceStyle(style: string): void {
-        this.state.priceStyle = style;
-        this.inner?.renderer.set('priceStyle', style);
-        if (style === 'footprint') {
+        const resolved = (style === 'footprint' && !chartType('footprint')) ? 'candles' : style;
+        this.state.priceStyle = resolved;
+        this.inner?.renderer.set('priceStyle', resolved);
+        if (resolved === 'footprint') {
             const native: any = (this.inner?.renderer as any)?.renderer;
             if (native && typeof native.applyViewport === 'function') {
                 const curSpacing = native.coords?.bodySpacing?.() ?? native.targetBarSpacing ?? 6;
@@ -1454,7 +1465,8 @@ export class ChartCell {
      */
     rehydrate(cs: CellState): void {
         if (!this.inner || this.destroyed) return;
-        if (cs.priceStyle && cs.priceStyle !== this.priceStyle) this.setPriceStyle(cs.priceStyle);
+        const targetStyle = safePriceStyle(cs.priceStyle);
+        if (targetStyle && targetStyle !== this.priceStyle) this.setPriceStyle(targetStyle);
         if (cs.watermark !== undefined && cs.watermark !== this.watermarkOn) this.setWatermarkVisible(cs.watermark);
         if (cs.replayWatermark !== undefined && cs.replayWatermark !== this.replayWatermarkOn) this.setReplayWatermarkVisible(cs.replayWatermark);
         if (cs.indicatorTitles !== undefined && cs.indicatorTitles !== this.indicatorTitlesOn) this.setIndicatorTitlesVisible(cs.indicatorTitles);
