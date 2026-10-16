@@ -21,7 +21,7 @@ import {
     type DeltaSummaryColumnKey,
 } from 'lightweight-orderflow-charts';
 
-import { globalBinanceOrderFlow } from './orderflow/binance-feed';
+import { globalBinanceOrderFlow, roundToTick } from './orderflow/binance-feed';
 import {
     classicBars,
     cornBars,
@@ -381,7 +381,7 @@ export function registerFootprintChartType() {
 
                     const s = (settings || {}) as Record<string, unknown>;
                     const presetName = typeof s.preset === 'string' ? s.preset : 'shadedReference';
-                    const dataSource = typeof s.dataSource === 'string' ? s.dataSource : 'binance_live';
+                    const dataSource = typeof s.dataSource === 'string' && s.dataSource !== 'demo_es' ? s.dataSource : 'binance_live';
                     const mode = typeof s.mode === 'string' ? s.mode : 'bid_ask';
                     const candlePosition = typeof s.candlePosition === 'string' ? s.candlePosition : 'middle';
                     const showWicks = s.showWicks !== undefined ? Boolean(s.showWicks) : true;
@@ -473,7 +473,7 @@ export function registerFootprintChartType() {
                     const fromIdx = Math.max(0, Math.floor(visible.from));
                     const toIdx = Math.min(bars.length - 1, Math.ceil(visible.to));
                     const barSpacing = coords.bodySpacing();
-                    const barWidth = Math.max(22, Math.min(320, barSpacing * 0.94));
+                    const barWidth = Math.max(2, Math.min(320, barSpacing * 0.94));
                     const density = resolveFootprintDensity(barSpacing);
 
                     // Delta Summary subchart metrics

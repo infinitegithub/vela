@@ -26,7 +26,7 @@ function roundToPrecision(value: number, precision: number): number {
     return Number(value.toFixed(precision));
 }
 
-function roundToTick(value: number, tickSize: number, precision: number): number {
+export function roundToTick(value: number, tickSize: number, precision: number): number {
     if (!Number.isFinite(tickSize) || tickSize <= 0) {
         return roundToPrecision(value, precision);
     }
@@ -49,20 +49,19 @@ export function buildSyntheticLevels(
     const low = roundToTick(bar.low, tickSize, precision);
     const close = roundToTick(bar.close, tickSize, precision);
 
-    const priceSpan = Math.max(high - low, tickSize);
-    const rawStepCount = Math.max(1, Math.round(priceSpan / tickSize));
-    const stepCount = Math.min(rawStepCount, maxLevels);
-    const effectiveStep = priceSpan / stepCount;
+    const startPrice = roundToTick(low, tickSize, precision);
+    const endPrice = Math.max(startPrice + tickSize, roundToTick(high, tickSize, precision));
 
     const prices: number[] = [];
-    for (let i = 0; i <= stepCount; i++) {
-        prices.push(roundToTick(low + i * effectiveStep, tickSize, precision));
+    for (let p = startPrice; p <= endPrice + tickSize * 0.1; p += tickSize) {
+        prices.push(roundToTick(p, tickSize, precision));
     }
     const uniquePrices = Array.from(new Set(prices)).sort((a, b) => a - b);
 
     const bodyLow = Math.min(open, close);
     const bodyHigh = Math.max(open, close);
     const bullish = close >= open;
+    const priceSpan = Math.max(endPrice - startPrice, tickSize);
 
     const weights = uniquePrices.map((price) => {
         const distanceToClose = Math.abs(price - close) / priceSpan;
@@ -107,12 +106,11 @@ export function reconstructOrderFlowBar(
     const precision = inferPricePrecision(tickSize);
     const totalVolume = bar.volume && bar.volume > 0 ? bar.volume : 2500;
 
-    // Enforce a minimum multi-level footprint spread (16-24 levels) so candles have realistic ladders
     const rawSpread = Math.max(0, bar.high - bar.low);
-    const minSpread = Math.max(16 * tickSize, rawSpread);
+    const minSpread = Math.max(8 * tickSize, rawSpread);
     const center = (bar.open + bar.close) / 2;
-    const effectiveHigh = Math.max(bar.high, roundToTick(center + minSpread * 0.5, tickSize, precision));
-    const effectiveLow = Math.min(bar.low, roundToTick(center - minSpread * 0.5, tickSize, precision));
+    const effectiveHigh = rawSpread >= 8 * tickSize ? bar.high : Math.max(bar.high, roundToTick(center + minSpread * 0.5, tickSize, precision));
+    const effectiveLow = rawSpread >= 8 * tickSize ? bar.low : Math.min(bar.low, roundToTick(center - minSpread * 0.5, tickSize, precision));
 
     const augmentedBar = {
         ...bar,
@@ -326,14 +324,47 @@ export class BinanceOrderFlowFeed {
     ): OrderFlowBar {
         const barTimeSec = ohlcv.time > 1e11 ? Math.floor(ohlcv.time / 1000) : ohlcv.time;
         const liveBar = this.barsMap.get(barTimeSec);
-        if (liveBar && liveBar.levels.length >= 6 && (liveBar.high - liveBar.low) >= 6 * priceStep) {
-            const raw = {
+        if (liveBar && liveBar.levels.length >= 2) {
+            const precision = inferPricePrecision(priceStep);
+            const low = roundToPriceStep(Math.min(liveBar.low, ohlcv.low), priceStep, precision);
+            const high = roundToPriceStep(Math.max(liveBar.high, ohlcv.high), priceStep, precision);
+            const levelMap = new Map<number, PriceLevelVolume>();
+            for (const lvl of liveBar.levels) {
+                levelMap.set(roundToPriceStep(lvl.price, priceStep, precision), lvl);
+            }
+
+            const synthetic = buildSyntheticLevels(
+                {
+                    open: ohlcv.open,
+                    high,
+                    low,
+                    close: ohlcv.close,
+                    volume: Math.max(ohlcv.volume || 0, liveBar.totalVolume || 0),
+                    count: ohlcv.count,
+                },
+                priceStep,
+                precision,
+                Math.max(ohlcv.volume || 100, liveBar.totalVolume || 100),
+            );
+
+            const completeLevels: PriceLevelVolume[] = [];
+            for (const synthLvl of synthetic) {
+                const existing = levelMap.get(synthLvl.price);
+                if (existing && existing.totalVolume > 0) {
+                    completeLevels.push(existing);
+                } else {
+                    completeLevels.push(synthLvl);
+                }
+            }
+
+            const raw: OrderFlowBar = {
                 ...liveBar,
                 open: ohlcv.open,
-                high: Math.max(liveBar.high, ohlcv.high),
-                low: Math.min(liveBar.low, ohlcv.low),
+                high,
+                low,
                 close: ohlcv.close,
                 totalVolume: Math.max(liveBar.totalVolume || 0, ohlcv.volume || 0),
+                levels: completeLevels,
             };
             const [norm] = normalizeBars([raw]);
             return norm || raw;

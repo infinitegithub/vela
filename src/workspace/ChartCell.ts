@@ -1002,6 +1002,15 @@ export class ChartCell {
     setPriceStyle(style: string): void {
         this.state.priceStyle = style;
         this.inner?.renderer.set('priceStyle', style);
+        if (style === 'footprint') {
+            const native: any = (this.inner?.renderer as any)?.renderer;
+            if (native && typeof native.applyViewport === 'function') {
+                const curSpacing = native.coords?.bodySpacing?.() ?? native.targetBarSpacing ?? 6;
+                if (curSpacing < 60) {
+                    native.applyViewport({ barSpacing: 100, rightOffset: 5 });
+                }
+            }
+        }
         this.syncStatuslineColors(); // the OHLC ink follows the newly active style's colors
         this.deps.onPriceStyleChanged(this.id);
     }
