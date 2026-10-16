@@ -1,0 +1,83 @@
+================================================================================
+ACCEPTANCE CHECK 1: Volume Parity Verification
+Checking 3 symbols, 10 consecutive 1-minute bars against raw trades & Binance REST
+================================================================================
+
+
+--- Symbol: BTCUSDT ---
+Checking 10 consecutive bars for BTCUSDT:
+Bar Time (UTC)             Trades   Footprint Vol     Raw Sum Vol   Discrepancy    Status
+-----------------------------------------------------------------------------------------
+2026-10-16 20:57:00           469         18.5590         18.5590       0.00e+0      PASS
+2026-10-16 20:58:00           705         23.1060         23.1060       0.00e+0      PASS
+2026-10-16 20:59:00           324         13.0760         13.0760       0.00e+0      PASS
+2026-10-16 21:00:00          1033        155.4120        155.4120       0.00e+0      PASS
+2026-10-16 21:01:00           512         28.0740         28.0740       0.00e+0      PASS
+2026-10-16 21:02:00           605         58.7260         58.7260       0.00e+0      PASS
+2026-10-16 21:03:00          1312        138.3780        138.3780       0.00e+0      PASS
+2026-10-16 21:04:00           588         32.3140         32.3140       0.00e+0      PASS
+2026-10-16 21:05:00           934         64.8660         64.8660       0.00e+0      PASS
+2026-10-16 21:06:00           304         21.6260         21.6260       0.00e+0      PASS
+
+Verifying bar 2026-10-16T20:57:00.000Z directly against public Binance REST API...
+  Binance REST Trade Count : 469
+  Stored DB Trade Count    : 469
+  Binance REST Volume Sum  : 18.5590
+  Footprint Stored Volume  : 18.5590
+  REST Parity Discrepancy  : 0.00e+0 -> PASSED
+
+--- Symbol: ETHUSDT ---
+Checking 10 consecutive bars for ETHUSDT:
+Bar Time (UTC)             Trades   Footprint Vol     Raw Sum Vol   Discrepancy    Status
+-----------------------------------------------------------------------------------------
+2026-10-16 20:57:00           320        812.7210        812.7210       0.00e+0      PASS
+2026-10-16 20:58:00           422       1266.2170       1266.2170       0.00e+0      PASS
+2026-10-16 20:59:00           342        584.9610        584.9610       0.00e+0      PASS
+2026-10-16 21:00:00           693       1596.6940       1596.6940       0.00e+0      PASS
+2026-10-16 21:01:00           663       2639.5410       2639.5410       0.00e+0      PASS
+2026-10-16 21:02:00           715       1844.3330       1844.3330       0.00e+0      PASS
+2026-10-16 21:03:00          1114       3643.3300       3643.3300       0.00e+0      PASS
+2026-10-16 21:04:00           488        615.0930        615.0930       0.00e+0      PASS
+2026-10-16 21:05:00           742        947.1460        947.1460       0.00e+0      PASS
+2026-10-16 21:06:00           369        749.4700        749.4700       0.00e+0      PASS
+
+Verifying bar 2026-10-16T20:57:00.000Z directly against public Binance REST API...
+  Binance REST Trade Count : 320
+  Stored DB Trade Count    : 320
+  Binance REST Volume Sum  : 812.7210
+  Footprint Stored Volume  : 812.7210
+  REST Parity Discrepancy  : 0.00e+0 -> PASSED
+
+--- Symbol: SOLUSDT ---
+Checking 10 consecutive bars for SOLUSDT:
+Bar Time (UTC)             Trades   Footprint Vol     Raw Sum Vol   Discrepancy    Status
+-----------------------------------------------------------------------------------------
+2026-10-16 20:57:00           119       8383.2500       8383.2500       0.00e+0      PASS
+2026-10-16 20:58:00           145       4308.3000       4308.3000       0.00e+0      PASS
+2026-10-16 20:59:00           152       3368.7200       3368.7200       0.00e+0      PASS
+2026-10-16 21:00:00           266      57017.0800      57017.0800       0.00e+0      PASS
+2026-10-16 21:01:00           236       9831.6400       9831.6400       0.00e+0      PASS
+2026-10-16 21:02:00           195       7639.9500       7639.9500       0.00e+0      PASS
+2026-10-16 21:03:00           275      20180.2500      20180.2500       0.00e+0      PASS
+2026-10-16 21:04:00           219       6228.0600       6228.0600       0.00e+0      PASS
+2026-10-16 21:05:00           243       5989.8100       5989.8100       0.00e+0      PASS
+2026-10-16 21:06:00           157       5080.8600       5080.8600       0.00e+0      PASS
+
+Verifying bar 2026-10-16T20:57:00.000Z directly against public Binance REST API...
+  Binance REST Trade Count : 119
+  Stored DB Trade Count    : 119
+  Binance REST Volume Sum  : 8383.2500
+  Footprint Stored Volume  : 8383.2500
+  REST Parity Discrepancy  : 0.00e+0 -> PASSED
+
+================================================================================
+SUMMARY OF VOLUME PARITY CHECK
+================================================================================
+Symbol        Bars Checked  Total Trades   Footprint Vol         Raw Vol    Max Diff   Verdict
+----------------------------------------------------------------------------------------------
+BTCUSDT                 10          6786        554.1370        554.1370     0.00e+0      PASS
+ETHUSDT                 10          5868      14699.5060      14699.5060     0.00e+0      PASS
+SOLUSDT                 10          2007     128027.9200     128027.9200     0.00e+0      PASS
+================================================================================
+VERDICT: CHECK 1 PASSED - 100% Volume Parity Across All Checked Bars
+

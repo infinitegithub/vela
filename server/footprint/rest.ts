@@ -97,7 +97,7 @@ export class BinanceFuturesRestClient {
 
             allTrades.push(...firstBatch);
 
-            let lastTrade = firstBatch[firstBatch.length - 1];
+            let lastTrade = firstBatch[firstBatch.length - 1]!;
             while (firstBatch.length === 1000 && lastTrade.time < chunkEnd) {
                 const nextTrades = await this.fetchAggTrades({
                     symbol,
@@ -108,7 +108,7 @@ export class BinanceFuturesRestClient {
 
                 const filtered = nextTrades.filter((t) => t.time < chunkEnd);
                 allTrades.push(...filtered);
-                lastTrade = nextTrades[nextTrades.length - 1];
+                lastTrade = nextTrades[nextTrades.length - 1]!;
                 if (nextTrades.length < 1000 || lastTrade.time >= chunkEnd) break;
             }
 

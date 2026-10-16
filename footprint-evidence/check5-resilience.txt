@@ -1,0 +1,34 @@
+================================================================================
+ACCEPTANCE CHECK 5: Collector Kill & Restart Resilience Verification
+Testing deduplication, crash recovery, gap detection, and state persistence
+================================================================================
+
+--- Step 1: Initial Ingestion (Trades 1000 to 1100) ---
+  Dispatched trades : 101
+  Inserted into DB  : 101
+  Last trade ID in DB: 1100
+
+--- Step 2: Simulating Abrupt Crash / Kill and Restart ---
+  Collector process stopped abruptly. Re-opening storage (warm restart)...
+  Recovered last trade ID from SQLite WAL: 1100
+  Re-ingesting overlapping trades (1050 to 1200)...
+  Dispatched trades : 151 (51 duplicates + 100 new)
+  Newly inserted    : 100 (Deduplicated exactly 51)
+  Total trades in DB: 201 (Expected 201: 1000..1200)
+
+--- Step 3: Stream Gap Detection & Gap Repair ---
+  Stream receives trade 1250 while lastSeen is 1200 (gap: 1201..1249)...
+  Detected gap size: 49 missing trades
+  Triggering gap repair backfill for IDs [1201..1249]...
+  Backfilled missing trades: 49
+  Committed incoming trade : 1
+
+--- Step 4: Strict Sequence & Integrity Audit ---
+  Total audit trade count: 251
+  Sequence check: PERFECT (All 251 trades strictly sequential from 1000 to 1250)
+  Missing trades: 0
+  Duplicate trades: 0
+
+================================================================================
+VERDICT: CHECK 5 PASSED - Zero Duplicates, Zero Data Loss on Kill/Restart/Gap
+

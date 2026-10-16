@@ -1,0 +1,135 @@
+================================================================================
+ACCEPTANCE CHECK 7: Full Suite Quality Verification
+Date: Fri Oct 16 22:28:27 UTC 2026
+Git Commit: e69e530ae392ba1368b9eae3c8ea60d35f9b95bf
+Git Branch: footprint-rebuild
+================================================================================
+
+--- 1. TYPECHECK (tsc --noEmit) ---
+
+> @luxalgo/vela@0.8.1 typecheck
+> tsc --noEmit
+
+STATUS: TYPECHECK PASSED (0 errors)
+
+--- 2. LINT (eslint .) ---
+
+> @luxalgo/vela@0.8.1 lint
+> eslint .
+
+STATUS: LINT PASSED (0 errors)
+
+--- 3. BUILD (tsup ESM + CJS + DTS + Browser IIFE) ---
+
+> @luxalgo/vela@0.8.1 build
+> tsup
+
+[LIB] CLI Building entry: {"index":"src/index.ts","plugin":"src/plugin.ts","ui":"src/ui/index.ts","widget":"src/widget/index.ts","workspace":"src/workspace/index.ts","providers/binance":"src/data/providers/binance/index.ts","providers/hyperliquid":"src/data/providers/hyperliquid/index.ts","providers/coinbase":"src/data/providers/coinbase/index.ts"}
+[LIB] CLI Using tsconfig: tsconfig.json
+[BROWSER-DEV] CLI Building entry: {"vela":"src/browser.ts"}
+[BROWSER-DEV] CLI Using tsconfig: tsconfig.json
+[BROWSER-MIN] CLI Building entry: {"vela":"src/browser.ts"}
+[BROWSER-MIN] CLI Using tsconfig: tsconfig.json
+[LIB] CLI tsup v8.5.1
+[LIB] CLI Using tsup config: /opt/vela/tsup.config.ts
+[BROWSER-DEV] CLI tsup v8.5.1
+[BROWSER-DEV] CLI Using tsup config: /opt/vela/tsup.config.ts
+[BROWSER-MIN] CLI tsup v8.5.1
+[BROWSER-MIN] CLI Using tsup config: /opt/vela/tsup.config.ts
+[LIB] CLI Target: es2020
+[BROWSER-DEV] CLI Target: es2020
+[BROWSER-DEV] IIFE Build start
+[BROWSER-MIN] CLI Target: es2020
+[BROWSER-MIN] IIFE Build start
+[LIB] CLI Cleaning output folder
+[LIB] ESM Build start
+[LIB] CJS Build start
+[LIB] DTS Build start
+[BROWSER-MIN] IIFE dist/vela.global.min.js 963.36 KB
+[BROWSER-MIN] IIFE ⚡️ Build success in 8916ms
+[BROWSER-DEV] IIFE dist/vela.global.js 1.86 MB
+[BROWSER-DEV] IIFE ⚡️ Build success in 8929ms
+[LIB] ESM dist/index.js                 2.80 KB
+[LIB] ESM dist/plugin.js                1.52 KB
+[LIB] ESM dist/chunk-JU4CWEBF.js        1.00 B
+[LIB] ESM dist/ui.js                    1.37 KB
+[LIB] ESM dist/widget.js                4.01 KB
+[LIB] ESM dist/workspace.js             613.00 B
+[LIB] ESM dist/chunk-OQ7HUWNR.js        481.79 KB
+[LIB] ESM dist/chunk-KD3ZTHJM.js        211.84 KB
+[LIB] ESM dist/chunk-ETWOFRMI.js        17.58 KB
+[LIB] ESM dist/chunk-VX7T5IVU.js        109.19 KB
+[LIB] ESM dist/chunk-K6T2UMBW.js        17.34 KB
+[LIB] ESM dist/providers/binance.js     16.32 KB
+[LIB] ESM dist/providers/hyperliquid.js 11.86 KB
+[LIB] ESM dist/providers/coinbase.js    16.70 KB
+[LIB] ESM dist/chunk-W4EJWLEO.js        475.00 B
+[LIB] ESM dist/chunk-ETX7VGG5.js        1.17 MB
+[LIB] ESM ⚡️ Build success in 12362ms
+[LIB] CJS dist/ui.cjs                    145.47 KB
+[LIB] CJS dist/providers/binance.cjs     16.71 KB
+[LIB] CJS dist/providers/hyperliquid.cjs 12.25 KB
+[LIB] CJS dist/providers/coinbase.cjs    17.09 KB
+[LIB] CJS dist/plugin.cjs                211.62 KB
+[LIB] CJS dist/index.cjs                 1.48 MB
+[LIB] CJS dist/widget.cjs                1.98 MB
+[LIB] CJS dist/workspace.cjs             1.97 MB
+[LIB] CJS ⚡️ Build success in 21643ms
+[LIB] DTS ⚡️ Build success in 38563ms
+[LIB] DTS dist/providers/binance.d.ts          3.61 KB
+[LIB] DTS dist/providers/coinbase.d.ts         3.51 KB
+[LIB] DTS dist/providers/hyperliquid.d.ts      2.85 KB
+[LIB] DTS dist/workspace.d.ts                  66.45 KB
+[LIB] DTS dist/index.d.ts                      87.38 KB
+[LIB] DTS dist/widget.d.ts                     39.59 KB
+[LIB] DTS dist/ui.d.ts                         45.09 KB
+[LIB] DTS dist/plugin.d.ts                     5.10 KB
+[LIB] DTS dist/icons-BZYbJXSV.d.ts             607.00 B
+[LIB] DTS dist/side-panel-HF0IAzwf.d.ts        4.32 KB
+[LIB] DTS dist/keymap-CGOz5F5f.d.ts            2.65 KB
+[LIB] DTS dist/DataProvider-CI5S2-Qm.d.ts      11.55 KB
+[LIB] DTS dist/statusline-model-DMnUZfAo.d.ts  21.41 KB
+[LIB] DTS dist/contributions-Bavm6nAD.d.ts     115.02 KB
+[LIB] DTS dist/options-Bj8wCfol.d.ts           96.45 KB
+[LIB] DTS dist/plugin-CM3BFAgN.d.ts            35.61 KB
+[LIB] DTS dist/providers/binance.d.cts         3.61 KB
+[LIB] DTS dist/providers/coinbase.d.cts        3.51 KB
+[LIB] DTS dist/providers/hyperliquid.d.cts     2.85 KB
+[LIB] DTS dist/workspace.d.cts                 66.46 KB
+[LIB] DTS dist/index.d.cts                     87.39 KB
+[LIB] DTS dist/widget.d.cts                    39.60 KB
+[LIB] DTS dist/ui.d.cts                        45.09 KB
+[LIB] DTS dist/plugin.d.cts                    5.11 KB
+[LIB] DTS dist/icons-BZYbJXSV.d.cts            607.00 B
+[LIB] DTS dist/side-panel-HF0IAzwf.d.cts       4.32 KB
+[LIB] DTS dist/keymap-CGOz5F5f.d.cts           2.65 KB
+[LIB] DTS dist/DataProvider-B6uBBIkI.d.cts     11.55 KB
+[LIB] DTS dist/statusline-model-CSMl4RZJ.d.cts 21.41 KB
+[LIB] DTS dist/contributions-DpzgPesG.d.cts    115.03 KB
+[LIB] DTS dist/options-Bj8wCfol.d.cts          96.45 KB
+[LIB] DTS dist/plugin-HWPNH7K4.d.cts           35.62 KB
+STATUS: BUILD PASSED (0 errors)
+
+--- 4. FOOTPRINT VITEST TEST SUITE ---
+
+[1m[30m[46m RUN [49m[39m[22m [36mv4.1.10 [39m[90m/opt/vela[39m
+
+ [32m✓[39m test/footprint-pipeline.test.ts [2m([22m[2m10 tests[22m[2m)[22m[32m 256[2mms[22m[39m
+[90mstdout[2m | test/footprint-api.test.ts[2m > [22m[2mFootprint Read API & Query Validation[2m > [22m[2m3. HTTP Server Endpoints[2m > [22m[2mresponds 200 to /api/footprint/health
+[22m[39m[FootprintApiServer] HTTP & Live Stream listening on http://127.0.0.1:3199/api/footprint
+
+[90mstdout[2m | test/footprint-api.test.ts[2m > [22m[2mFootprint Read API & Query Validation[2m > [22m[2m3. HTTP Server Endpoints[2m > [22m[2mresponds 200 to /api/footprint query
+[22m[39m[FootprintApiServer] HTTP & Live Stream listening on http://127.0.0.1:3199/api/footprint
+
+ [32m✓[39m test/footprint-api.test.ts [2m([22m[2m5 tests[22m[2m)[22m[32m 186[2mms[22m[39m
+
+[2m Test Files [22m [1m[32m2 passed[39m[22m[90m (2)[39m
+[2m      Tests [22m [1m[32m15 passed[39m[22m[90m (15)[39m
+[2m   Start at [22m 22:29:49
+[2m   Duration [22m 1.06s[2m (transform 164ms, setup 0ms, import 287ms, tests 443ms, environment 0ms)[22m
+
+STATUS: VITEST PASSED (15/15 tests)
+
+================================================================================
+VERDICT: CHECK 7 PASSED - Complete Test & Build Suite Verified
+================================================================================
