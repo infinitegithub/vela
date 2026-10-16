@@ -771,7 +771,7 @@ function saveFavorites(set: Set<string>, syncRemote = true) {
                 method: 'PUT',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ favorites: arr }),
-                keepalive: true,
+                
             }).catch((err) => {
                 console.warn('[favorites] Remote sync error:', err);
             });

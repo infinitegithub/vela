@@ -80,6 +80,9 @@ const SVG_CHEVRON = svg('<path d="M4 6.2 8 10l4-3.8" stroke-linecap="round" stro
 const ICON_RENAME = 'quant-tpl-rename';
 const SVG_RENAME = svg('<path d="M9.5 3.2 12.8 6.5M3 13h3l6.4-6.4a1.5 1.5 0 0 0 0-2.1L11.5 3.2a1.5 1.5 0 0 0-2.1 0L3 9.6z" stroke-linecap="round" stroke-linejoin="round"/>', 1.4);
 
+const ICON_UPDATE = 'quant-tpl-update';
+const SVG_UPDATE = svg('<path d="M2.5 8a5.5 5.5 0 0 1 9.35-3.9M13.5 8a5.5 5.5 0 0 1-9.35 3.9" stroke-linecap="round"/><path d="M12 1.5v3h-3M4 14.5v-3h3" stroke-linecap="round" stroke-linejoin="round"/>', 1.4);
+
 const ICON_DELETE = 'quant-tpl-delete';
 const SVG_DELETE = svg('<g stroke-linecap="round" stroke-linejoin="round"><path d="M2.5 4.3h11M6.2 4.3V3.1a1 1 0 0 1 1-1h1.6a1 1 0 0 1 1 1v1.2M4.2 4.3l.5 9.1a1.15 1.15 0 0 0 1.15 1.1h4.3a1.15 1.15 0 0 0 1.15-1.1l.5-9.1M6.5 7v4.5M9.5 7v4.5"/></g>', 1.6);
 
@@ -173,23 +176,15 @@ const cleanRecord = (r?: Record<string, any>) => (r && Object.keys(r).length > 0
 
 export function applyTemplateToCell(cell: any, tpl: IndicatorTemplate) {
     const chart = cell.chart;
-    // Remove all existing indicators on the chart
-    if (chart && typeof chart.indicators === 'function') {
-        for (const ind of chart.indicators()) {
-            try {
-                ind.remove();
-            } catch {}
-        }
-    }
-
-    if (tpl.symbol && typeof cell.setSymbol === 'function') {
-        cell.setSymbol(tpl.symbol);
-    }
-    if (tpl.timeframe && typeof cell.setTimeframe === 'function') {
-        cell.setTimeframe(tpl.timeframe);
-    }
+    // Non-destructive: plug indicators into the chart without removing existing ones
+    // and without changing the chart's current symbol or timeframe.
 
     if (Array.isArray(tpl.indicators)) {
+        // Track known indicator IDs cumulatively so each newly added indicator
+        // (including multiple instances of the same native type, like multiple EMAs)
+        // is uniquely identified and configured with its corresponding inputs.
+        const knownIds = new Set<string>((chart?.indicators?.() || []).map((h: any) => h.id));
+
         for (const rawInd of tpl.indicators) {
             let ind = rawInd;
             if (!ind.kind && (ind.type === 'native' || ind.type === 'external')) {
@@ -227,22 +222,42 @@ export function applyTemplateToCell(cell: any, tpl: IndicatorTemplate) {
                         props: cleanRecord(ind.props),
                     });
                 }
+                if (chart && typeof chart.indicators === 'function') {
+                    for (const h of chart.indicators()) {
+                        knownIds.add(h.id);
+                    }
+                }
             } else if ((ind.kind === 'native' || !ind.kind) && ind.type) {
-                const existingIds = new Set((chart?.indicators?.() || []).map((h: any) => h.id));
                 if (typeof cell.addNativeIndicator === 'function') {
                     cell.addNativeIndicator(ind.type);
                 } else if (typeof cell.addNative === 'function') {
                     cell.addNative(ind.type);
                 }
+
                 const inputs = cleanRecord(ind.inputs);
-                if (inputs && chart && typeof chart.indicators === 'function') {
-                    const added = chart
-                        .indicators()
+                if (chart && typeof chart.indicators === 'function') {
+                    const currentIndicators = chart.indicators();
+                    let added = currentIndicators
                         .filter((h: any) => h.nativeType === ind.type)
-                        .find((h: any) => !existingIds.has(h.id));
-                    try {
-                        added?.setInputs(inputs);
-                    } catch {}
+                        .find((h: any) => !knownIds.has(h.id));
+
+                    if (added) {
+                        knownIds.add(added.id);
+                    } else {
+                        // For single-instance indicators that already existed on the chart
+                        added = currentIndicators.find((h: any) => h.nativeType === ind.type);
+                    }
+
+                    if (inputs && added && typeof added.setInputs === 'function') {
+                        try {
+                            added.setInputs(inputs);
+                        } catch {}
+                    }
+                    if (ind.props && added && typeof added.setProps === 'function') {
+                        try {
+                            added.setProps(ind.props);
+                        } catch {}
+                    }
                 }
             }
         }
@@ -268,7 +283,27 @@ export function extractChartIndicators(chart: any): IndicatorTemplateEntry[] {
                 type: ind.nativeType,
                 name: getIndicatorTitle(ind),
                 inputs: cleanRecord(ind.inputValues?.() || ind.inputs),
+                props: cleanRecord(ind.propValues?.() || ind.props),
             });
+        }
+    }
+    return list;
+}
+
+export function extractAllOpenChartsIndicators(cells: any[]): IndicatorTemplateEntry[] {
+    const list: IndicatorTemplateEntry[] = [];
+    const seen = new Set<string>();
+
+    for (const c of cells) {
+        const inds = extractChartIndicators(c.chart);
+        for (const ind of inds) {
+            const key = ind.kind === 'script'
+                ? `script:${ind.name}:${ind.script}:${JSON.stringify(ind.inputs || {})}`
+                : `native:${ind.type}:${JSON.stringify(ind.inputs || {})}`;
+            if (!seen.has(key)) {
+                seen.add(key);
+                list.push(ind);
+            }
         }
     }
     return list;
@@ -309,6 +344,7 @@ export function registerIndicatorTemplatesPicker() {
     registerIcon(ICON_CLOCK, SVG_CLOCK);
     registerIcon(ICON_INFO, SVG_INFO);
     registerIcon(ICON_MORE, SVG_MORE);
+    registerIcon(ICON_UPDATE, SVG_UPDATE);
 
     registerWidgetAttachment({
         id: 'quant:indicator-templates',
@@ -388,14 +424,14 @@ export function registerIndicatorTemplatesPicker() {
                             if (count === 0) {
                                 ctx.toast("Couldn't apply the template.", 'error');
                             } else {
-                                ctx.toast(`Applied ${tpl.name} to ${count} charts`, 'success');
+                                ctx.toast(`Plugged ${tpl.name} into ${count} charts`, 'success');
                             }
                             return;
                         }
                     }
                     try {
                         applyTemplateToCell(ctx, loaded);
-                        ctx.toast(`Applied ${tpl.name}`, 'success');
+                        ctx.toast(`Plugged in ${tpl.name}`, 'success');
                     } catch {
                         ctx.toast("Couldn't apply the template.", 'error');
                     }
@@ -410,6 +446,32 @@ export function registerIndicatorTemplatesPicker() {
                 } else {
                     applyTpl(tpl, 'selected');
                 }
+            };
+
+            // Update an existing template using active chart indicators
+            const updateTemplateWithCurrent = (tpl: IndicatorTemplate) => {
+                const source = currentSource;
+                if (!source) return;
+                const inds = extractChartIndicators(ctx.chart);
+                if (inds.length === 0) {
+                    ctx.toast('No indicators on this chart to update the template with.', 'warning');
+                    return;
+                }
+                source.replace(
+                    tpl.id,
+                    {
+                        indicators: inds,
+                        indicatorNames: inds.map((i) => i.name),
+                        updatedAt: Date.now(),
+                    },
+                    (ok) => {
+                        if (ok) {
+                            ctx.toast(`Updated “${tpl.name}” with ${inds.length} indicator${inds.length === 1 ? '' : 's'}`, 'success');
+                        } else {
+                            ctx.toast(`Couldn't update “${tpl.name}”.`, 'error');
+                        }
+                    }
+                );
             };
 
             // ── Dialog Panels ───────────────────────────────────────────────
@@ -461,12 +523,14 @@ export function registerIndicatorTemplatesPicker() {
             const kebabMenu = el('div', 'quant-wsp-dd-kebab-menu');
             kebabMenu.hidden = true;
             kebabMenu.setAttribute('role', 'menu');
+            const kebabUpdateBtn = btn('quant-wsp-dd-kebab-item', { icon: ICON_UPDATE, label: 'Update with current chart' });
+            kebabUpdateBtn.setAttribute('role', 'menuitem');
             const kebabRenameBtn = btn('quant-wsp-dd-kebab-item', { icon: ICON_RENAME, label: 'Rename' });
             kebabRenameBtn.setAttribute('role', 'menuitem');
             const kebabDeleteBtn = btn('quant-wsp-dd-kebab-item', { icon: ICON_DELETE, label: 'Delete' });
             kebabDeleteBtn.setAttribute('role', 'menuitem');
             kebabDeleteBtn.setAttribute('data-danger', '1');
-            kebabMenu.append(kebabRenameBtn, kebabDeleteBtn);
+            kebabMenu.append(kebabUpdateBtn, kebabRenameBtn, kebabDeleteBtn);
 
             ddContent.append(ddHeading, ddList, ddFooter, kebabMenu);
 
@@ -701,14 +765,14 @@ export function registerIndicatorTemplatesPicker() {
                     {
                         scope: 'selected' as const,
                         icon: ICON_ONE_CHART,
-                        title: 'Apply to selected chart',
-                        hint: 'Replaces the indicators on the active chart only.',
+                        title: 'Add to selected chart',
+                        hint: 'Plugs these indicators into the active chart without removing existing ones.',
                     },
                     {
                         scope: 'all' as const,
                         icon: ICON_ALL_CHARTS,
-                        title: 'Apply to all charts',
-                        hint: `Replaces the indicators on all ${totalCells} charts in this layout.`,
+                        title: 'Add to all charts',
+                        hint: `Plugs these indicators into all ${totalCells} charts in this layout without removing existing ones.`,
                     },
                 ];
 
@@ -745,36 +809,6 @@ export function registerIndicatorTemplatesPicker() {
 
             // ── New Template View ───────────────────────────────────────────
             let currentChartIndicators: IndicatorTemplateEntry[] = [];
-            let rememberSymbol = false;
-            let rememberTimeframe = false;
-            let currentSymbol = '';
-            let currentTimeframe = '';
-            let infoTooltip: Tooltip | null = null;
-
-            const makeChip = (opts: {
-                icon: HTMLElement;
-                label: string;
-                value: string;
-                on: boolean;
-                onChange: (val: boolean) => void;
-            }) => {
-                let isOn = opts.on;
-                const chip = btn('quant-tpl-chip', {
-                    aria: `Save chart ${opts.label.toLowerCase()} ${opts.value}`,
-                    onClick: () => {
-                        isOn = !isOn;
-                        chip.setAttribute('aria-pressed', isOn ? 'true' : 'false');
-                        opts.onChange(isOn);
-                    },
-                });
-                chip.setAttribute('aria-pressed', isOn ? 'true' : 'false');
-                chip.title = `Loading the template will also switch the chart to ${opts.value}`;
-
-                const check = iconEl(ICON_CHECK, doc);
-                check.classList.add('quant-tpl-chip-check');
-                chip.append(opts.icon, el('span', 'quant-tpl-chip-text', opts.value), check);
-                return chip;
-            };
 
             const openNewTemplatePanel = () => {
                 hidePopover();
@@ -784,20 +818,19 @@ export function registerIndicatorTemplatesPicker() {
                 }
 
                 activeDeleteId = null;
-                rememberSymbol = false;
-                rememberTimeframe = false;
-                currentSymbol = ctx.symbol || '';
-                currentTimeframe = ctx.timeframe || '';
+                const totalCells = currentSource?.cells().length ?? 1;
+                let captureScope: 'active' | 'all' = 'active';
 
-                // Extract live indicators on active chart
-                try {
-                    currentChartIndicators = extractChartIndicators(ctx.chart);
-                } catch {
-                    currentChartIndicators = [];
-                }
-
-                infoTooltip?.destroy();
-                infoTooltip = null;
+                const extractIndicatorsForScope = (scope: 'active' | 'all') => {
+                    if (scope === 'all' && currentSource && totalCells > 1) {
+                        return extractAllOpenChartsIndicators(currentSource.cells());
+                    }
+                    try {
+                        return extractChartIndicators(ctx.chart);
+                    } catch {
+                        return [];
+                    }
+                };
 
                 newTplPanel.replaceChildren();
                 newTplPanel.append(makeHead(null, 'New template'));
@@ -812,87 +845,45 @@ export function registerIndicatorTemplatesPicker() {
                 searchRow.append(iconEl(ICON_TPL, doc), nameInput);
                 newTplPanel.append(searchRow);
 
+                // If multiple charts are open, show source selector: "Active Chart" vs "All Open Charts"
+                if (totalCells > 1) {
+                    const sourceToggle = el('div', 'quant-tpl-source-toggle');
+                    const activeBtn = el('button', 'quant-tpl-source-btn', `Active chart (${extractIndicatorsForScope('active').length})`);
+                    activeBtn.setAttribute('type', 'button');
+                    activeBtn.setAttribute('aria-pressed', captureScope === 'active' ? 'true' : 'false');
+
+                    const allBtn = el('button', 'quant-tpl-source-btn', `All open charts (${extractIndicatorsForScope('all').length})`);
+                    allBtn.setAttribute('type', 'button');
+                    allBtn.setAttribute('aria-pressed', captureScope === 'all' ? 'true' : 'false');
+
+                    activeBtn.addEventListener('click', () => {
+                        captureScope = 'active';
+                        activeBtn.setAttribute('aria-pressed', 'true');
+                        allBtn.setAttribute('aria-pressed', 'false');
+                        renderIndicatorsTags();
+                    });
+
+                    allBtn.addEventListener('click', () => {
+                        captureScope = 'all';
+                        allBtn.setAttribute('aria-pressed', 'true');
+                        activeBtn.setAttribute('aria-pressed', 'false');
+                        renderIndicatorsTags();
+                    });
+
+                    sourceToggle.append(activeBtn, allBtn);
+                    newTplPanel.append(sourceToggle);
+                }
+
                 // Indicators field
                 const indField = el('div', 'quant-tpl-field');
                 const indLabel = el('div', 'quant-tpl-label', 'Indicators');
-                if (currentChartIndicators.length > 0) {
-                    indLabel.append(el('span', 'quant-tpl-label-count', ` (${currentChartIndicators.length})`));
-                }
+                const countSpan = el('span', 'quant-tpl-label-count');
+                indLabel.append(countSpan);
                 indField.append(indLabel);
 
-                if (currentChartIndicators.length === 0) {
-                    indField.append(
-                        el(
-                            'div',
-                            'quant-tpl-tags-empty',
-                            'No indicators on this chart yet — add some, then save a template.'
-                        )
-                    );
-                } else {
-                    const tags = el('div', 'quant-tpl-tags');
-                    for (const ind of currentChartIndicators) {
-                        tags.append(el('span', 'quant-tpl-tag', ind.name));
-                    }
-                    indField.append(tags);
-                }
+                const tagsContainer = el('div', 'quant-tpl-tags-wrapper');
+                indField.append(tagsContainer);
                 newTplPanel.append(indField);
-
-                // Chart toggles field
-                const chipsContainer = el('div', 'quant-tpl-chips');
-                if (currentSymbol) {
-                    const symIconFallback = el(
-                        'span',
-                        'quant-tpl-symicon quant-tpl-symicon-fallback',
-                        (displaySymbol(currentSymbol).trim()[0] ?? '?').toUpperCase()
-                    );
-                    chipsContainer.append(
-                        makeChip({
-                            icon: symIconFallback,
-                            label: 'symbol',
-                            value: displaySymbol(currentSymbol),
-                            on: rememberSymbol,
-                            onChange: (val) => {
-                                rememberSymbol = val;
-                            },
-                        })
-                    );
-                }
-
-                if (currentTimeframe) {
-                    chipsContainer.append(
-                        makeChip({
-                            icon: iconEl(ICON_CLOCK, doc),
-                            label: 'timeframe',
-                            value: displayTimeframe(currentTimeframe),
-                            on: rememberTimeframe,
-                            onChange: (val) => {
-                                rememberTimeframe = val;
-                            },
-                        })
-                    );
-                }
-
-                if (chipsContainer.childElementCount > 0) {
-                    const chartField = el('div', 'quant-tpl-field');
-                    const chartLabel = el('div', 'quant-tpl-label', 'Chart');
-                    const infoBtn = btn('quant-tpl-label-info', {
-                        icon: ICON_INFO,
-                        aria: 'About linking the chart',
-                    });
-                    infoTooltip = new Tooltip(infoBtn, {
-                        content: el(
-                            'div',
-                            'quant-tpl-info-tip',
-                            'Link the chart symbol and/or timeframe with the indicator template. Loading the template will change the chart to the linked symbol and/or timeframe.'
-                        ),
-                        host: ctx.host,
-                        placement: 'right',
-                        openDelay: 300,
-                    });
-                    chartLabel.append(infoBtn);
-                    chartField.append(chartLabel, chipsContainer);
-                    newTplPanel.append(chartField);
-                }
 
                 const handleSave = () => {
                     const source = currentSource;
@@ -906,8 +897,6 @@ export function registerIndicatorTemplatesPicker() {
                         name: finalName,
                         indicators: currentChartIndicators,
                         indicatorNames: currentChartIndicators.map((i) => i.name),
-                        ...(rememberSymbol && currentSymbol ? { symbol: currentSymbol } : {}),
-                        ...(rememberTimeframe && currentTimeframe ? { timeframe: currentTimeframe } : {}),
                     };
 
                     const existing = templateWithName(source.templates, finalName);
@@ -925,9 +914,34 @@ export function registerIndicatorTemplatesPicker() {
                 };
 
                 const saveBtn = btn('quant-wsp-primary', { label: 'Save template', onClick: handleSave });
-                if (currentChartIndicators.length === 0) {
-                    saveBtn.setAttribute('disabled', 'true');
-                }
+
+                const renderIndicatorsTags = () => {
+                    currentChartIndicators = extractIndicatorsForScope(captureScope);
+                    countSpan.textContent = currentChartIndicators.length > 0 ? ` (${currentChartIndicators.length})` : '';
+                    tagsContainer.replaceChildren();
+
+                    if (currentChartIndicators.length === 0) {
+                        tagsContainer.append(
+                            el(
+                                'div',
+                                'quant-tpl-tags-empty',
+                                captureScope === 'all'
+                                    ? 'No indicators on any open chart yet — add some, then save a template.'
+                                    : 'No indicators on this chart yet — add some, then save a template.'
+                            )
+                        );
+                        saveBtn.setAttribute('disabled', 'true');
+                    } else {
+                        const tags = el('div', 'quant-tpl-tags');
+                        for (const ind of currentChartIndicators) {
+                            tags.append(el('span', 'quant-tpl-tag', ind.name));
+                        }
+                        tagsContainer.append(tags);
+                        saveBtn.removeAttribute('disabled');
+                    }
+                };
+
+                renderIndicatorsTags();
 
                 const actions = el('div', 'quant-wsp-confirm-actions');
                 actions.append(btn('quant-wsp-cancel', { label: 'Cancel', onClick: () => showListView() }), saveBtn);
@@ -958,25 +972,24 @@ export function registerIndicatorTemplatesPicker() {
                     'quant-wsp-status',
                     `A template named “${existing.name}” already exists (${
                         count === 1 ? '1 indicator' : `${count} indicators`
-                    }). Replacing it overwrites its indicators and saved market with this chart's. This can’t be undone.`
+                    }). Updating it overwrites its saved indicators with these current ones. This can’t be undone.`
                 );
 
-                const replaceBtn = btn('quant-wsp-primary', { label: 'Replace' });
-                replaceBtn.setAttribute('data-danger', '1');
+                const replaceBtn = btn('quant-wsp-primary', { label: 'Update' });
                 replaceBtn.addEventListener('click', () => {
                     const fn = currentSource?.replace;
                     if (fn) {
                         replaceBtn.setAttribute('disabled', 'true');
-                        replaceBtn.textContent = 'Replacing…';
+                        replaceBtn.textContent = 'Updating…';
                         fn(existing.id, { ...newTplData, name: existing.name }, (ok) => {
                             if (!ok) {
                                 replaceBtn.removeAttribute('disabled');
-                                replaceBtn.textContent = 'Replace';
-                                ctx.toast("Couldn't replace the template.", 'error');
+                                replaceBtn.textContent = 'Update';
+                                ctx.toast("Couldn't update the template.", 'error');
                                 return;
                             }
                             mainDialog.hide();
-                            ctx.toast(`Replaced ${existing.name}`, 'success');
+                            ctx.toast(`Updated ${existing.name}`, 'success');
                         });
                     }
                 });
@@ -1060,7 +1073,18 @@ export function registerIndicatorTemplatesPicker() {
                         if (next) animatePanel(indsRow);
                     });
 
+                    const updateBtn = btn('quant-wsp-iconbtn', {
+                        icon: ICON_UPDATE,
+                        aria: `Update ${tpl.name} with current indicators`,
+                        onClick: (e) => {
+                            e.stopPropagation();
+                            updateTemplateWithCurrent(tpl);
+                        },
+                    });
+                    updateBtn.title = `Update "${tpl.name}" with current indicators`;
+
                     actions.append(
+                        updateBtn,
                         btn('quant-wsp-iconbtn', {
                             icon: ICON_RENAME,
                             aria: `Rename ${tpl.name}`,
@@ -1162,6 +1186,12 @@ export function registerIndicatorTemplatesPicker() {
 
             showAllBtn.addEventListener('click', () => openMainDialog());
             newTplDdBtn.addEventListener('click', () => openNewTemplatePanel());
+
+            kebabUpdateBtn.addEventListener('click', () => {
+                const tpl = activeKebabTemplate;
+                closeKebab();
+                if (tpl) updateTemplateWithCurrent(tpl);
+            });
 
             kebabRenameBtn.addEventListener('click', () => {
                 const tpl = activeKebabTemplate;
@@ -1333,13 +1363,12 @@ export function createLocalIndicatorTemplatesSource(ws: VelaWorkspace): Indicato
     let isServerHydrated = false;
 
     const pushToServer = (list: IndicatorTemplate[]) => {
-        if (typeof window === 'undefined' || !isServerHydrated) return;
+        if (typeof window === 'undefined') return;
         try {
             fetch('/api/indicator-templates', {
                 method: 'PUT',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify(list),
-                keepalive: true,
             }).catch((err) => {
                 console.warn('[IndicatorTemplates] Remote sync error:', err);
             });
@@ -1353,7 +1382,7 @@ export function createLocalIndicatorTemplatesSource(ws: VelaWorkspace): Indicato
                 window.localStorage.setItem(STORAGE_KEY, JSON.stringify(templates));
             }
         } catch {}
-        if (syncRemote && isServerHydrated) {
+        if (syncRemote) {
             clearTimeout(syncTimeout);
             syncTimeout = setTimeout(() => pushToServer(templates), 300);
         }
@@ -1366,6 +1395,33 @@ export function createLocalIndicatorTemplatesSource(ws: VelaWorkspace): Indicato
             : (Array.isArray(t.indicators) ? t.indicators.map((i: any) => i.name || i.type || 'Indicator') : []),
         indicators: Array.isArray(t.indicators) ? t.indicators : [],
     });
+
+    const mergeTemplates = (local: IndicatorTemplate[], remote: IndicatorTemplate[]): IndicatorTemplate[] => {
+        const map = new Map<string, IndicatorTemplate>();
+        for (const rem of remote) {
+            map.set(rem.id, rem);
+        }
+        let hasLocalWins = false;
+        for (const loc of local) {
+            const rem = map.get(loc.id);
+            if (!rem) {
+                map.set(loc.id, loc);
+                hasLocalWins = true;
+            } else {
+                const locTime = typeof loc.updatedAt === 'number' ? loc.updatedAt : (Date.parse(loc.updatedAt as any) || 0);
+                const remTime = typeof rem.updatedAt === 'number' ? rem.updatedAt : (Date.parse(rem.updatedAt as any) || 0);
+                if (locTime >= remTime) {
+                    map.set(loc.id, loc);
+                    if (locTime > remTime) hasLocalWins = true;
+                }
+            }
+        }
+        const merged = Array.from(map.values());
+        if (hasLocalWins) {
+            setTimeout(() => pushToServer(merged), 200);
+        }
+        return merged;
+    };
 
     const loadFromStorage = () => {
         try {
@@ -1397,7 +1453,7 @@ export function createLocalIndicatorTemplatesSource(ws: VelaWorkspace): Indicato
             if (res.ok) {
                 const data = await res.json();
                 if (Array.isArray(data)) {
-                    templates = data.map(normalizeTpl);
+                    templates = mergeTemplates(templates, data.map(normalizeTpl));
                     saveToStorage(false);
                     setIndicatorTemplatesPickerSource(source);
                     isServerHydrated = true;
@@ -1421,7 +1477,6 @@ export function createLocalIndicatorTemplatesSource(ws: VelaWorkspace): Indicato
             }
         };
         window.addEventListener('visibilitychange', handleSync);
-        window.addEventListener('focus', handleSync);
     }
 
     const source: IndicatorTemplatesSource = {
@@ -1487,7 +1542,7 @@ export function createLocalIndicatorTemplatesSource(ws: VelaWorkspace): Indicato
             templates = templates.filter((t) => t.id !== id);
             saveToStorage(true);
             try {
-                fetch(`/api/indicator-templates/${encodeURIComponent(id)}`, { method: 'DELETE', keepalive: true }).catch(() => {});
+                fetch(`/api/indicator-templates/${encodeURIComponent(id)}`, { method: 'DELETE' }).catch(() => {});
             } catch (_) {}
             setIndicatorTemplatesPickerSource(source);
             callback(true);

@@ -47,6 +47,7 @@ import {
     registerIndicatorExplorer,
     setExplorerWorkspaceInstance,
 } from './indicator-explorer';
+import { registerIndicatorsPersistence } from './indicators-persistence';
 import {
     registerWorkspaceLayoutPicker,
     createLocalWorkspaceSource,
@@ -57,6 +58,7 @@ import {
 } from './indicator-templates';
 
 // 1. Register Extensions
+registerIndicatorsPersistence();
 registerWorkspaceLayoutPicker();
 registerIndicatorTemplatesPicker();
 registerClassicIndicators();
@@ -135,7 +137,7 @@ const ws = new VelaWorkspace('#workspace', {
 
     // ── Synchronization across all grid cells ─────────────────────────────
     sync: {
-        viewport: true,   // panning / zooming one chart syncs followers
+        viewport: false,  // false: charts adjust independently; toggled via Time switch
         crosshair: true,  // ghost crosshair follows time across every chart
         drawings: true,   // drawings created on one chart mirror across peers
         style: true,      // canvas / scale styling mirrors across cells

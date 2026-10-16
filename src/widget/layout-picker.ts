@@ -662,7 +662,7 @@ export class LayoutPicker {
 
             const label = doc.createElement('span');
             label.className = 'vela-lp-sync-label';
-            label.textContent = s.label === 'Style' ? 'Time' : s.label;
+            label.textContent = s.label;
             item.appendChild(label);
 
             const pill = doc.createElement('button');

@@ -106,7 +106,7 @@ function saveAlertsStorage(syncRemote = true) {
                 method: 'PUT',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ alerts: activeAlerts, logs: alertLogs }),
-                keepalive: true,
+                
             }).catch(() => {});
         }, 500);
     }

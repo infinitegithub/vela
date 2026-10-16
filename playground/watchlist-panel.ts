@@ -54,7 +54,7 @@ export function saveWatchlistStorage(list: WatchlistItem[], syncRemote = true): 
                 method: 'PUT',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify(list),
-                keepalive: true,
+                
             }).catch((err) => {
                 console.warn('[watchlist] Remote sync error:', err);
             });

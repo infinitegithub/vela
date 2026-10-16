@@ -6,7 +6,7 @@ const PREFIX = 'vela-play:';
  * Intelligent hybrid remote/local storage adapter:
  * - Reads synchronously from localStorage to guarantee ZERO layout flicker on boot/reload.
  * - If localStorage is empty (first load / new device), fetches asynchronously from LXC 115 backend.
- * - Saves to localStorage immediately AND synchronizes to LXC 115 backend (/api/workspace/:key).
+ * - Saves to localStorage immediately AND synchronizes to LXC 115 backend (/api/workspace/:key) without 64KB keepalive limit.
  */
 export function playgroundStorage(): WidgetStorage {
     const setTimeouts = new Map<string, any>();
@@ -21,21 +21,6 @@ export function playgroundStorage(): WidgetStorage {
 
             // If we have local state, return it synchronously so VelaWorkspace restores on frame 0
             if (cached && cached.trim().length > 0 && cached !== '{}') {
-                // Silently verify with remote backend in background to keep LXC 115 in sync
-                void (async () => {
-                    try {
-                        const controller = new AbortController();
-                        const timeoutId = setTimeout(() => controller.abort(), 2000);
-                        const res = await fetch(`/api/workspace/${encodeURIComponent(key)}`, { signal: controller.signal });
-                        clearTimeout(timeoutId);
-                        if (res.ok) {
-                            const text = await res.text();
-                            if (text && text.trim().length > 0 && text !== '{}' && text !== cached) {
-                                window.localStorage.setItem(PREFIX + key, text);
-                            }
-                        }
-                    } catch {}
-                })();
                 return cached;
             }
 
@@ -75,7 +60,6 @@ export function playgroundStorage(): WidgetStorage {
                         method: 'PUT',
                         headers: { 'Content-Type': 'application/json' },
                         body: value,
-                        keepalive: true,
                     }).catch((err) => {
                         console.warn('[VelaStorage] Remote persist error:', err);
                     });
@@ -93,7 +77,6 @@ export function playgroundStorage(): WidgetStorage {
             try {
                 fetch(`/api/workspace/${encodeURIComponent(key)}`, {
                     method: 'DELETE',
-                    keepalive: true,
                 }).catch(() => {});
             } catch (e) {
                 // Best effort
