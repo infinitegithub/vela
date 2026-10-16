@@ -101,7 +101,7 @@ describe('Footprint Read API & Query Validation', () => {
 
                 // Verify levels are sorted descending by price
                 for (let l = 0; l < bar.levels.length - 1; l++) {
-                    expect(bar.levels[l].price).toBeGreaterThanOrEqual(bar.levels[l + 1].price);
+                    expect(bar.levels[l]!.price).toBeGreaterThanOrEqual(bar.levels[l + 1]!.price);
                 }
             }
         });

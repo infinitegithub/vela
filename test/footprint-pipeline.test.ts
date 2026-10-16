@@ -78,8 +78,8 @@ describe('Footprint Pipeline - Core Logic & Invariants', () => {
 
             const stored = storage.getRawTrades('BTCUSDT', 1700000000000, 1700000005000);
             expect(stored.length).toBe(2);
-            expect(stored[0].id).toBe(1001);
-            expect(stored[1].id).toBe(1002);
+            expect(stored[0]!.id).toBe(1001);
+            expect(stored[1]!.id).toBe(1002);
         });
     });
 
@@ -155,8 +155,8 @@ describe('Footprint Pipeline - Core Logic & Invariants', () => {
                 // Compare level-by-level ladders
                 expect(mergedBar!.levels.length).toBe(directBar!.levels.length);
                 for (let idx = 0; idx < directBar!.levels.length; idx++) {
-                    const directLvl = directBar!.levels[idx];
-                    const mergedLvl = mergedBar!.levels[idx];
+                    const directLvl = directBar!.levels[idx]!;
+                    const mergedLvl = mergedBar!.levels[idx]!;
                     expect(mergedLvl.price).toBe(directLvl.price);
                     expect(mergedLvl.bidVolume).toBeCloseTo(directLvl.bidVolume, 6);
                     expect(mergedLvl.askVolume).toBeCloseTo(directLvl.askVolume, 6);
@@ -189,7 +189,7 @@ describe('Footprint Pipeline - Core Logic & Invariants', () => {
             const all = storage.getRawTrades('BTCUSDT', 1000, 6000);
             expect(all.length).toBe(6);
             for (let i = 0; i < 6; i++) {
-                expect(all[i].id).toBe(100 + i);
+                expect(all[i]!.id).toBe(100 + i);
             }
         });
     });

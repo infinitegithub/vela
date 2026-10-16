@@ -76,8 +76,8 @@ export function queryFootprintBars(
     if (oneMinuteSlices.length === 0) {
         const rawTrades = storage.getRawTrades(symbol, fromTime, toTime);
         if (rawTrades.length > 0) {
-            let curMin = Math.floor(rawTrades[0].time / 60000) * 60000;
-            const endMin = Math.floor(rawTrades[rawTrades.length - 1].time / 60000) * 60000;
+            let curMin = Math.floor(rawTrades[0]!.time / 60000) * 60000;
+            const endMin = Math.floor(rawTrades[rawTrades.length - 1]!.time / 60000) * 60000;
 
             while (curMin <= endMin) {
                 const nextMin = curMin + 60000;

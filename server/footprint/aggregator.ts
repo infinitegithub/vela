@@ -14,10 +14,12 @@ export function aggregateTradesToBar(
 ): FootprintBar | null {
     if (trades.length === 0) return null;
 
-    let open = trades[0].price;
+    const firstTrade = trades[0]!;
+    const lastTrade = trades[trades.length - 1]!;
+    let open = firstTrade.price;
     let high = -Infinity;
     let low = Infinity;
-    let close = trades[trades.length - 1].price;
+    let close = lastTrade.price;
     let totalVolume = 0;
     let totalDelta = 0;
     let runningDelta = 0;
@@ -26,8 +28,7 @@ export function aggregateTradesToBar(
 
     const levelsMap = new Map<number, PriceLevelVolume>();
 
-    for (let i = 0; i < trades.length; i++) {
-        const t = trades[i];
+    for (const t of trades) {
         if (t.price > high) high = t.price;
         if (t.price < low) low = t.price;
 
@@ -103,10 +104,12 @@ export function mergeMinuteSlices(
 ): FootprintBar | null {
     if (slices.length === 0) return null;
 
-    const open = slices[0].open;
+    const firstSlice = slices[0]!;
+    const lastSlice = slices[slices.length - 1]!;
+    const open = firstSlice.open;
     let high = -Infinity;
     let low = Infinity;
-    const close = slices[slices.length - 1].close;
+    const close = lastSlice.close;
     let totalVolume = 0;
     let totalDelta = 0;
 
@@ -116,8 +119,7 @@ export function mergeMinuteSlices(
 
     const levelsMap = new Map<number, PriceLevelVolume>();
 
-    for (let i = 0; i < slices.length; i++) {
-        const slice = slices[i];
+    for (const slice of slices) {
         if (slice.high > high) high = slice.high;
         if (slice.low < low) low = slice.low;
 

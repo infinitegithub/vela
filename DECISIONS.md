@@ -33,3 +33,15 @@
 ### Decision 8: REST Rate-Limiter & Backoff
 - **Choice**: Enforce a token-bucket rate limiter of 5 requests/sec (100 weight/sec, ~6000 weight/min max theoretical, throttled to 1200 weight/min) with exponential backoff on HTTP 429/418.
 - **Rationale**: Guarantees we never exceed Binance IP rate limits or trigger bans during backfill or gap repair.
+
+### Decision 9: Canvas2D Footprint Ladder Rendering & Viewport Clipping
+- **Choice**: Footprint ladder is rendered via a high-performance Canvas2D layer registered with `registerRendererLayer({ id: 'footprint', placement: 'above-data' })`. The ladder canvas area is strictly clipped above the docked stats table (`tableTop = bounds.top + bounds.height - statsTableHeight`) using `ctx.clip()`, ensuring numbers and ladder cells never overlap the summary statistics.
+
+### Decision 10: Point of Control (POC) Golden Outline
+- **Choice**: The level with the maximum total traded volume in each bar is designated as the Point of Control (POC) and outlined with a 1.5px border in brand `HIGHLIGHT` gold (`#e0b400`).
+
+### Decision 11: Diagonal Imbalance Detection via Integer Bucket Keys
+- **Choice**: Diagonal imbalances compare ask at price level $ against bid at level -1$ (buy imbalance $\ge 3.0\times$), and bid at level $ against ask at level +1$ (sell imbalance $\ge 3.0\times$). Levels are indexed by integer bucket index `Math.round(price / bucketSize)`, eliminating floating point drift.
+
+### Decision 12: Docked Orderflow Statistics Table
+- **Choice**: Docked at the bottom of the price pane with a 72px dedicated height and pinned 75px left-header plate displaying: Delta, Min Delta, Max Delta, Cum Delta, and Volume. Bar columns align 1:1 with chart bars via `coords.timeToX(time)`.

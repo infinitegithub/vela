@@ -13,6 +13,7 @@ import { playgroundStorage } from './persistence';
 import { addSampleMarks } from './marks';
 import { registerClassicIndicators } from '../src/core/native-indicators/classics';
 import { registerTradingLinesLayer } from './trading-lines';
+import { registerFootprintPlugin } from './footprint-plugin';
 import {
     registerWatchlistSidePanel,
     setWatchlistWorkspaceInstance,
@@ -62,6 +63,7 @@ registerWorkspaceLayoutPicker();
 registerIndicatorTemplatesPicker();
 registerClassicIndicators();
 registerTradingLinesLayer();
+registerFootprintPlugin();
 registerWatchlistSidePanel();
 registerAlertsSidePanel();
 registerTradingSidePanel();
