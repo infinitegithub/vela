@@ -21,3 +21,15 @@
 ### Decision 5: Public Market Data Only
 - **Choice**: Binance USD-M Futures public endpoints only (`wss://fstream.binance.com/stream` and `https://fapi.binance.com/fapi/v1/aggTrades`).
 - **Rationale**: Public endpoints require zero API keys, zero authentication, avoiding any private keys or account exposure.
+
+### Decision 6: Price Bucketing Formula & Numerical Precision
+- **Choice**: Price buckets use `round(price / bucketSize) * bucketSize` formatted to symbol price precision.
+- **Rationale**: Eliminates IEEE 754 floating-point drift (e.g. `67500.10000000002`) while guaranteeing consistent bucket grouping between live WebSocket ticks, REST backfill trades, and bulk data zips.
+
+### Decision 7: Slice Boundary Alignment
+- **Choice**: Discrete 1-minute slices align strictly to UTC epoch minutes (`Math.floor(T / 60000) * 60000`).
+- **Rationale**: Standardized integer boundaries allow deterministic slicing, caching, and linear merging into higher timeframes (5m, 15m, 1h, 4h, 1d).
+
+### Decision 8: REST Rate-Limiter & Backoff
+- **Choice**: Enforce a token-bucket rate limiter of 5 requests/sec (100 weight/sec, ~6000 weight/min max theoretical, throttled to 1200 weight/min) with exponential backoff on HTTP 429/418.
+- **Rationale**: Guarantees we never exceed Binance IP rate limits or trigger bans during backfill or gap repair.

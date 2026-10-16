@@ -17,3 +17,4 @@ dev-dist/
 .agents/
 mcp.json
 mcp_config.json
+footprint-data/
