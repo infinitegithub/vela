@@ -153,6 +153,7 @@ const ws = new VelaWorkspace('#workspace', {
 
 // 3. Bind workspace instances
 setWorkspaceInstance(ws);
+(window as any).ws = ws;
 setWatchlistWorkspaceInstance(ws);
 setAlertsWorkspaceInstance(ws);
 setThemeWorkspaceInstance(ws);

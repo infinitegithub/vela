@@ -61,8 +61,14 @@ export function computePaneScale(
 
     if (min === Infinity || max === -Infinity) return { min: 0, max: 1 };
     if (min === max) {
-        const pad = Math.abs(min) * 0.1 || 1;
+        const pad = min > 1000 ? Math.min(25, Math.abs(min) * 0.002) : (Math.abs(min) * 0.05 || 1);
         return { min: min - pad, max: max + pad, log: log && min - pad > 0 };
+    }
+    const rawSpan = max - min;
+    if (rawSpan > 0 && rawSpan < 20 && min > 1000) {
+        const extraPad = (20 - rawSpan) / 2;
+        min -= extraPad;
+        max += extraPad;
     }
     // The margins are shares of the pane's PIXEL height, so the data fills the middle
     // `1 − top − bottom`; over the data SPAN that is `top / content` above and
