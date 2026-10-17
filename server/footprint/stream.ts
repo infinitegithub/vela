@@ -8,6 +8,7 @@ import { aggregateTradesToBar } from './aggregator';
 export interface StreamCallbacks {
     onTrade?: (trade: StoredTrade) => void;
     onSliceCompleted?: (bar: FootprintBar) => void;
+    onFormingBar?: (bar: FootprintBar) => void;
 }
 
 export class BinanceFuturesStream {
@@ -27,6 +28,7 @@ export class BinanceFuturesStream {
 
     private lastAggIds = new Map<string, number>();
     private minuteTrades = new Map<string, { minute: number; trades: StoredTrade[] }>();
+    private lastFormingEmit = new Map<string, number>();
     private pendingGapRepairs = new Set<string>();
 
     constructor(
@@ -161,6 +163,16 @@ export class BinanceFuturesStream {
 
         if (tradeMinute === current.minute) {
             current.trades.push(trade);
+
+            const now = Date.now();
+            const lastEmit = this.lastFormingEmit.get(symbol) || 0;
+            if (now - lastEmit >= 200 && this.callbacks.onFormingBar) {
+                this.lastFormingEmit.set(symbol, now);
+                const formingBar = aggregateTradesToBar(symbol, current.trades, current.minute, '1m', bucketSize);
+                if (formingBar) {
+                    this.callbacks.onFormingBar(formingBar);
+                }
+            }
         } else if (tradeMinute > current.minute) {
             const bar = aggregateTradesToBar(symbol, current.trades, current.minute, '1m', bucketSize);
             if (bar) {

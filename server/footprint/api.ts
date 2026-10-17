@@ -89,6 +89,27 @@ export function queryFootprintBars(
                 curMin = nextMin;
             }
         }
+    } else {
+        // Slices exist in cache, but check if there are trailing forming trades in raw_trades
+        const lastSliceEnd = oneMinuteSlices[oneMinuteSlices.length - 1]!.time + 60000;
+        if (lastSliceEnd < toTime) {
+            const trailingTrades = storage.getRawTrades(symbol, lastSliceEnd, toTime + 1000);
+            if (trailingTrades.length > 0) {
+                let curMin = Math.floor(trailingTrades[0]!.time / 60000) * 60000;
+                const endMin = Math.floor(trailingTrades[trailingTrades.length - 1]!.time / 60000) * 60000;
+                while (curMin <= endMin) {
+                    const nextMin = curMin + 60000;
+                    const mTrades = trailingTrades.filter((t) => t.time >= curMin && t.time < nextMin);
+                    if (mTrades.length > 0) {
+                        const bar = aggregateTradesToBar(symbol, mTrades, curMin, '1m', bucketSize);
+                        if (bar && !oneMinuteSlices.some((s) => s.time === bar.time)) {
+                            oneMinuteSlices.push(bar);
+                        }
+                    }
+                    curMin = nextMin;
+                }
+            }
+        }
     }
 
     let finalBars: FootprintBar[] = [];

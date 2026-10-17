@@ -125,6 +125,122 @@ export class FootprintDataEngine implements SeriesDataEngine {
         }
     }
 
+    private pushPending = false;
+
+    private getTimeframeMs(): number {
+        const tf = (this.host?.timeframe || '1m').toLowerCase().trim();
+        if (tf === '1m' || tf === '1') return 60000;
+        if (tf === '3m' || tf === '3') return 180000;
+        if (tf === '5m' || tf === '5') return 300000;
+        if (tf === '15m' || tf === '15') return 900000;
+        if (tf === '30m' || tf === '30') return 1800000;
+        if (tf === '1h' || tf === '60') return 3600000;
+        if (tf === '2h' || tf === '120') return 7200000;
+        if (tf === '4h' || tf === '240') return 14400000;
+        if (tf === 'd' || tf === '1d') return 86400000;
+        const num = parseInt(tf, 10);
+        return isNaN(num) || num <= 0 ? 60000 : num * 60000;
+    }
+
+    private schedulePush(): void {
+        if (this.pushPending) return;
+        this.pushPending = true;
+        if (typeof requestAnimationFrame !== 'undefined') {
+            requestAnimationFrame(() => {
+                this.pushPending = false;
+                this.pushCurrent();
+            });
+        } else {
+            setTimeout(() => {
+                this.pushPending = false;
+                this.pushCurrent();
+            }, 50);
+        }
+    }
+
+    private handleLiveTrade(trade: { symbol: string; id: number; price: number; qty: number; time: number; isBuyerMaker: boolean }): void {
+        if (!this.host || !this.active) return;
+        const currentSymbol = cleanSymbol(this.host.symbol || 'BTCUSDT');
+        if (trade.symbol !== currentSymbol) return;
+
+        const tfMs = this.getTimeframeMs();
+        const barTime = Math.floor(trade.time / tfMs) * tfMs;
+        const bucketSize = this.bucketSize || 1.0;
+        const bucketPrice = Math.round(trade.price / bucketSize) * bucketSize;
+
+        let bar = this.bars.find((b) => b.time === barTime);
+        if (!bar) {
+            bar = {
+                symbol: trade.symbol,
+                time: barTime,
+                timeframe: this.host.timeframe || '1m',
+                open: trade.price,
+                high: trade.price,
+                low: trade.price,
+                close: trade.price,
+                volume: 0,
+                delta: 0,
+                minDelta: 0,
+                maxDelta: 0,
+                cumDelta: this.bars.length > 0 ? (this.bars[this.bars.length - 1]!.cumDelta ?? 0) : 0,
+                poc: bucketPrice,
+                levels: [],
+            };
+            this.bars.push(bar);
+        }
+
+        // Update bar stats
+        if (trade.price > bar.high) bar.high = trade.price;
+        if (trade.price < bar.low) bar.low = trade.price;
+        bar.close = trade.price;
+        bar.volume = Number((bar.volume + trade.qty).toFixed(4));
+
+        const signedDelta = trade.isBuyerMaker ? -trade.qty : trade.qty;
+        bar.delta = Number((bar.delta + signedDelta).toFixed(4));
+        if (bar.delta < bar.minDelta) bar.minDelta = bar.delta;
+        if (bar.delta > bar.maxDelta) bar.maxDelta = bar.delta;
+        if (bar.cumDelta !== undefined) {
+            bar.cumDelta = Number((bar.cumDelta + signedDelta).toFixed(4));
+        }
+
+        // Update price ladder level
+        let lvl = bar.levels.find((l) => Math.abs(l.price - bucketPrice) < (bucketSize / 2));
+        if (!lvl) {
+            lvl = {
+                price: bucketPrice,
+                bidVolume: 0,
+                askVolume: 0,
+                totalVolume: 0,
+                delta: 0,
+                tradeCount: 0,
+            };
+            bar.levels.push(lvl);
+            bar.levels.sort((a, b) => b.price - a.price);
+        }
+
+        lvl.tradeCount += 1;
+        if (trade.isBuyerMaker) {
+            lvl.bidVolume = Number((lvl.bidVolume + trade.qty).toFixed(4));
+        } else {
+            lvl.askVolume = Number((lvl.askVolume + trade.qty).toFixed(4));
+        }
+        lvl.totalVolume = Number((lvl.bidVolume + lvl.askVolume).toFixed(4));
+        lvl.delta = Number((lvl.askVolume - lvl.bidVolume).toFixed(4));
+
+        // Update POC
+        let maxVol = -1;
+        let poc = bar.poc;
+        for (const l of bar.levels) {
+            if (l.totalVolume > maxVol) {
+                maxVol = l.totalVolume;
+                poc = l.price;
+            }
+        }
+        bar.poc = poc;
+
+        this.schedulePush();
+    }
+
     private connectLive(): void {
         if (!this.host || typeof window === 'undefined' || !window.EventSource) return;
         const symbol = cleanSymbol(this.host.symbol || 'BTCUSDT');
@@ -151,7 +267,9 @@ export class FootprintDataEngine implements SeriesDataEngine {
                         } else {
                             this.bars.push(newBar);
                         }
-                        this.pushCurrent();
+                        this.schedulePush();
+                    } else if (parsed.type === 'trade' && parsed.data) {
+                        this.handleLiveTrade(parsed.data);
                     }
                 } catch {}
             };

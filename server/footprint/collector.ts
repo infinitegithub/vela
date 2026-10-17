@@ -73,6 +73,9 @@ async function main() {
             onTrade: (trade) => {
                 apiServer.broadcastTrade(trade);
             },
+            onFormingBar: (bar) => {
+                apiServer.broadcastBar(bar);
+            },
             onSliceCompleted: (bar) => {
                 console.log(`[Collector] 1m slice completed: ${bar.symbol} @ ${new Date(bar.time).toISOString()} | Vol: ${bar.volume} | Delta: ${bar.delta} | Levels: ${bar.levels.length}`);
                 apiServer.broadcastBar(bar);
