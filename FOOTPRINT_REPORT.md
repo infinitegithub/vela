@@ -143,5 +143,69 @@ All changes were developed on the dedicated safety branch `footprint-rebuild`:
 - `57c06ec`: Phase 2 - Read API: GET /api/footprint, SSE/WS live stream, Vite proxy entry
 - `e69e530`: Phase 3 & 4 - Footprint chart type, Canvas2D renderer, and orderflow stats table
 - `14b7cfa`: Acceptance test suite and verifiable evidence artifacts for checks 1 through 7
+- Current commit: Mint proxy forwarding & Binance official `/market/stream` migration
 
 The `main` branch remains untouched.
+
+---
+
+### 4. Live Binance USD-M Futures Ingestion Architecture via Mint
+
+To achieve reliable real-time tick-by-tick Binance USD-M Futures orderflow outside of UK IP derivative restrictions, the pipeline uses a two-tier hybrid network route:
+
+```
+[Binance Futures Cloud (fstream.binance.com)]
+                      │
+                      │  (WSS via Moroccan Residential IP 196.117.67.189)
+                      ▼
+ ┌─────────────────────────────────────────────────────────┐
+ │ Mint Jump Host (VM 106 - 10.1.1.106)                    │
+ │  - mint-proxy.service: Node.js HTTP CONNECT on :10808   │
+ │  - mint-vela-tunnel.service: SSH Reverse (-R 10808)     │
+ └────────────────────────────┬────────────────────────────┘
+                              │
+                              │  (Encrypted SSH Reverse Tunnel over Tailscale)
+                              ▼
+ ┌─────────────────────────────────────────────────────────┐
+ │ Vela Charting (OCI LXC 115 - 10.10.10.115)              │
+ │  - Collector on :3101 with HttpsProxyAgent(:10808)      │
+ │  - Stream: wss://fstream.binance.com/market/stream      │
+ │  - Fallback: Graceful Direct Connection + REST Polling  │
+ └─────────────────────────────────────────────────────────┘
+```
+
+#### Key Architecture Points:
+1. **Official Endpoint**: Uses Binance's official routing endpoint `wss://fstream.binance.com/market/stream?streams=...`. (Legacy `/stream?streams=` is deprecated by Binance and pushes 0 trade frames).
+2. **Mint HTTP CONNECT Proxy**: Managed as a persistent user service `mint-proxy.service` on Mint (`10.1.1.106`), running `/home/es/services/mint-proxy.js` on port `10808`.
+3. **Persistent Reverse Tunnel**: Managed as `mint-vela-tunnel.service` on Mint, maintaining an auto-reconnecting `ssh -R 10808:127.0.0.1:10808 vela` tunnel.
+4. **Resilient Fallback**: If the Mint tunnel is disconnected or offline, `BinanceFuturesStream` gracefully falls back to direct connection and REST gap repair, guaranteeing 100% chart uptime without manual intervention.
+
+---
+
+### 5. Disaster Recovery & Troubleshooting Runbook
+
+If footprint live updates stall or Mint reboot occurs:
+
+1. **Verify Mint Services**:
+   ```bash
+   systemctl --user status mint-proxy.service
+   systemctl --user status mint-vela-tunnel.service
+   ```
+2. **Restart Mint Services (if needed)**:
+   ```bash
+   systemctl --user restart mint-proxy.service mint-vela-tunnel.service
+   ```
+3. **Verify Proxy Health on Vela (LXC 115)**:
+   ```bash
+   curl -s http://127.0.0.1:10808/health
+   # Expected output: {"status":"ok","service":"mint-proxy","host":"10.1.1.106",...}
+   ```
+4. **Restart Footprint Service on Vela**:
+   ```bash
+   systemctl restart vela-footprint.service
+   ```
+5. **Check Footprint Pipeline Logs on Vela**:
+   ```bash
+   journalctl -u vela-footprint.service -n 50 --no-pager
+   ```
+

@@ -16,12 +16,13 @@ export const DEFAULT_CONFIG: FootprintConfig = {
         AVAXUSDT: 0.001,
     },
     bucketMultipliers: {
-        BTCUSDT: 10,  // Default .00
-        ETHUSDT: 10,  // Default bash.10
-        BNBUSDT: 10,  // Default bash.10
-        SOLUSDT: 10,  // Default bash.10
-        AVAXUSDT: 10, // Default bash.01
+        BTCUSDT: 10,
+        ETHUSDT: 10,
+        BNBUSDT: 10,
+        SOLUSDT: 10,
+        AVAXUSDT: 10,
     },
+    proxyUrl: process.env.FOOTPRINT_PROXY || 'http://127.0.0.1:10808',
 };
 
 export function loadConfig(overrides?: Partial<FootprintConfig>): FootprintConfig {

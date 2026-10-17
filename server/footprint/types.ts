@@ -52,4 +52,5 @@ export interface FootprintConfig {
     maxDiskUsageMb: number;
     tickSizes: Record<string, number>;
     bucketMultipliers: Record<string, number>;
+    proxyUrl?: string;
 }

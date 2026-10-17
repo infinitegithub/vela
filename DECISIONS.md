@@ -45,3 +45,10 @@
 
 ### Decision 12: Docked Orderflow Statistics Table
 - **Choice**: Docked at the bottom of the price pane with a 72px dedicated height and pinned 75px left-header plate displaying: Delta, Min Delta, Max Delta, Cum Delta, and Volume. Bar columns align 1:1 with chart bars via `coords.timeToX(time)`.
+
+### Decision 13: Mint Proxy Routing for Binance USD-M Futures WebSocket & Market Route Update
+- **Choice**: Configured `mint` (local homelab VM 106, Moroccan residential IP `196.117.67.189`) as a dedicated HTTP CONNECT forward proxy for outbound Binance Futures WebSocket traffic, and updated the stream endpoint from legacy `/stream?streams=...` to Binance's official `/market/stream?streams=...`.
+- **Rationale**:
+  1. Binance recently migrated its market data routing architecture to require the `/market/` prefix; legacy URLs silently ACK but push zero data frames.
+  2. To guarantee 100% resilient ingestion immune to UK cloud IP restrictions, LXC 115 routes WebSocket handshakes via a persistent SSH reverse tunnel to `mint-proxy` running on Mint (port 10808).
+  3. If the proxy tunnel is ever unavailable, the collector automatically falls back to direct connection and continuous REST gap repair, ensuring orderflow data never drops.

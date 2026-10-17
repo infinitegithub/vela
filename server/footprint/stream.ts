@@ -1,4 +1,5 @@
 import WebSocket from 'ws';
+import { HttpsProxyAgent } from 'https-proxy-agent';
 import type { FootprintStorage } from './storage';
 import type { BinanceFuturesRestClient } from './rest';
 import type { FootprintBar, RawAggTrade, StoredTrade } from './types';
@@ -15,6 +16,7 @@ export class BinanceFuturesStream {
     private restClient: BinanceFuturesRestClient;
     private bucketSizes: Record<string, number>;
     private callbacks: StreamCallbacks;
+    private proxyUrl?: string;
 
     private ws: WebSocket | null = null;
     private isRunning = false;
@@ -33,12 +35,14 @@ export class BinanceFuturesStream {
         restClient: BinanceFuturesRestClient,
         bucketSizes: Record<string, number>,
         callbacks?: StreamCallbacks,
+        proxyUrl?: string,
     ) {
         this.symbols = symbols.map((s) => s.toUpperCase());
         this.storage = storage;
         this.restClient = restClient;
         this.bucketSizes = bucketSizes;
         this.callbacks = callbacks || {};
+        this.proxyUrl = proxyUrl;
 
         for (const sym of this.symbols) {
             const state = this.storage.getSyncState(sym);
@@ -57,13 +61,23 @@ export class BinanceFuturesStream {
         if (!this.isRunning) return;
 
         const streamNames = this.symbols.map((s) => `${s.toLowerCase()}@aggTrade`).join('/');
-        const url = `wss://fstream.binance.com/stream?streams=${streamNames}`;
+        const url = `wss://fstream.binance.com/market/stream?streams=${streamNames}`;
+
+        let agent: HttpsProxyAgent<string> | undefined;
+        if (this.proxyUrl) {
+            try {
+                agent = new HttpsProxyAgent(this.proxyUrl);
+                console.log(`[Stream] Routing WebSocket through proxy: ${this.proxyUrl}`);
+            } catch (err) {
+                console.warn(`[Stream] Failed to initialize proxy agent (${this.proxyUrl}), falling back to direct connection:`, err);
+            }
+        }
 
         console.log(`[Stream] Connecting to Binance USD-M fstream: ${url}`);
-        this.ws = new WebSocket(url);
+        this.ws = new WebSocket(url, agent ? { agent } : undefined);
 
         this.ws.on('open', () => {
-            console.log(`[Stream] Connected to Binance stream (${this.symbols.join(', ')})`);
+            console.log(`[Stream] Connected to Binance stream (${this.symbols.join(', ')})${this.proxyUrl ? ' via proxy ' + this.proxyUrl : ''}`);
             this.reconnectAttempts = 0;
 
             this.pingInterval = setInterval(() => {
