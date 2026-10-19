@@ -865,6 +865,37 @@ function showToast(message: string, isError: boolean = false) {
     }, 3200);
 }
 
+const BUILTIN_NATIVES: CatalogIndicator[] = [
+    {
+        slug: 'native-volume',
+        name: 'Volume',
+        family: 'basic',
+        description: 'Standard per-bar volume columns anchored to the bottom of the price pane with direction coloring.',
+        tags: ['volume', 'vol', 'regular volume', 'standard volume', 'basic', 'orderflow'],
+        image_url: 'https://luxalgo-production.s3.amazonaws.com/library/iclsbsi3h5dhcll7rxy1ayod.png',
+        url: '',
+        isNative: true,
+        nativeType: 'volume',
+        isSaved: false,
+        date_displayed: 'Built-in',
+        isNew: false,
+    },
+    {
+        slug: 'native-vpvr',
+        name: 'Visible Range Volume Profile (VPVR)',
+        family: 'orderflow',
+        description: 'Horizontal volume profile by price for the visible candlestick range.',
+        tags: ['volume', 'vpvr', 'profile', 'orderflow'],
+        image_url: 'https://luxalgo-production.s3.amazonaws.com/library/iclsbsi3h5dhcll7rxy1ayod.png',
+        url: '',
+        isNative: true,
+        nativeType: 'vpvr',
+        isSaved: false,
+        date_displayed: 'Built-in',
+        isNew: false,
+    },
+];
+
 async function loadData(): Promise<void> {
     favoritesSet = loadFavorites();
     if (isLoaded) return;
@@ -876,7 +907,7 @@ async function loadData(): Promise<void> {
 
         if (catRes && catRes.ok) {
             const data = await catRes.json();
-            cachedCatalog = (data.indicators || []).map((ind: any, idx: number) => ({
+            const apiCatalog = (data.indicators || []).map((ind: any, idx: number) => ({
                 slug: ind.slug,
                 name: ind.name,
                 family: ind.family || 'trend',
@@ -889,6 +920,9 @@ async function loadData(): Promise<void> {
                 date_displayed: formatDate(ind.date_displayed),
                 isNew: idx < 12,
             }));
+            cachedCatalog = [...BUILTIN_NATIVES, ...apiCatalog];
+        } else {
+            cachedCatalog = [...BUILTIN_NATIVES];
         }
 
         if (savRes && savRes.ok) {
@@ -1464,6 +1498,20 @@ async function applyIndicator(ind: CatalogIndicator, btnElement?: HTMLButtonElem
     if (!ws) {
         showToast('No active workspace available', true);
         return;
+    }
+
+    if (ind.isNative && ind.nativeType) {
+        const activeCell = (typeof ws.active === 'function' ? ws.active() : ws.active)
+            || (typeof ws.cells === 'function' ? ws.cells()[0] : null);
+        if (activeCell && typeof activeCell.addNative === 'function') {
+            activeCell.addNative(ind.nativeType);
+            showToast("Added " + ind.name + " to chart");
+            if (btnElement) {
+                btnElement.disabled = false;
+                btnElement.textContent = 'Added';
+            }
+            return;
+        }
     }
 
     try {

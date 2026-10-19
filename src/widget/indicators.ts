@@ -108,7 +108,12 @@ export const ledgerEntryName = (e: LedgerManifestEntry): string => (typeof e ===
 export type LedgerNativeEntry = string | { type: string; inputs?: Record<string, InputValue>; hidden?: boolean };
 
 /** The entry's native TYPE, whichever shape it travels as. */
-export const ledgerNativeType = (e: LedgerNativeEntry): string => (typeof e === 'string' ? e : e.type);
+export const ledgerNativeType = (e: LedgerNativeEntry): string => {
+    const raw = typeof e === 'string' ? e : e.type;
+    if (raw === 'relative-strength-index') return 'rsi';
+    if (raw === 'moving-average-convergence-divergence') return 'macd';
+    return raw;
+};
 
 /** Everything {@link indicatorLedger} needs to decide what a state snapshot reports. */
 export interface LedgerInputs {

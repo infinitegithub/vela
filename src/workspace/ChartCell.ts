@@ -1336,10 +1336,11 @@ export class ChartCell {
     }
 
     addNative(type: string): void {
+        const norm = type === 'relative-strength-index' ? 'rsi' : type === 'moving-average-convergence-divergence' ? 'macd' : type;
         const chart = this.inner;
         if (!chart) return;
         const before = new Set(chart.indicators().map((h) => h.id));
-        let added: IndicatorHandle | null = chart.addNativeIndicator(type);
+        let added: IndicatorHandle | null = chart.addNativeIndicator(norm);
         this.syncPresentNatives();
         this.refreshNativeCatalog();
         if (before.has(added.id)) return;
@@ -1350,7 +1351,7 @@ export class ChartCell {
                 this.refreshNativeCatalog();
             },
             redo: () => {
-                added = this.inner?.addNativeIndicator(type) ?? null;
+                added = this.inner?.addNativeIndicator(norm) ?? null;
                 this.refreshNativeCatalog();
             },
         });

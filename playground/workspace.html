@@ -30,6 +30,11 @@
                 width: 100%;
                 min-height: 0;
             }
+
+            /* Muted 1px active-cell highlight adhering to current theme */
+            .vela-ws-grid[data-multi='1'] .vela-cell[data-active='1']::after {
+                border: 1px solid var(--vela-focus, rgba(255, 255, 255, 0.2)) !important;
+            }
             /* Hide redundant trade panel toggle icon in panels group */
             button.vela-widget-panel-trade\.panel,
             [class*="vela-widget-panel-trade.panel"] {

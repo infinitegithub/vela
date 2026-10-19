@@ -169,7 +169,7 @@ const CSS = `
     content: '';
     position: absolute;
     inset: 0;
-    border: 2px solid var(--vela-fg-bright);
+    border: 1px solid var(--vela-focus, rgba(255, 255, 255, 0.2));
     pointer-events: none;
     z-index: 10;
 }

@@ -3,13 +3,14 @@ import type { WidgetStorage } from '../src/widget';
 const PREFIX = 'vela-play:';
 
 /**
- * Intelligent hybrid remote/local storage adapter:
+ * Hybrid remote/local storage adapter:
  * - Reads synchronously from localStorage to guarantee ZERO layout flicker on boot/reload.
  * - If localStorage is empty (first load / new device), fetches asynchronously from LXC 115 backend.
- * - Saves to localStorage immediately AND synchronizes to LXC 115 backend (/api/workspace/:key) without 64KB keepalive limit.
+ * - Saves to localStorage immediately for session resilience.
+ * - Server persistence is driven by authoritative, explicit Save actions (Ctrl+S / Cloud icon)
+ *   to eliminate accidental background multi-device clobbering.
  */
 export function playgroundStorage(): WidgetStorage {
-    const setTimeouts = new Map<string, any>();
     return {
         get: (key: string): string | null | Promise<string | null> => {
             let cached: string | null = null;
@@ -29,7 +30,7 @@ export function playgroundStorage(): WidgetStorage {
                 try {
                     const controller = new AbortController();
                     const timeoutId = setTimeout(() => controller.abort(), 2500);
-                    const res = await fetch(`/api/workspace/${encodeURIComponent(key)}`, { signal: controller.signal });
+                    const res = await fetch('/api/workspace/' + encodeURIComponent(key), { signal: controller.signal });
                     clearTimeout(timeoutId);
 
                     if (res.ok) {
@@ -51,36 +52,12 @@ export function playgroundStorage(): WidgetStorage {
             try {
                 window.localStorage.setItem(PREFIX + key, value);
             } catch {}
-
-            const existing = setTimeouts.get(key);
-            if (existing) clearTimeout(existing);
-            setTimeouts.set(key, setTimeout(() => {
-                try {
-                    fetch(`/api/workspace/${encodeURIComponent(key)}`, {
-                        method: 'PUT',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: value,
-                    }).catch((err) => {
-                        console.warn('[VelaStorage] Remote persist error:', err);
-                    });
-                } catch (e) {
-                    // Best effort
-                }
-            }, 300));
         },
 
         remove: (key: string): void => {
             try {
                 window.localStorage.removeItem(PREFIX + key);
             } catch {}
-
-            try {
-                fetch(`/api/workspace/${encodeURIComponent(key)}`, {
-                    method: 'DELETE',
-                }).catch(() => {});
-            } catch (e) {
-                // Best effort
-            }
         },
     };
 }

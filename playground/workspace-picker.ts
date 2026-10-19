@@ -57,6 +57,10 @@ const K = k('<g stroke-linecap="round" stroke-linejoin="round"><path d="M2.5 4.3
 const G = 'quant-wsp-more';
 const G_SVG = '<svg viewBox="0 0 16 16" width="16" height="16" fill="currentColor" stroke="none"><circle cx="3.5" cy="8" r="1.35"/><circle cx="8" cy="8" r="1.35"/><circle cx="12.5" cy="8" r="1.35"/></svg>';
 
+
+const CLOUD_SAVE_ID = 'quant-wsp-cloud-save';
+const CLOUD_SAVE_SVG = k('<path d="M4.5 12.5h7a3 3 0 0 0 .5-5.96 4 4 0 0 0-7.8 1.16A2.8 2.8 0 0 0 4.5 12.5z" stroke-linecap="round" stroke-linejoin="round"/><path d="M8 12V7.5M6 9.5 8 7.5l2 2" stroke-linecap="round" stroke-linejoin="round"/>', 1.4);
+
 const Y = 'quant-wsp-linkglyph';
 const X = k('<g stroke-linecap="round"><path d="M6.5 9.5 9.5 6.5"/><path d="M7.5 4.5 9 3a2.5 2.5 0 0 1 3.5 3.5L11 8"/><path d="M8.5 11.5 7 13a2.5 2.5 0 0 1-3.5-3.5L5 8"/></g>', 1.4, 14);
 
@@ -76,6 +80,8 @@ export interface WorkspaceLayoutPickerSource {
     workspaces: WorkspaceItem[];
     activeId: string | null;
     preview?: boolean;
+    isDirty?: boolean;
+    saveActive?: (targetId?: string) => Promise<boolean>;
     apply: (id: string) => void | Promise<void>;
     ensureCanCreate: () => boolean;
     create: (name: string) => void | Promise<void>;
@@ -235,6 +241,7 @@ export function registerWorkspaceLayoutPicker(): () => void {
     registerIcon(H, K);
     registerIcon(G, G_SVG);
     registerIcon(Y, X);
+    registerIcon(CLOUD_SAVE_ID, CLOUD_SAVE_SVG);
 
     // 2. Register widget attachment
     const unregAtt = registerWidgetAttachment({
@@ -319,6 +326,46 @@ export function registerWorkspaceLayoutPicker(): () => void {
             const shareTopbarBtn = makeBtn('vela-bb-range quant-bb-share', { icon: $, aria: 'Share workspace', tip: 'Share workspace' });
             shareTopbarBtn.hidden = true;
             triggerBtn.after(shareTopbarBtn);
+
+            // Topbar Cloud Save Button & Unsaved Changes Dot
+            const saveTopbarBtn = makeBtn('vela-bb-range quant-bb-save', {
+                icon: CLOUD_SAVE_ID,
+                aria: 'Save workspace (Ctrl+S)',
+                tip: 'Save workspace (Ctrl+S)',
+            });
+            const unsavedDot = el('span', 'quant-unsaved-dot');
+            saveTopbarBtn.append(unsavedDot);
+            triggerBtn.after(saveTopbarBtn);
+
+            const doSave = async (targetId?: string) => {
+                if (!activeSource || !activeSource.saveActive) return;
+                const idToSave = targetId || activeSource.activeId;
+                const actName = activeSource.workspaces.find((w) => w.id === idToSave)?.name || 'Workspace';
+                const ok = await activeSource.saveActive(targetId);
+                if (ok) {
+                    ctx.toast?.(`Saved "${actName}"`, 'info');
+                    if (!targetId || targetId === activeSource.activeId) {
+                        unsavedDot.removeAttribute('data-visible');
+                        saveTopbarBtn.removeAttribute('data-dirty');
+                    }
+                } else {
+                    ctx.toast?.(`Failed saving "${actName}"`, 'error');
+                }
+            };
+
+            saveTopbarBtn.addEventListener('click', (e) => {
+                e.stopPropagation();
+                void doSave();
+            });
+
+            const handleKeydown = (e: KeyboardEvent) => {
+                if ((e.ctrlKey || e.metaKey) && (e.key === 's' || e.key === 'S')) {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    void doSave();
+                }
+            };
+            doc.defaultView?.addEventListener('keydown', handleKeydown, true);
 
             // Modal dialog root (.quant-wsp)
             const modalRoot = el('div', 'quant-wsp');
@@ -1023,6 +1070,17 @@ export function registerWorkspaceLayoutPicker(): () => void {
                     selectBtn.append(check, el('span', 'quant-wsp-dd-item-name', ws.name));
                     item.append(selectBtn);
 
+                    const saveBtn = makeBtn('quant-wsp-dd-save', {
+                        icon: CLOUD_SAVE_ID,
+                        aria: `Save current layout to ${ws.name}`,
+                        tip: `Save to ${ws.name}`,
+                        onClick: (e) => {
+                            e.stopPropagation();
+                            void doSave(ws.id);
+                        },
+                    });
+                    item.append(saveBtn);
+
                     const kebab = makeBtn('quant-wsp-dd-kebab', {
                         icon: G,
                         aria: `Actions for ${ws.name}`,
@@ -1094,6 +1152,18 @@ export function registerWorkspaceLayoutPicker(): () => void {
                 triggerBtn.setAttribute('aria-label', cur ? cur.name : 'Workspaces');
                 shareTopbarBtn.hidden = !cur || isPreview;
 
+                const isDirty = !!s?.isDirty;
+                if (isDirty) {
+                    unsavedDot.setAttribute('data-visible', '1');
+                    saveTopbarBtn.setAttribute('data-dirty', '1');
+                    saveTopbarBtn.setAttribute('aria-label', `Save ${cur?.name || 'workspace'} (Ctrl+S) - Unsaved changes`);
+                } else {
+                    unsavedDot.removeAttribute('data-visible');
+                    saveTopbarBtn.removeAttribute('data-dirty');
+                    saveTopbarBtn.setAttribute('aria-label', `Save ${cur?.name || 'workspace'} (Ctrl+S)`);
+                }
+                saveTopbarBtn.hidden = isPreview;
+
                 renderWorkspaceList();
                 if (activeShareId) renderSharePanel();
                 if (activeDeleteId) renderDeletePanel();
@@ -1113,6 +1183,8 @@ export function registerWorkspaceLayoutPicker(): () => void {
                 tooltips.length = 0;
                 popover.destroy();
                 dialog.destroy();
+                saveTopbarBtn.remove();
+                doc.defaultView?.removeEventListener('keydown', handleKeydown, true);
                 shareTopbarBtn.remove();
                 triggerBtn.remove();
                 for (const r of bbRangeButtons) r.style.display = '';
@@ -1168,8 +1240,14 @@ export function createLocalWorkspaceSource(ws: VelaWorkspace): WorkspaceLayoutPi
         return [];
     };
 
-    let isServerHydrated = false;
+    let isServerHydrated = true;
     let syncTimeout: any = null;
+    let isDirty = false;
+    let isHydratingOrBooting = false;
+    let lastSavedDocStr = '';
+    try {
+        lastSavedDocStr = JSON.stringify(ws.getState());
+    } catch (_) {}
 
     const pushToServer = (list: StoredWorkspace[], currentActiveId: string | null) => {
         if (typeof window === 'undefined') return;
@@ -1184,7 +1262,7 @@ export function createLocalWorkspaceSource(ws: VelaWorkspace): WorkspaceLayoutPi
         } catch (_) {}
     };
 
-    const saveStored = (list: StoredWorkspace[], syncRemote = true) => {
+    const saveStored = (list: StoredWorkspace[], syncRemote = false) => {
         try {
             if (typeof window !== 'undefined') {
                 window.localStorage.setItem(WORKSPACES_STORAGE_KEY, JSON.stringify(list));
@@ -1219,9 +1297,7 @@ export function createLocalWorkspaceSource(ws: VelaWorkspace): WorkspaceLayoutPi
             }
         }
         const merged = Array.from(map.values());
-        if (hasLocalWins) {
-            setTimeout(() => pushToServer(merged, activeId), 200);
-        }
+        // Do not auto-push to server on merge; server updates must only be explicit (save button / ctrl+s)
         return merged;
     };
 
@@ -1265,9 +1341,9 @@ export function createLocalWorkspaceSource(ws: VelaWorkspace): WorkspaceLayoutPi
             if (res.ok) {
                 const data = await res.json();
                 if (data && Array.isArray(data.workspaces) && data.workspaces.length > 0) {
-                    items = mergeWorkspaces(items, data.workspaces);
+                    items = data.workspaces;
                     if (data.activeId && items.some((w: StoredWorkspace) => w.id === data.activeId)) {
-                        if (!activeId) activeId = data.activeId;
+                        activeId = data.activeId;
                     } else if (!activeId || !items.some((w: StoredWorkspace) => w.id === activeId)) {
                         activeId = items[0]!.id;
                     }
@@ -1277,18 +1353,24 @@ export function createLocalWorkspaceSource(ws: VelaWorkspace): WorkspaceLayoutPi
                         window.localStorage.setItem(ACTIVE_WORKSPACE_ID_KEY, activeId);
                     }
 
-                    // On initial hydration or when explicitly requested, apply the active workspace document
+                    // On initial hydration or when explicitly requested, apply the active workspace document from server
                     const act = items.find((w: StoredWorkspace) => w.id === activeId);
-                    if (act?.document && (applyActiveDoc || (!isServerHydrated && items.length > 1))) {
+                    if (act?.document && applyActiveDoc) {
                         try {
+                            isHydratingOrBooting = true;
                             ws.applyState(act.document);
+                            lastSavedDocStr = JSON.stringify(act.document);
+                            setTimeout(() => { isHydratingOrBooting = false; }, 800);
                         } catch (err) {
                             console.warn('[Workspace] Failed applying initial state:', err);
                         }
+                    } else if (act?.document) {
+                        lastSavedDocStr = JSON.stringify(act.document);
                     }
 
                     isServerHydrated = true;
                     isHydrating = false;
+                    isDirty = false;
                     setWorkspaceLayoutPickerSource(source);
                     return;
                 }
@@ -1305,7 +1387,7 @@ export function createLocalWorkspaceSource(ws: VelaWorkspace): WorkspaceLayoutPi
 
     if (typeof window !== 'undefined') {
         const handleSync = () => {
-            if (document.visibilityState === 'visible') {
+            if (document.visibilityState === 'visible' && !isDirty) {
                 void syncFromServer(false);
             }
         };
@@ -1319,6 +1401,51 @@ export function createLocalWorkspaceSource(ws: VelaWorkspace): WorkspaceLayoutPi
         get activeId() {
             return activeId;
         },
+        get isDirty() {
+            return isDirty;
+        },
+        async saveActive(targetId?: string): Promise<boolean> {
+            const idToSave = targetId || activeId;
+            if (!idToSave) return false;
+            const target = items.find((w) => w.id === idToSave);
+            if (!target) return false;
+
+            try {
+                target.document = ws.getState();
+                target.updatedAt = new Date().toISOString();
+                saveStored(items, false);
+                if (typeof window !== 'undefined') {
+                    try {
+                        window.localStorage.setItem('vela-play:vela-workspace', JSON.stringify(target.document));
+                    } catch (_) {}
+                }
+
+                const res = await fetch('/api/workspaces', {
+                    method: 'PUT',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ activeId: idToSave, workspaces: items }),
+                });
+
+                fetch('/api/workspace/vela-workspace', {
+                    method: 'PUT',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(target.document),
+                }).catch(() => {});
+
+                if (res.ok) {
+                    if (!targetId || targetId === activeId) {
+                        isDirty = false;
+                        lastSavedDocStr = JSON.stringify(target.document);
+                    }
+                    setWorkspaceLayoutPickerSource(source);
+                    return true;
+                }
+                return false;
+            } catch (err) {
+                console.error('[Workspace] Save error:', err);
+                return false;
+            }
+        },
         ensureCanCreate() {
             return true;
         },
@@ -1326,28 +1453,20 @@ export function createLocalWorkspaceSource(ws: VelaWorkspace): WorkspaceLayoutPi
             const target = items.find((w) => w.id === id);
             if (!target) return;
 
-            // SNAPSHOT CURRENT ACTIVE WORKSPACE BEFORE SWITCHING!
-            if (activeId) {
-                const current = items.find((w) => w.id === activeId);
-                if (current) {
-                    try {
-                        current.document = ws.getState();
-                        current.updatedAt = new Date().toISOString();
-                    } catch (_) {}
-                }
-            }
-
             activeId = id;
             if (typeof window !== 'undefined') {
                 window.localStorage.setItem(ACTIVE_WORKSPACE_ID_KEY, id);
             }
-            saveStored(items, true);
+            saveStored(items, false);
 
             if (target.document) {
+                isHydratingOrBooting = true;
                 ws.applyState(target.document);
+                lastSavedDocStr = JSON.stringify(target.document);
+                setTimeout(() => { isHydratingOrBooting = false; }, 800);
             }
+            isDirty = false;
             setWorkspaceLayoutPickerSource(source);
-            pushToServer(items, activeId);
         },
         create(name: string) {
             const id = 'ws_' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
@@ -1446,14 +1565,25 @@ export function createLocalWorkspaceSource(ws: VelaWorkspace): WorkspaceLayoutPi
         },
     };
 
-    // Auto-update active workspace document on debounced state:changed
+    // Mark active workspace dirty on user changes without auto-clobbering server
     ws.on('state:changed', () => {
-        if (!activeId) return;
+        if (!activeId || isHydratingOrBooting) return;
         const target = items.find((w) => w.id === activeId);
         if (target) {
-            target.document = ws.getState();
-            target.updatedAt = new Date().toISOString();
-            saveStored(items, true);
+            const currentDoc = ws.getState();
+            target.document = currentDoc;
+            const currentDocStr = JSON.stringify(currentDoc);
+            try {
+                if (typeof window !== 'undefined') {
+                    window.localStorage.setItem('vela-play:vela-workspace', currentDocStr);
+                }
+            } catch (_) {}
+
+            const shouldBeDirty = !!lastSavedDocStr && currentDocStr !== lastSavedDocStr;
+            if (isDirty !== shouldBeDirty) {
+                isDirty = shouldBeDirty;
+                setWorkspaceLayoutPickerSource(source);
+            }
         }
     });
 

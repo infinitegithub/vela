@@ -73,6 +73,31 @@ registerPineEditor();
 registerThemeSwitcher();
 registerIndicatorExplorer();
 
+async function startVela() {
+    // Pre-flight fetch authoritative workspace from LXC 115 backend before mounting
+    try {
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 2000);
+        const res = await fetch('/api/workspaces', { signal: controller.signal });
+        clearTimeout(timeoutId);
+        if (res.ok) {
+            const data = await res.json();
+            if (data && Array.isArray(data.workspaces) && data.workspaces.length > 0) {
+                const activeId = data.activeId || data.workspaces[0].id;
+                const activeWs = data.workspaces.find((w: any) => w.id === activeId) || data.workspaces[0];
+                if (activeWs && activeWs.document) {
+                    try {
+                        window.localStorage.setItem('vela-play:vela-workspace', JSON.stringify(activeWs.document));
+                        window.localStorage.setItem('vela:workspaces-list', JSON.stringify(data.workspaces));
+                        window.localStorage.setItem('vela:active-workspace-id', activeId);
+                    } catch (_) {}
+                }
+            }
+        }
+    } catch (e) {
+        console.warn('[Workspace] Server pre-flight sync warning (using cached/fallback):', e);
+    }
+
 function getBootLayout(): string {
     try {
         if (typeof window !== 'undefined') {
@@ -296,3 +321,6 @@ if (typeof window !== 'undefined' && 'serviceWorker' in navigator && !import.met
 // Expose on window for browser console access
 (window as unknown as { __ws: VelaWorkspace }).__ws = ws;
 (window as unknown as { __refreshIndicators: () => Promise<void> }).__refreshIndicators = () => refreshWorkspaceIndicators(ws);
+}
+
+void startVela();
