@@ -144,7 +144,7 @@ export class CrosshairRenderer {
         ctx.textBaseline = 'middle';
         ctx.strokeStyle = ov?.color ?? cs.color ?? theme.textColor;
         ctx.lineWidth = ov?.width ?? cs.width;
-        ctx.globalAlpha = (ov?.opacity ?? cs.opacity) * 0.55; // a ghost — dimmer than the local crosshair
+        ctx.globalAlpha = ov?.opacity !== undefined ? ov.opacity * 0.55 : Math.min(1, Math.max(0.65, (cs.opacity ?? 0.4) * 1.5)); // ghost crosshair visibility
         setDash(ctx, ov?.style ?? cs.style);
         ctx.beginPath();
         ctx.moveTo(x, 0);

@@ -435,7 +435,7 @@ export class VelaWorkspace {
         this.timezone = boot?.timezone ?? opts.timezone ?? 'Etc/UTC';
         if (boot?.favorites) this.favs = [...boot.favorites];
         if (boot?.timeframeFavorites) this.tfFavs = [...boot.timeframeFavorites];
-        const sync = boot?.sync ?? opts.sync;
+        const sync = boot?.sync ? { ...opts.sync, ...boot.sync } : opts.sync;
         for (const kind of SYNC_KINDS) this.applySyncSetting(kind, sync?.[kind]);
         // Single-chart mode pins the grid to '1' — a persisted document's layout is
         // presentation the mode overrides, while its charts still restore (first one

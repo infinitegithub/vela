@@ -2682,7 +2682,7 @@ export class NativeRenderer implements IChartRenderer {
         // right-offset whitespace) — matches LWC emitting null off any data point.
         const logical = Math.round(this.coords.xToLogical(x));
         const onBar = logical >= 0 && logical < this.coords.barCount;
-        const time = onBar ? this.coords.logicalToTime(logical) : null;
+        const time = onBar ? this.coords.logicalToTime(logical) : (logical >= this.coords.barCount && this.coords.barCount > 0 ? this.coords.logicalToTime(this.coords.barCount - 1) : null);
         const pane = this.paneNodeAtY(y); // the full node — the event also names the pane KIND
         const price = inData && pane ? this.coords.yToPrice(y, pane.scale, pane.bounds) : null;
         const values = new Map<string, number>();
@@ -3448,8 +3448,10 @@ export class NativeRenderer implements IChartRenderer {
     private externalCrossPx(): { x: number; y: number | null; time: Millis; price: number | null; line: boolean } | null {
         const ext = this.externalCross;
         if (!ext || this.coords.barCount === 0) return null;
-        const logical = Math.floor(this.coords.timeToLogical(ext.time));
-        if (!(logical < this.coords.barCount)) return null; // past the forming bar: nothing after it
+        let logical = Math.floor(this.coords.timeToLogical(ext.time));
+        if (logical >= this.coords.barCount) {
+            logical = this.coords.barCount - 1;
+        }
         // Before the first open, or off the window: no line to draw — but a `crosshairOverride`
         // veil still covers every bar after it (all of them, when it precedes the view).
         const x = this.coords.logicalToX(Math.max(logical, -1));
