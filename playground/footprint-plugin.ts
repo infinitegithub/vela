@@ -239,71 +239,111 @@ export class FootprintRendererLayer implements RendererLayerInstance {
         ctx.rect(0, bounds.top, coords.width, chartAreaHeight);
         ctx.clip();
 
-        // A. Draw Stacked Imbalance Zones (1:1 with LiquidityMapper runs.ts)
+        const bodySpacing = coords.bodySpacing();
+        const barWidth = Math.max(6, Math.min(240, bodySpacing * 0.90));
+
+        // Dynamically compute zone mitigation against all chart bars
         for (const zone of stackedZones) {
-            const startX = coords.timeToX(zone.startTime);
-            const endX = zone.endTime ? coords.timeToX(zone.endTime) : coords.width + 4;
-            if (endX < 0 || startX > coords.width) continue;
-
-            const yTop = coords.priceToY(zone.topPrice, scale, bounds);
-            const yBottom = coords.priceToY(zone.bottomPrice, scale, bounds);
-            const zoneY = Math.min(yTop, yBottom);
-            const zoneH = Math.max(2, Math.abs(yBottom - yTop));
-            const zoneW = Math.max(4, endX - startX);
-
-            const isBuy = zone.side === 'buy';
-            const color = isBuy ? '#2ebd85' : '#f6465d';
-
-            // Faint band (alpha 0.14)
-            ctx.fillStyle = isBuy ? 'rgba(46, 189, 133, 0.14)' : 'rgba(246, 70, 93, 0.14)';
-            ctx.fillRect(startX, zoneY, zoneW, zoneH);
-
-            // Firm top and bottom boundary lines (alpha 0.60)
-            ctx.strokeStyle = isBuy ? 'rgba(46, 189, 133, 0.60)' : 'rgba(246, 70, 93, 0.60)';
-            ctx.lineWidth = 1;
-            ctx.setLineDash([]);
-            ctx.beginPath();
-            ctx.moveTo(startX, Math.round(zoneY) + 0.5);
-            ctx.lineTo(startX + zoneW, Math.round(zoneY) + 0.5);
-            ctx.moveTo(startX, Math.round(zoneY + zoneH) - 0.5);
-            ctx.lineTo(startX + zoneW, Math.round(zoneY + zoneH) - 0.5);
-            ctx.stroke();
+            if (zone.endTime !== null) continue;
+            for (let i = 0; i < args.bars.length; i++) {
+                const cb = args.bars[i]!;
+                if (cb.time <= zone.startTime) continue;
+                if (zone.side === 'buy' && cb.low <= zone.topPrice) {
+                    zone.endTime = cb.time;
+                    break;
+                } else if (zone.side === 'sell' && cb.high >= zone.bottomPrice) {
+                    zone.endTime = cb.time;
+                    break;
+                }
+            }
         }
 
-        // B. Draw Naked Points of Control (nPOC)
+        // Dynamically compute nPOC mitigation against all chart bars
         for (const np of nakedPocs) {
-            const startX = coords.timeToX(np.startTime);
-            const endX = np.mitigatedTime ? coords.timeToX(np.mitigatedTime) : coords.width;
-            if (endX < 0 || startX > coords.width) continue;
+            if (np.mitigatedTime !== null) continue;
+            for (let i = 0; i < args.bars.length; i++) {
+                const cb = args.bars[i]!;
+                if (cb.time <= np.startTime) continue;
+                if (cb.low <= np.price && cb.high >= np.price) {
+                    np.mitigatedTime = cb.time;
+                    break;
+                }
+            }
+        }
 
-            const y = Math.round(coords.priceToY(np.price, scale, bounds)) + 0.5;
-            ctx.strokeStyle = np.mitigatedTime ? 'rgba(224, 180, 0, 0.25)' : '#e0b400';
-            ctx.lineWidth = 1.2;
-            ctx.setLineDash([3, 3]);
-            ctx.beginPath();
-            ctx.moveTo(startX, y);
-            ctx.lineTo(endX, y);
-            ctx.stroke();
-            ctx.setLineDash([]);
+        // Only draw zones and POC rays when zoomed in enough (barWidth >= 28)
+        // Zoomed out charts remain clean without horizontal wireframe strips
+        if (barWidth >= 28) {
+            // A. Draw Stacked Imbalance Zones (most recent 10 active/visible zones)
+            const activeZones = stackedZones
+                .filter(z => z.endTime === null || coords.timeToX(z.endTime) > 0)
+                .slice(-10);
 
-            if (!np.mitigatedTime && endX - startX > 45) {
-                ctx.fillStyle = '#e0b400';
-                ctx.font = '9px monospace';
-                ctx.textAlign = 'right';
-                ctx.fillText(`nPOC ${np.price.toFixed(1)}`, endX - 6, y - 3);
+            for (const zone of activeZones) {
+                const startX = coords.timeToX(zone.startTime);
+                const endX = zone.endTime ? coords.timeToX(zone.endTime) : coords.width + 4;
+                if (endX < 0 || startX > coords.width || endX <= startX) continue;
+
+                const yTop = coords.priceToY(zone.topPrice, scale, bounds);
+                const yBottom = coords.priceToY(zone.bottomPrice, scale, bounds);
+                const zoneY = Math.min(yTop, yBottom);
+                const zoneH = Math.max(2, Math.abs(yBottom - yTop));
+                const zoneW = Math.max(4, endX - startX);
+
+                const isBuy = zone.side === 'buy';
+                const color = isBuy ? '#2ebd85' : '#f6465d';
+
+                ctx.fillStyle = isBuy ? 'rgba(46, 189, 133, 0.14)' : 'rgba(246, 70, 93, 0.14)';
+                ctx.fillRect(startX, zoneY, zoneW, zoneH);
+
+                ctx.strokeStyle = isBuy ? 'rgba(46, 189, 133, 0.60)' : 'rgba(246, 70, 93, 0.60)';
+                ctx.lineWidth = 1;
+                ctx.setLineDash([]);
+                ctx.beginPath();
+                ctx.moveTo(startX, Math.round(zoneY) + 0.5);
+                ctx.lineTo(startX + zoneW, Math.round(zoneY) + 0.5);
+                ctx.moveTo(startX, Math.round(zoneY + zoneH) - 0.5);
+                ctx.lineTo(startX + zoneW, Math.round(zoneY + zoneH) - 0.5);
+                ctx.stroke();
+            }
+
+            // B. Draw Naked Points of Control (most recent 8 active POC rays)
+            const activePocs = nakedPocs
+                .filter(np => np.mitigatedTime === null || coords.timeToX(np.mitigatedTime) > 0)
+                .slice(-8);
+
+            for (const np of activePocs) {
+                const startX = coords.timeToX(np.startTime);
+                const endX = np.mitigatedTime ? coords.timeToX(np.mitigatedTime) : coords.width;
+                if (endX < 0 || startX > coords.width || endX <= startX) continue;
+
+                const y = Math.round(coords.priceToY(np.price, scale, bounds)) + 0.5;
+                ctx.strokeStyle = np.mitigatedTime ? 'rgba(224, 180, 0, 0.25)' : '#e0b400';
+                ctx.lineWidth = 1.2;
+                ctx.setLineDash([3, 3]);
+                ctx.beginPath();
+                ctx.moveTo(startX, y);
+                ctx.lineTo(endX, y);
+                ctx.stroke();
+                ctx.setLineDash([]);
+
+                if (!np.mitigatedTime && endX - startX > 45) {
+                    ctx.fillStyle = '#e0b400';
+                    ctx.font = '9px monospace';
+                    ctx.textAlign = 'right';
+                    ctx.fillText(`nPOC ${np.price.toFixed(1)}`, endX - 6, y - 3);
+                }
             }
         }
 
         // --- 2. RENDER FOOTPRINT BARS ---
         // Dynamic Dyadic Row Grouping (1:1 with LiquidityMapper FootprintLod)
-        // Measures the pixel height of 1 fine step on canvas:
         const y0 = coords.priceToY(0, scale, bounds);
         const yStep = coords.priceToY(step, scale, bounds);
         const fineRowPx = Math.abs(yStep - y0);
 
         let multiplier = 1;
         if (fineRowPx > 0) {
-            // Dyadically group levels until row height reaches comfortable threshold (13px - 26px)
             while (fineRowPx * multiplier < 13 && multiplier < 4096) {
                 multiplier *= 2;
             }
@@ -355,151 +395,192 @@ export class FootprintRendererLayer implements RendererLayerInstance {
         }
         if (busiestRowVol <= 0) busiestRowVol = 1;
 
-        const bodySpacing = coords.bodySpacing();
-        const barWidth = Math.max(16, Math.min(240, bodySpacing * 0.90));
-        const showDetailedNumbers = barWidth >= 48;
+        // Progressive Level of Detail:
+        // Tier 1: barWidth < 22 -> Render clean candlesticks (no horizontal wireframe ladders!)
+        if (barWidth < 22) {
+            for (let i = 0; i < args.bars.length; i++) {
+                const chartBar = args.bars[i]!;
+                const x = coords.timeToX(chartBar.time);
+                if (x + barWidth < 0 || x - barWidth > coords.width) continue;
 
-        for (let i = 0; i < args.bars.length; i++) {
-            const chartBar = args.bars[i]!;
-            const x = coords.timeToX(chartBar.time);
-            if (x + barWidth < 0 || x - barWidth > coords.width) continue;
-
-            const fpBar = chartBarFpMap.get(chartBar.time);
-            const grpData = groupedBars.get(chartBar.time);
-
-            if (!fpBar || !grpData || grpData.levels.length === 0) {
-                // Fallback ghost candle
                 const yHigh = coords.priceToY(chartBar.high, scale, bounds);
                 const yLow = coords.priceToY(chartBar.low, scale, bounds);
                 const yOpen = coords.priceToY(chartBar.open, scale, bounds);
                 const yClose = coords.priceToY(chartBar.close, scale, bounds);
 
-                ctx.strokeStyle = "rgba(117, 120, 130, 0.3)";
+                const isUp = chartBar.close >= chartBar.open;
+                const candleColor = isUp ? '#2ebd85' : '#f6465d';
+
+                // Wick
+                ctx.strokeStyle = candleColor;
                 ctx.lineWidth = 1;
                 ctx.beginPath();
                 ctx.moveTo(x, yHigh);
                 ctx.lineTo(x, yLow);
                 ctx.stroke();
 
+                // Candle Body
                 const bodyY = Math.min(yOpen, yClose);
                 const bodyH = Math.max(2, Math.abs(yClose - yOpen));
-                ctx.fillStyle = "rgba(255, 255, 255, 0.04)";
+                ctx.fillStyle = candleColor;
                 ctx.fillRect(x - barWidth / 2, bodyY, barWidth, bodyH);
-                continue;
             }
+        } else {
+            // Tier 2 & 3 & 4: barWidth >= 22 -> Footprint volume ladder
+            const showTwoColumnNumbers = barWidth >= 82;
+            const showSingleDelta = barWidth >= 36 && barWidth < 82;
 
-            const left = x - barWidth / 2;
-            const halfWidth = barWidth / 2;
+            for (let i = 0; i < args.bars.length; i++) {
+                const chartBar = args.bars[i]!;
+                const x = coords.timeToX(chartBar.time);
+                if (x + barWidth < 0 || x - barWidth > coords.width) continue;
 
-            // Map grouped levels for diagonal lookup
-            const groupIndexMap = new Map<number, GroupedLevel>();
-            for (const g of grpData.levels) {
-                groupIndexMap.set(Math.round(g.price / effectiveStep), g);
+                const fpBar = chartBarFpMap.get(chartBar.time);
+                const grpData = groupedBars.get(chartBar.time);
+
+                if (!fpBar || !grpData || grpData.levels.length === 0) {
+                    // Fallback ghost candle
+                    const yHigh = coords.priceToY(chartBar.high, scale, bounds);
+                    const yLow = coords.priceToY(chartBar.low, scale, bounds);
+                    const yOpen = coords.priceToY(chartBar.open, scale, bounds);
+                    const yClose = coords.priceToY(chartBar.close, scale, bounds);
+
+                    ctx.strokeStyle = 'rgba(117, 120, 130, 0.3)';
+                    ctx.lineWidth = 1;
+                    ctx.beginPath();
+                    ctx.moveTo(x, yHigh);
+                    ctx.lineTo(x, yLow);
+                    ctx.stroke();
+
+                    const bodyY = Math.min(yOpen, yClose);
+                    const bodyH = Math.max(2, Math.abs(yClose - yOpen));
+                    ctx.fillStyle = 'rgba(255, 255, 255, 0.04)';
+                    ctx.fillRect(x - barWidth / 2, bodyY, barWidth, bodyH);
+                    continue;
+                }
+
+                const left = x - barWidth / 2;
+                const halfWidth = barWidth / 2;
+
+                const groupIndexMap = new Map<number, GroupedLevel>();
+                for (const g of grpData.levels) {
+                    groupIndexMap.set(Math.round(g.price / effectiveStep), g);
+                }
+
+                for (const lvl of grpData.levels) {
+                    const yTop = coords.priceToY(lvl.price + effectiveStep, scale, bounds);
+                    const yBottom = coords.priceToY(lvl.price, scale, bounds);
+                    const cellY = Math.min(yTop, yBottom);
+                    const cellH = Math.max(2, Math.abs(yBottom - yTop));
+
+                    const isPoc = (lvl.price === grpData.pocPrice);
+                    const k = Math.round(lvl.price / effectiveStep);
+
+                    // Diagonal Imbalance
+                    const lvlBelow = groupIndexMap.get(k - 1);
+                    const buyImbalance = Boolean(
+                        lvlBelow &&
+                        lvl.askVolume > 0 &&
+                        (lvlBelow.bidVolume === 0 || lvl.askVolume >= lvlBelow.bidVolume * this.imbRatio)
+                    );
+
+                    const lvlAbove = groupIndexMap.get(k + 1);
+                    const sellImbalance = Boolean(
+                        lvlAbove &&
+                        lvl.bidVolume > 0 &&
+                        (lvlAbove.askVolume === 0 || lvl.bidVolume >= lvlAbove.askVolume * this.imbRatio)
+                    );
+
+                    // Row volume bar: proportional sqrt width behind cell text
+                    const frac = barFraction(lvl.totalVolume, busiestRowVol, 'sqrt');
+                    if (frac > 0) {
+                        const rowBarW = Math.max(2, Math.min(barWidth, barWidth * frac));
+                        if (lvl.askVolume >= 1.15 * lvl.bidVolume) {
+                            ctx.fillStyle = 'rgba(46, 189, 133, 0.24)';
+                        } else if (lvl.bidVolume >= 1.15 * lvl.askVolume) {
+                            ctx.fillStyle = 'rgba(246, 70, 93, 0.24)';
+                        } else {
+                            ctx.fillStyle = 'rgba(255, 255, 255, 0.06)';
+                        }
+                        ctx.fillRect(left, cellY, rowBarW, cellH);
+                    }
+
+                    // Diagonal Imbalance Outline Rectangles
+                    if (cellH >= 3) {
+                        if (sellImbalance) {
+                            ctx.strokeStyle = '#f6465d';
+                            ctx.lineWidth = cellH >= 8 ? 1.5 : 1;
+                            ctx.strokeRect(left + 0.75, cellY + 0.75, halfWidth - 1.5, cellH - 1.5);
+                        }
+                        if (buyImbalance) {
+                            ctx.strokeStyle = '#2ebd85';
+                            ctx.lineWidth = cellH >= 8 ? 1.5 : 1;
+                            ctx.strokeRect(left + halfWidth + 0.75, cellY + 0.75, halfWidth - 1.5, cellH - 1.5);
+                        }
+                    }
+
+                    // POC Highlight border on candle
+                    if (isPoc) {
+                        ctx.strokeStyle = '#e0b400';
+                        ctx.lineWidth = 1.5;
+                        ctx.strokeRect(left + 0.5, cellY + 0.5, barWidth - 1, cellH - 1);
+                    }
+
+                    // Volume text
+                    if (cellH >= 10) {
+                        const yText = cellY + cellH / 2;
+
+                        if (showTwoColumnNumbers) {
+                            // Two columns strictly clipped to their half - NO OVERLAP!
+                            ctx.save();
+                            ctx.beginPath();
+                            ctx.rect(left, cellY, halfWidth, cellH);
+                            ctx.clip();
+                            ctx.textBaseline = 'middle';
+                            ctx.textAlign = 'right';
+                            ctx.font = sellImbalance ? 'bold 10px monospace' : '10px monospace';
+                            ctx.fillStyle = sellImbalance ? '#ff6675' : '#d1d4dc';
+                            ctx.fillText(formatVol(lvl.bidVolume), left + halfWidth - 3, yText);
+                            ctx.restore();
+
+                            ctx.save();
+                            ctx.beginPath();
+                            ctx.rect(left + halfWidth, cellY, halfWidth, cellH);
+                            ctx.clip();
+                            ctx.textBaseline = 'middle';
+                            ctx.textAlign = 'left';
+                            ctx.font = buyImbalance ? 'bold 10px monospace' : '10px monospace';
+                            ctx.fillStyle = buyImbalance ? '#32e09b' : '#d1d4dc';
+                            ctx.fillText(formatVol(lvl.askVolume), left + halfWidth + 3, yText);
+                            ctx.restore();
+                        } else if (showSingleDelta) {
+                            // Single centered Delta in candle
+                            const rowDelta = lvl.askVolume - lvl.bidVolume;
+                            ctx.textBaseline = 'middle';
+                            ctx.textAlign = 'center';
+                            ctx.font = 'bold 9px monospace';
+                            ctx.fillStyle = rowDelta >= 0 ? '#2ebd85' : '#f6465d';
+                            const sign = rowDelta > 0 ? '+' : '';
+                            ctx.fillText(`${sign}${formatVol(rowDelta)}`, left + halfWidth, yText);
+                        }
+                    }
+                }
+
+                // Wicks
+                const yHigh = coords.priceToY(chartBar.high, scale, bounds);
+                const yLow = coords.priceToY(chartBar.low, scale, bounds);
+                const grpPrices = grpData.levels.map(l => coords.priceToY(l.price, scale, bounds));
+                const topLevelY = Math.min(...grpPrices);
+                const btmLevelY = Math.max(...grpPrices);
+                ctx.strokeStyle = fpBar.delta >= 0 ? '#2ebd85' : '#f6465d';
+                ctx.lineWidth = 1;
+                ctx.beginPath();
+                ctx.moveTo(x, yHigh);
+                ctx.lineTo(x, Math.min(yHigh, topLevelY));
+                ctx.moveTo(x, Math.max(yLow, btmLevelY));
+                ctx.lineTo(x, yLow);
+                ctx.stroke();
             }
-
-            for (const lvl of grpData.levels) {
-                const yTop = coords.priceToY(lvl.price + effectiveStep, scale, bounds);
-                const yBottom = coords.priceToY(lvl.price, scale, bounds);
-                const cellY = Math.min(yTop, yBottom);
-                const cellH = Math.max(2, Math.abs(yBottom - yTop));
-
-                const isPoc = (lvl.price === grpData.pocPrice);
-                const k = Math.round(lvl.price / effectiveStep);
-
-                // Diagonal Imbalance evaluated on effective rows
-                const lvlBelow = groupIndexMap.get(k - 1);
-                const buyImbalance = Boolean(
-                    lvlBelow &&
-                    lvl.askVolume > 0 &&
-                    (lvlBelow.bidVolume === 0 || lvl.askVolume >= lvlBelow.bidVolume * this.imbRatio)
-                );
-
-                const lvlAbove = groupIndexMap.get(k + 1);
-                const sellImbalance = Boolean(
-                    lvlAbove &&
-                    lvl.bidVolume > 0 &&
-                    (lvlAbove.askVolume === 0 || lvl.bidVolume >= lvlAbove.askVolume * this.imbRatio)
-                );
-
-                // Row volume bar: proportional sqrt width behind cell text (LiquidityMapper standard)
-                const frac = barFraction(lvl.totalVolume, busiestRowVol, "sqrt");
-                if (frac > 0) {
-                    const rowBarW = Math.max(2, Math.min(barWidth, barWidth * frac));
-                    // Tint bar with dominant side color
-                    if (lvl.askVolume >= 1.15 * lvl.bidVolume) {
-                        ctx.fillStyle = "rgba(46, 189, 133, 0.24)";
-                    } else if (lvl.bidVolume >= 1.15 * lvl.askVolume) {
-                        ctx.fillStyle = "rgba(246, 70, 93, 0.24)";
-                    } else {
-                        ctx.fillStyle = "rgba(255, 255, 255, 0.06)";
-                    }
-                    ctx.fillRect(left, cellY, rowBarW, cellH);
-                }
-
-                // Diagonal Imbalance Outline Rectangles (1:1 with LiquidityMapper)
-                if (cellH >= 3) {
-                    if (sellImbalance) {
-                        ctx.strokeStyle = "#f6465d";
-                        ctx.lineWidth = cellH >= 8 ? 1.5 : 1;
-                        ctx.strokeRect(left + 0.75, cellY + 0.75, halfWidth - 1.5, cellH - 1.5);
-                    }
-                    if (buyImbalance) {
-                        ctx.strokeStyle = "#2ebd85";
-                        ctx.lineWidth = cellH >= 8 ? 1.5 : 1;
-                        ctx.strokeRect(left + halfWidth + 0.75, cellY + 0.75, halfWidth - 1.5, cellH - 1.5);
-                    }
-                }
-
-                // POC Highlight border on candle
-                if (isPoc) {
-                    ctx.strokeStyle = "#e0b400";
-                    ctx.lineWidth = 1.5;
-                    ctx.strokeRect(left + 0.5, cellY + 0.5, barWidth - 1, cellH - 1);
-                }
-
-                // Volume text (when candle has room)
-                if (cellH >= 10) {
-                    ctx.textBaseline = "middle";
-                    const yText = cellY + cellH / 2;
-
-                    if (showDetailedNumbers) {
-                        // Bid volume text (left side, right-aligned)
-                        ctx.textAlign = "right";
-                        ctx.font = sellImbalance ? "bold 10px monospace" : "10px monospace";
-                        ctx.fillStyle = sellImbalance ? "#ff6675" : "#d1d4dc";
-                        ctx.fillText(formatVol(lvl.bidVolume), left + halfWidth - 4, yText);
-
-                        // Ask volume text (right side, left-aligned)
-                        ctx.textAlign = "left";
-                        ctx.font = buyImbalance ? "bold 10px monospace" : "10px monospace";
-                        ctx.fillStyle = buyImbalance ? "#32e09b" : "#d1d4dc";
-                        ctx.fillText(formatVol(lvl.askVolume), left + halfWidth + 4, yText);
-                    } else if (barWidth >= 28) {
-                        // Intermediate zoom: show delta centered in cell
-                        const rowDelta = lvl.askVolume - lvl.bidVolume;
-                        ctx.textAlign = "center";
-                        ctx.font = "9px monospace";
-                        ctx.fillStyle = rowDelta >= 0 ? "#2ebd85" : "#f6465d";
-                        const sign = rowDelta > 0 ? "+" : "";
-                        ctx.fillText(`${sign}${formatVol(rowDelta)}`, left + halfWidth, yText);
-                    }
-                }
-            }
-
-            // High/Low Wick lines
-            const yHigh = coords.priceToY(chartBar.high, scale, bounds);
-            const yLow = coords.priceToY(chartBar.low, scale, bounds);
-            const grpPrices = grpData.levels.map(l => coords.priceToY(l.price, scale, bounds));
-            const topLevelY = Math.min(...grpPrices);
-            const btmLevelY = Math.max(...grpPrices);
-            ctx.strokeStyle = fpBar.delta >= 0 ? "#2ebd85" : "#f6465d";
-            ctx.lineWidth = 1;
-            ctx.beginPath();
-            ctx.moveTo(x, yHigh);
-            ctx.lineTo(x, Math.min(yHigh, topLevelY));
-            ctx.moveTo(x, Math.max(yLow, btmLevelY));
-            ctx.lineTo(x, yLow);
-            ctx.stroke();
         }
         ctx.restore();
 
