@@ -729,7 +729,8 @@ export class LiquidityClient {
             const url = `/api/v2/candles?inst=${encodeURIComponent(resolved.binanceInst)}&tf=${tfParam}`;
             const res = await fetch(url);
             if (!res.ok) return [];
-            const candles = await res.json() as [time: number, open: number, high: number, low: number, close: number, vol: number, takerVol: number][];
+            const data = await res.json() as any;
+            const candles: any[] = Array.isArray(data) ? data : (data?.candles || []);
             let runningCvd = 0;
             return candles.map(c => {
                 const vol = c[5] || 0;

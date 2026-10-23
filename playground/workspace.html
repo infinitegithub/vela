@@ -1,19 +1,15 @@
-<!DOcTYPE html>
+<!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
-    <title>LiquidityMapper &amp; Vela Terminal</title>
-    <meta name="description" content="LiquidityMapper Live Order Flow & LuxAlgo Vela Workstation" />
-    <meta name="theme-color" content="#0c0c0e" />
+    <title>LuxAlgo Vela Workstation — Liquidity & Technical Analysis</title>
+    <meta name="description" content="LuxAlgo Vela Workstation with 100% Genuine LiquidityMapper & Order Flow Engines" />
+    <meta name="theme-color" content="#121215" />
     <link rel="icon" href="/icons/icon.svg" type="image/svg+xml" />
     <link rel="manifest" href="/manifest.webmanifest" />
     <link rel="apple-touch-icon" href="/icons/icon-192.png" />
-    <meta name="mobile-web-app-capable" content="yes" />
-    <meta name="apple-mobile-web-app-capable" content="yes" />
-    <meta name="apple-mobile-web-app-title" content="LiquidityMapper" />
-    <meta name="apple-mobile-web-app-status-bar-style" content="default" />
-                <link rel="stylesheet" href="/quant-watchlist.css" />
+    <link rel="stylesheet" href="/quant-watchlist.css" />
     <link rel="stylesheet" href="/quant-workspace-picker.css" />
     <link rel="stylesheet" href="/quant-indicator-templates.css" />
     <style>
@@ -23,8 +19,8 @@
             width: 100%;
             height: 100%;
             overflow: hidden;
-            background: var(--bg, #0c0c0e);
-            color: var(--text, #d9e2df);
+            background: #121215;
+            color: #d9e2df;
             font-family: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
             font-variant-numeric: tabular-nums;
             user-select: none;
@@ -32,88 +28,11 @@
         }
 
         #app {
-            display: grid;
-            grid-template-columns: minmax(0, 1fr);
-            grid-template-rows: auto minmax(0, 1fr) auto;
+            width: 100vw;
             height: 100vh;
             height: 100dvh;
-            width: 100vw;
             overflow: hidden;
-        }
-
-        /* View mode switch deck integrated into Cockpit Toolbar */
-        .view-mode-deck {
-            display: inline-flex;
-            align-items: center;
-            background: var(--line, #252b2c);
-            border-radius: 4px;
-            padding: 2px;
-            gap: 2px;
-            margin-left: 6px;
-        }
-
-        .view-mode-btn {
-            background: transparent;
-            border: none;
-            color: var(--dim, #8b949e);
-            font-size: 11px;
-            font-weight: 600;
-            padding: 3px 8px;
-            border-radius: 3px;
-            cursor: pointer;
-            transition: all 0.15s ease;
-            display: inline-flex;
-            align-items: center;
-            gap: 4px;
-        }
-
-        .view-mode-btn:hover {
-            color: var(--text, #d9e2df);
-        }
-
-        .view-mode-btn.active {
-            background: var(--panel, #161b22);
-            color: var(--ui, #5b9bff);
-            box-shadow: 0 1px 3px rgba(0, 0, 0, 0.4);
-        }
-
-        /* Vela tools deck */
-        .vela-tools-deck {
-            display: inline-flex;
-            align-items: center;
-            background: var(--line, #252b2c);
-            border-radius: 4px;
-            padding: 2px;
-            gap: 2px;
-            margin-left: 6px;
-        }
-
-        .vela-tool-btn {
-            background: transparent;
-            border: none;
-            color: var(--dim, #8b949e);
-            font-size: 11px;
-            font-weight: 600;
-            padding: 3px 7px;
-            border-radius: 3px;
-            cursor: pointer;
-            transition: all 0.15s ease;
-        }
-
-        .vela-tool-btn:hover {
-            color: var(--text, #d9e2df);
-            background: rgba(255, 255, 255, 0.05);
-        }
-
-        /* Vela Workspace container docked inside chart-col */
-        .vela-workspace-container {
-            width: 100%;
-            height: 100%;
             position: relative;
-            flex: 1 1 auto;
-            min-height: 0;
-            background: var(--bg, #0c0c0e);
-            overflow: hidden;
         }
 
         #workspace {
@@ -123,29 +42,30 @@
             inset: 0;
         }
 
-        /* Hide Vela standard TradingView topbar: Cockpit toolbar controls the terminal */
+        /* Topbar styling */
         .vela-widget-topbar {
-            display: none !important;
+            background: var(--vela-bg-main, #121215) !important;
+            border-bottom: 1px solid var(--vela-border, #252b2c) !important;
         }
 
-        /* Synchronize Vela cell &amp; toolbar backgrounds with theme tokens */
+        /* Synchronize Vela cell & toolbar backgrounds with theme tokens */
         .vela-ws-grid {
-            background: var(--bg, #0c0c0e) !important;
+            background: var(--vela-bg-main, #121215) !important;
         }
         .vela-cell {
-            background: var(--bg, #0c0c0e) !important;
-            border-color: var(--line, #252b2c) !important;
+            background: var(--vela-bg-main, #121215) !important;
+            border-color: var(--vela-border, #252b2c) !important;
         }
         .vela-ws-grid[data-multi="1"] .vela-cell[data-active="1"]::after {
-            border: 1px solid var(--ui, #5b9bff) !important;
+            border: 1px solid var(--vela-ui, #5b9bff) !important;
         }
         .vela-drawing-toolbar {
-            border-right: 1px solid var(--line, #252b2c) !important;
-            background: var(--panel, #111315) !important;
+            border-right: 1px solid var(--vela-border, #252b2c) !important;
+            background: var(--vela-bg-panel, #111315) !important;
         }
         .vela-widget-bottombar {
-            border-top: 1px solid var(--line, #252b2c) !important;
-            background: var(--panel, #111315) !important;
+            border-top: 1px solid var(--vela-border, #252b2c) !important;
+            background: var(--vela-bg-panel, #111315) !important;
         }
     </style>
 </head>

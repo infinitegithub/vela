@@ -701,6 +701,7 @@ const ICONS = {
 const CATEGORIES = [
     { group: 'YOURS', id: 'favorites', label: 'Favorites', icon: ICONS.favorites, count: 0 },
     { group: 'YOURS', id: 'myscripts', label: 'My scripts', icon: ICONS.myscripts, count: 0 },
+    { group: 'BUILT-IN', id: 'liquiditymapper', label: 'Liquidity Mapper', icon: ICONS.orderflow, count: 6 },
     { group: 'BUILT-IN', id: 'basic', label: 'Basic', icon: ICONS.basic, count: 79 },
     { group: 'BUILT-IN', id: 'orderflow', label: 'Order flow', icon: ICONS.orderflow, count: 17 },
     { group: 'LIBRARY', id: 'discover', label: 'Discover', icon: ICONS.discover, count: null },
@@ -950,6 +951,34 @@ const BUILTIN_NATIVES: CatalogIndicator[] = [
         date_displayed: 'Liquidity Port',
         isNew: true,
     },
+    {
+        slug: 'native-absorption',
+        name: 'Institutional Absorption & Icebergs',
+        family: 'orderflow',
+        description: 'Detects heavy passive limit order absorption where high market volume produces narrow bar range (effort without result).',
+        tags: ['absorption', 'icebergs', 'passive walls', 'delta', 'orderflow', 'liquidity'],
+        image_url: 'https://luxalgo-production.s3.amazonaws.com/library/iclsbsi3h5dhcll7rxy1ayod.png',
+        url: '',
+        isNative: true,
+        nativeType: 'lux-liquidity-absorption',
+        isSaved: false,
+        date_displayed: 'Liquidity Port',
+        isNew: true,
+    },
+    {
+        slug: 'native-depth',
+        name: 'Order Book Depth Imbalance',
+        family: 'orderflow',
+        description: 'Normalized ratio of aggregated resting bid depth versus ask depth (-100% to +100%) indicating book pressure.',
+        tags: ['depth', 'order book', 'imbalance', 'resting liquidity', 'orderflow', 'liquidity'],
+        image_url: 'https://luxalgo-production.s3.amazonaws.com/library/iclsbsi3h5dhcll7rxy1ayod.png',
+        url: '',
+        isNative: true,
+        nativeType: 'lux-liquidity-depth',
+        isSaved: false,
+        date_displayed: 'Liquidity Port',
+        isNew: true,
+    },
 ];
 
 async function loadData(): Promise<void> {
@@ -1022,7 +1051,8 @@ export function registerIndicatorExplorer() {
     }
 }
 
-export async function openIndicatorExplorer() {
+export async function openIndicatorExplorer(initialTab?: string) {
+    if (initialTab) currentTab = initialTab;
     if (modalContainer) {
         modalContainer.remove();
         modalContainer = null;
@@ -1128,6 +1158,8 @@ export async function openIndicatorExplorer() {
             pool = [...cachedCatalog, ...savedIndicators].filter(i => favoritesSet.has(i.slug));
         } else if (currentTab === 'myscripts') {
             pool = [...savedIndicators];
+        } else if (currentTab === 'liquiditymapper') {
+            pool = BUILTIN_NATIVES.filter(b => b.nativeType && b.nativeType.startsWith('lux-liquidity-'));
         } else if (currentTab === 'basic') {
             pool = cachedCatalog.filter(i => i.family === 'trend' || i.family === 'basic');
         } else if (currentTab === 'orderflow') {

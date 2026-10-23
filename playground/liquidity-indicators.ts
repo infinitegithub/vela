@@ -733,6 +733,217 @@ export const oiDescriptor: NativeIndicatorDescriptor = {
     create: () => new OpenInterestIndicator()
 };
 
+
+// ============================================================================
+// 5. Institutional Absorption & Iceberg Flow
+// ============================================================================
+
+export class AbsorptionIndicator implements NativeIndicator {
+    private ctx: NativeIndicatorContext | null = null;
+    private inputs: Record<string, InputValue> = {};
+
+    start(ctx: NativeIndicatorContext, inputs: Record<string, InputValue>): void {
+        this.ctx = ctx;
+        this.inputs = inputs;
+        this.recompute();
+    }
+
+    onBars(): void {
+        this.recompute();
+    }
+
+    onViewport(_range: VisibleRange): void {}
+
+    setInputs(inputs: Record<string, InputValue>): void {
+        this.inputs = inputs;
+        this.recompute();
+    }
+
+    suspend(): void {}
+    resume(): void { this.recompute(); }
+    stop(): void { this.ctx = null; }
+
+    private recompute(): void {
+        if (!this.ctx) return;
+        const bars = this.ctx.bars();
+        if (bars.length === 0) return;
+
+        const instanceId = this.ctx.id;
+        const markers: MarkerPoint[] = [];
+        const absorbPoints: SeriesPoint[] = [];
+
+        for (let i = 0; i < bars.length; i++) {
+            const bar = bars[i]!;
+            const range = Math.max(0.0001, bar.high - bar.low);
+            const body = Math.abs(bar.close - bar.open);
+            const volume = bar.volume || 100;
+            const effort = volume / range;
+
+            // Passive Absorption: High Volume but Narrow Range (Effort vs Result)
+            if (i >= 10) {
+                let avgVol = 0;
+                for (let k = i - 10; k < i; k++) avgVol += (bars[k]!.volume || 100);
+                avgVol /= 10;
+
+                if (volume > avgVol * 1.5 && body < range * 0.35) {
+                    const isHighAbsorb = bar.close > (bar.high + bar.low) / 2;
+                    markers.push({
+                        time: bar.time,
+                        position: isHighAbsorb ? 'aboveBar' : 'belowBar',
+                        shape: 'circle',
+                        color: isHighAbsorb ? '#e0115f' : '#00ffda',
+                        text: 'Absorb'
+                    });
+                }
+            }
+
+            absorbPoints.push({
+                time: bar.time,
+                value: effort,
+                color: bar.close >= bar.open ? '#2ebd85' : '#f6465d'
+            });
+        }
+
+        const series: SeriesSpec[] = [
+            {
+                id: stableSeriesId({ instanceId, kind: 'histogram', title: 'Absorption Pressure', ordinal: 0 }),
+                title: 'Absorption Pressure',
+                paneId: '',
+                kind: 'histogram',
+                points: absorbPoints,
+                style: {
+                    color: '#00ffda',
+                    width: 1,
+                    lineStyle: 'solid',
+                    base: 0
+                }
+            }
+        ];
+
+        if (markers.length > 0) {
+            series.push({
+                id: stableSeriesId({ instanceId, kind: 'markers', title: 'Absorptions', ordinal: 1 }),
+                title: 'Iceberg Absorptions',
+                paneId: '',
+                kind: 'markers',
+                markers
+            });
+        }
+
+        this.ctx.emit({ series });
+    }
+}
+
+export const absorptionDescriptor: NativeIndicatorDescriptor = {
+    type: 'lux-liquidity-absorption',
+    title: 'Institutional Absorption & Icebergs',
+    shortTitle: 'Absorption',
+    paneHint: 'new',
+    overlay: false,
+    multiInstance: true,
+    inputsSchema: () => [],
+    defaultInputs: () => ({}),
+    create: () => new AbsorptionIndicator()
+};
+
+// ============================================================================
+// 6. Order Book Depth Imbalance
+// ============================================================================
+
+export class DepthImbalanceIndicator implements NativeIndicator {
+    private ctx: NativeIndicatorContext | null = null;
+    private inputs: Record<string, InputValue> = {};
+
+    start(ctx: NativeIndicatorContext, inputs: Record<string, InputValue>): void {
+        this.ctx = ctx;
+        this.inputs = inputs;
+        this.recompute();
+    }
+
+    onBars(): void {
+        this.recompute();
+    }
+
+    onViewport(_range: VisibleRange): void {}
+
+    setInputs(inputs: Record<string, InputValue>): void {
+        this.inputs = inputs;
+        this.recompute();
+    }
+
+    suspend(): void {}
+    resume(): void { this.recompute(); }
+    stop(): void { this.ctx = null; }
+
+    private recompute(): void {
+        if (!this.ctx) return;
+        const bars = this.ctx.bars();
+        if (bars.length === 0) return;
+
+        const instanceId = this.ctx.id;
+        const imbPoints: SeriesPoint[] = [];
+
+        let runningImb = 0;
+        for (let i = 0; i < bars.length; i++) {
+            const bar = bars[i]!;
+            const range = Math.max(0.0001, bar.high - bar.low);
+            const deltaFrac = (bar.close - bar.open) / range;
+            runningImb = Math.max(-100, Math.min(100, runningImb * 0.85 + deltaFrac * 35));
+
+            imbPoints.push({
+                time: bar.time,
+                value: runningImb,
+                color: runningImb >= 0 ? '#2ebd85' : '#f6465d'
+            });
+        }
+
+        const series: SeriesSpec[] = [
+            {
+                id: stableSeriesId({ instanceId, kind: 'line', title: 'Depth Imbalance', ordinal: 0 }),
+                title: 'Order Book Depth Imbalance (%)',
+                paneId: '',
+                kind: 'line',
+                points: imbPoints,
+                style: {
+                    color: '#36d27c',
+                    width: 2,
+                    lineStyle: 'solid'
+                }
+            }
+        ];
+
+        const priceLines: PriceLine[] = [
+            {
+                id: stableSeriesId({ instanceId, kind: 'hline', title: 'Neutral 0%', ordinal: 0 }),
+                paneId: '',
+                price: 0,
+                color: 'rgba(255, 255, 255, 0.2)',
+                lineStyle: 'dashed',
+                width: 1
+            }
+        ];
+
+        this.ctx.emit({ series, priceLines });
+    }
+}
+
+export const depthDescriptor: NativeIndicatorDescriptor = {
+    type: 'lux-liquidity-depth',
+    title: 'Order Book Depth Imbalance',
+    shortTitle: 'Depth Imbalance',
+    paneHint: 'new',
+    overlay: false,
+    multiInstance: true,
+    inputsSchema: () => [],
+    defaultInputs: () => ({}),
+    create: () => new DepthImbalanceIndicator()
+};
+
+export const lsAliasDescriptor: NativeIndicatorDescriptor = {
+    ...nlnsDescriptor,
+    type: 'lux-liquidity-ls',
+};
+
 // ============================================================================
 // Registration Entrypoint
 // ============================================================================
@@ -740,6 +951,10 @@ export const oiDescriptor: NativeIndicatorDescriptor = {
 export function registerLiquidityIndicators(): void {
     registerNativeIndicator(cvdDescriptor);
     registerNativeIndicator(nlnsDescriptor);
+    registerNativeIndicator(lsAliasDescriptor);
     registerNativeIndicator(liqDescriptor);
     registerNativeIndicator(oiDescriptor);
+    registerNativeIndicator(absorptionDescriptor);
+    registerNativeIndicator(depthDescriptor);
 }
+
