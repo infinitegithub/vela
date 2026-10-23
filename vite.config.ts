@@ -83,8 +83,20 @@ export default defineConfig(({ mode }) => {
                 overlay: false,
             },
             proxy: {
+                '/api/liquidity': {
+                    target: 'http://127.0.0.1:8787',
+                    rewrite: (path: string) => path.replace(/^\/api\/liquidity/, '/api/v2'),
+                    changeOrigin: true,
+                    ws: true,
+                },
+                '/api/v2': {
+                    target: 'http://127.0.0.1:8787',
+                    changeOrigin: true,
+                    ws: true,
+                },
                 '/api/footprint': {
-                    target: 'http://127.0.0.1:3101',
+                    target: 'http://127.0.0.1:8787',
+                    rewrite: (path: string) => path.replace(/^\/api\/footprint/, '/api/v2/footprint'),
                     changeOrigin: true,
                     ws: true,
                 },

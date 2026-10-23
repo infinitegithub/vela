@@ -14,6 +14,8 @@ import { addSampleMarks } from './marks';
 import { registerClassicIndicators } from '../src/core/native-indicators/classics';
 import { registerTradingLinesLayer } from './trading-lines';
 import { registerFootprintPlugin } from './footprint-plugin';
+import { registerLiquidityIndicators } from './liquidity-indicators';
+import { registerLiquidityDomPanel } from './liquidity-dom-panel';
 import {
     registerWatchlistSidePanel,
     setWatchlistWorkspaceInstance,
@@ -64,6 +66,8 @@ registerIndicatorTemplatesPicker();
 registerClassicIndicators();
 registerTradingLinesLayer();
 registerFootprintPlugin();
+registerLiquidityIndicators();
+registerLiquidityDomPanel();
 registerWatchlistSidePanel();
 registerAlertsSidePanel();
 registerTradingSidePanel();
