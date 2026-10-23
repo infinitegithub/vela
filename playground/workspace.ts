@@ -1,3 +1,7 @@
+import { applyTheme } from "./liquidity/theme";
+import { CockpitToolbar } from "./liquidity/cockpit-toolbar";
+import { StatusBarController } from "./liquidity/statusbar";
+import { DomLadderPanelController } from "./liquidity-dom-panel";
 import { applyThemeTokens } from "../src/ui/tokens";
 import { resolveTheme, DARK_THEME } from "../src/core/theme";
 import './quant-watchlist.css';
@@ -120,6 +124,14 @@ registerWidgetAction({
 });
 
 async function startVela() {
+    // 1. Initialize authentic LiquidityMapper theme (Darker / Editor frame)
+    try {
+        const saved = (typeof window !== 'undefined' && window.localStorage.getItem('hlm-theme')) || 'darker';
+        applyTheme(saved);
+    } catch (e) {
+        console.warn('[Theme] Initial apply warning:', e);
+    }
+
     // Pre-flight fetch authoritative workspace from LXC 115 backend before mounting
     try {
         const controller = new AbortController();
@@ -233,6 +245,184 @@ setThemeWorkspaceInstance(ws);
 setExplorerWorkspaceInstance(ws);
 createLocalWorkspaceSource(ws);
 createLocalIndicatorTemplatesSource(ws);
+
+// ── LiquidityMapper Cockpit, 3-Column Layout & DOM Ladder Mount ─────────────
+function initSplitters(): void {
+    const sideSplitter = document.getElementById("side-splitter");
+    const sideCol = document.getElementById("side-column");
+    if (sideSplitter && sideCol) {
+        let startX = 0;
+        let startW = 0;
+        const onMouseMove = (e: MouseEvent) => {
+            const dx = e.clientX - startX;
+            const newW = Math.max(260, Math.min(650, startW - dx));
+            sideCol.style.width = `${newW}px`;
+            sideCol.style.flex = `0 0 ${newW}px`;
+            window.dispatchEvent(new Event("resize"));
+        };
+        const onMouseUp = () => {
+            sideSplitter.classList.remove("active");
+            window.removeEventListener("mousemove", onMouseMove);
+            window.removeEventListener("mouseup", onMouseUp);
+        };
+        sideSplitter.addEventListener("mousedown", (e) => {
+            e.preventDefault();
+            startX = e.clientX;
+            startW = sideCol.getBoundingClientRect().width;
+            sideSplitter.classList.add("active");
+            window.addEventListener("mousemove", onMouseMove);
+            window.addEventListener("mouseup", onMouseUp);
+        });
+    }
+
+    const flowSplitter = document.getElementById("flow-splitter");
+    const flowCol = document.getElementById("flow-column");
+    if (flowSplitter && flowCol) {
+        let startX = 0;
+        let startW = 0;
+        const onMouseMove = (e: MouseEvent) => {
+            const dx = e.clientX - startX;
+            const newW = Math.max(200, Math.min(500, startW + dx));
+            flowCol.style.width = `${newW}px`;
+            flowCol.style.flex = `0 0 ${newW}px`;
+            window.dispatchEvent(new Event("resize"));
+        };
+        const onMouseUp = () => {
+            flowSplitter.classList.remove("active");
+            window.removeEventListener("mousemove", onMouseMove);
+            window.removeEventListener("mouseup", onMouseUp);
+        };
+        flowSplitter.addEventListener("mousedown", (e) => {
+            e.preventDefault();
+            startX = e.clientX;
+            startW = flowCol.getBoundingClientRect().width;
+            flowSplitter.classList.add("active");
+            window.addEventListener("mousemove", onMouseMove);
+            window.addEventListener("mouseup", onMouseUp);
+        });
+    }
+}
+
+initSplitters();
+
+// Mount DOM Ladder in Side Column
+const sideColEl = document.getElementById("side-column");
+let domLadderCtrl: DomLadderPanelController | null = null;
+if (sideColEl) {
+    try {
+        domLadderCtrl = new DomLadderPanelController(sideColEl);
+    } catch (e) {
+        console.warn("[DOM Ladder] Mount warning:", e);
+    }
+}
+
+// Mount Status Bar
+const statusbarHost = document.getElementById("app-statusbar");
+let statusBarCtrl: StatusBarController | null = null;
+if (statusbarHost) {
+    try {
+        statusBarCtrl = new StatusBarController(statusbarHost);
+        LiquidityClient.get().onTick((price) => {
+            statusBarCtrl?.updateMark(price);
+        });
+    } catch (e) {
+        console.warn("[StatusBar] Mount warning:", e);
+    }
+}
+
+// Mount Cockpit Toolbar
+const toolbarHost = document.getElementById("cockpit-toolbar");
+let cockpitToolbar: CockpitToolbar | null = null;
+if (toolbarHost) {
+    try {
+        cockpitToolbar = new CockpitToolbar(toolbarHost, {
+            activeCoin: "BTC",
+            activeTimeframe: "1h",
+            activePriceStyle: "candles",
+            onCoinChange: (coin) => {
+                const sym = coin + "USDT";
+                if (ws.active) {
+                    ws.active.setSymbol(sym);
+                }
+                domLadderCtrl?.setSymbol(sym);
+            },
+            onTimeframeChange: (tf) => {
+                const map: Record<string, string> = {
+                    "1s": "1S", "5s": "5S", "15s": "15S",
+                    "1m": "1", "5m": "5", "15m": "15", "30m": "30",
+                    "1h": "60", "4h": "240", "1d": "D"
+                };
+                if (ws.active) {
+                    ws.active.setTimeframe(map[tf] || tf);
+                }
+            },
+            onPriceStyleChange: (style) => {
+                if (ws.active) {
+                    ws.active.setPriceStyle(style);
+                    if (style === "footprint") {
+                        try {
+                            const chart = ws.active.chart;
+                            const native: any = (chart?.renderer as any)?.renderer;
+                            if (native && typeof native.applyViewport === "function") {
+                                const vp = native.coords?.getViewport?.();
+                                if (!vp || vp.barSpacing < 70) {
+                                    native.applyViewport({ barSpacing: 95, rightOffset: 5 });
+                                }
+                            }
+                        } catch (_) {}
+                    }
+                }
+            },
+            onToggleBook: (show) => {
+                const side = document.getElementById("side-column");
+                const split = document.getElementById("side-splitter");
+                if (side) side.style.display = show ? "flex" : "none";
+                if (split) split.style.display = show ? "block" : "none";
+                window.dispatchEvent(new Event("resize"));
+            },
+            onToggleFlow: (show) => {
+                const flow = document.getElementById("flow-column");
+                const split = document.getElementById("flow-splitter");
+                if (flow) flow.style.display = show ? "flex" : "none";
+                if (split) split.style.display = show ? "block" : "none";
+                window.dispatchEvent(new Event("resize"));
+            },
+            onToggleStats: (show) => {
+                const lower = document.getElementById("lower-panes");
+                const split = document.getElementById("lower-splitter");
+                if (lower) lower.style.display = show ? "flex" : "none";
+                if (split) split.style.display = show ? "block" : "none";
+                window.dispatchEvent(new Event("resize"));
+            },
+            onRecenter: () => {
+                try {
+                    const chart = ws.active.chart;
+                    const native: any = (chart?.renderer as any)?.renderer;
+                    if (native && typeof native.applyViewport === "function") {
+                        native.applyViewport({ rightOffset: 5 });
+                    }
+                } catch (_) {}
+            },
+            onThemeChange: (theme) => {
+                statusBarCtrl?.updateTheme(theme);
+            }
+        });
+    } catch (e) {
+        console.warn("[CockpitToolbar] Mount warning:", e);
+    }
+}
+
+// Keep Cockpit Toolbar synchronized with active cell
+ws.on("cell:active", ({ id }) => {
+    const cell = ws.cell(id);
+    if (cell) {
+        const sym = cell.chart.symbol || "BTCUSDT";
+        const base = sym.replace(/USDT$|USD$|-PERP$/, "");
+        cockpitToolbar?.setCoin(base);
+        cockpitToolbar?.setPriceStyle(cell.chart.priceStyle || "candles");
+    }
+});
+
 
 // 4. Mount bottom account drawer (starts collapsed at 28px)
 mountBottomAccountStrip(ws);

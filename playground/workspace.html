@@ -1,125 +1,160 @@
 <!doctype html>
-<html lang="en">
+<html lang="en" data-frame="editor" data-theme="dark">
     <head>
         <meta charset="utf-8" />
-        <meta name="viewport" content="width=device-width, initial-scale=1" />
-        <title>Velo Terminal — LuxAlgo Vela</title>
-        <meta name="description" content="LuxAlgo Vela Multi-Pane Financial Charting Workstation" />
-        <meta name="theme-color" content="#202126" />
+        <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+        <title>LiquidityMapper & Vela Terminal</title>
+        <meta name="description" content="LiquidityMapper Order Flow & LuxAlgo Vela Financial Workstation" />
+        <meta name="theme-color" content="#0c0c0e" />
         <meta name="apple-mobile-web-app-capable" content="yes" />
-        <meta name="apple-mobile-web-app-title" content="Vela" />
+        <meta name="apple-mobile-web-app-title" content="LiquidityMapper" />
         <meta name="mobile-web-app-capable" content="yes" />
         <link rel="manifest" href="/manifest.webmanifest" />
         <link rel="apple-touch-icon" href="/icons/apple-touch-icon.png" />
         <link rel="icon" type="image/png" sizes="192x192" href="/icons/icon-192.png" />
+        <link rel="stylesheet" href="./liquidity/styles.css" />
+        <link rel="stylesheet" href="./liquidity/chrome.css" />
         <style>
             html,
             body {
                 margin: 0;
                 height: 100%;
-                background: #202126;
+                background: var(--bg, #0c0c0e);
+                color: var(--text, #d9e2df);
                 overflow: hidden;
-                display: flex;
-                flex-direction: column;
-                -webkit-touch-callout: none;
+                font-family: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+                font-variant-numeric: tabular-nums;
                 user-select: none;
-            }
-            #workspace {
-                flex: 1;
-                position: relative;
-                width: 100%;
-                min-height: 0;
+                -webkit-touch-callout: none;
             }
 
-            /* Muted 1px active-cell highlight adhering to current theme */
-            .vela-ws-grid[data-multi='1'] .vela-cell[data-active='1']::after {
-                border: 1px solid var(--vela-focus, rgba(255, 255, 255, 0.2)) !important;
+            #app {
+                display: grid;
+                grid-template-columns: minmax(0, 1fr);
+                grid-template-rows: auto minmax(0, 1fr) auto;
+                height: 100vh;
+                height: 100dvh;
+                width: 100vw;
+                overflow: hidden;
             }
-            /* Hide redundant trade panel toggle icon in panels group */
-            button.vela-widget-panel-trade\.panel,
-            [class*="vela-widget-panel-trade.panel"] {
+
+            /* Hide Vela standard TradingView topbar: Cockpit toolbar controls the entire terminal */
+            .vela-widget-topbar {
                 display: none !important;
             }
 
-            /* Independent Order Ticket Panel */
-            .vela-order-ticket-panel {
-                position: relative;
-                width: 0;
-                min-width: 0;
-                flex: none;
-                border-left: 1px solid var(--vela-border, #262629);
-                display: none;
-                flex-direction: column;
-                color: var(--vela-fg, #eeeef1);
-                font-size: 13px;
-                box-sizing: border-box;
-                background: var(--vela-bg-panel, #121215);
-                z-index: 20;
+            /* Workspace grid & cells match theme */
+            .vela-ws-grid {
+                background: var(--bg, #0c0c0e) !important;
+            }
+            .vela-cell {
+                background: var(--bg, #0c0c0e) !important;
+                border-color: var(--line, #252b2c) !important;
+            }
+            .vela-ws-grid[data-multi="1"] .vela-cell[data-active="1"]::after {
+                border: 1px solid var(--ui, #5b9bff) !important;
+            }
+
+            /* Vela toolbar & rangebar adhere to theme panel */
+            .vela-drawing-toolbar {
+                border-right: 1px solid var(--line, #252b2c) !important;
+                background: var(--panel, #111315) !important;
+            }
+            .vela-widget-bottombar {
+                border-top: 1px solid var(--line, #252b2c) !important;
+                background: var(--panel, #111315) !important;
+            }
+
+            /* 3-Column main layout */
+            #app-main {
+                display: flex;
+                flex-direction: row;
+                flex: 1 1 auto;
+                min-height: 0;
+                width: 100%;
                 overflow: hidden;
-                transition: width 0.18s cubic-bezier(0.16, 1, 0.3, 1);
+                position: relative;
             }
-            .vela-order-ticket-panel.open {
+
+            .chart-col {
+                flex: 1 1 auto;
                 display: flex;
+                flex-direction: column;
+                min-width: 0;
+                min-height: 0;
+                height: 100%;
+                position: relative;
             }
-            .vela-order-ticket-header {
-                display: flex;
-                align-items: center;
-                gap: 8px;
-                padding: 10px 10px 10px 14px;
-                border-bottom: 1px solid var(--vela-border, #262629);
-                font-size: 14px;
-                font-weight: 600;
-                color: var(--vela-fg-bright, #eeeef1);
-                flex: none;
-                background: var(--vela-bg-panel, #121215);
+
+            #workspace {
+                flex: 1 1 auto;
+                position: relative;
+                width: 100%;
+                height: 100%;
+                min-height: 0;
             }
-            .vela-order-ticket-title {
-                font-size: 14px;
-                font-weight: 600;
-                color: var(--vela-fg-bright, #eeeef1);
-            }
-            .vela-order-ticket-close {
-                all: unset;
-                cursor: pointer;
-                width: 26px;
-                height: 26px;
-                display: inline-flex;
-                align-items: center;
-                justify-content: center;
-                border-radius: 4px;
-                color: var(--vela-fg-muted, #757882);
-                font-size: 15px;
-                transition: all 0.12s ease;
-            }
-            .vela-order-ticket-close:hover {
-                background: var(--vela-hover, #232429);
-                color: var(--vela-fg-bright, #eeeef1);
-            }
-            .vela-order-ticket-body {
-                flex: 1;
-                overflow-y: auto;
-                overflow-x: hidden;
-                min-width: 280px;
-                background: var(--vela-bg-panel, #121215);
-            }
-            .vela-order-ticket-resizer {
-                position: absolute;
-                top: 0;
-                bottom: 0;
-                left: -3px;
-                width: 7px;
+
+            /* Splitters between columns */
+            .splitter.v {
+                width: 5px;
+                background: var(--panel, #111315);
+                border-left: 1px solid var(--line, #252b2c);
+                border-right: 1px solid var(--line, #252b2c);
                 cursor: col-resize;
-                touch-action: none;
-                z-index: 25;
+                flex: 0 0 5px;
+                user-select: none;
+                transition: background 0.15s;
+                z-index: 5;
             }
-            .vela-order-ticket-resizer:hover,
-            .vela-order-ticket-resizer.dragging {
-                background: var(--vela-separator-hover-line, #3b82f6);
+            .splitter.v:hover, .splitter.v.active {
+                background: var(--ui, #5b9bff);
+            }
+
+            .splitter.h {
+                height: 5px;
+                background: var(--panel, #111315);
+                border-top: 1px solid var(--line, #252b2c);
+                border-bottom: 1px solid var(--line, #252b2c);
+                cursor: row-resize;
+                flex: 0 0 5px;
+                user-select: none;
+                transition: background 0.15s;
+                z-index: 5;
+            }
+            .splitter.h:hover, .splitter.h.active {
+                background: var(--ui, #5b9bff);
+            }
+
+            /* DOM Side column styling */
+            .side-col {
+                display: flex;
+                flex-direction: column;
+                min-width: 240px;
+                max-width: 600px;
+                height: 100%;
+                background: var(--panel, #111315);
+                overflow: hidden;
+                position: relative;
+                z-index: 4;
             }
         </style>
     </head>
     <body>
-        <div id="workspace"></div>
+        <div id="app">
+            <header class="toolbar cockpit" id="cockpit-toolbar"></header>
+            <main id="app-main">
+                <div class="flow-col" id="flow-column" style="display: none; width: 280px; flex: 0 0 280px; background: var(--panel, #111315); border-right: 1px solid var(--line, #252b2c);"></div>
+                <div class="splitter v" id="flow-splitter" style="display: none;"></div>
+                <div class="chart-col" id="chart-column">
+                    <div id="workspace"></div>
+                    <div class="splitter h" id="lower-splitter" style="display: none;"></div>
+                    <div class="lower-panes-strip" id="lower-panes" style="display: none; height: 180px; flex: 0 0 180px; background: var(--panel, #111315); border-top: 1px solid var(--line, #252b2c);"></div>
+                </div>
+                <div class="splitter v" id="side-splitter"></div>
+                <div class="side-col" id="side-column" style="width: 380px; flex: 0 0 380px;"></div>
+            </main>
+            <footer class="statusbar" id="app-statusbar"></footer>
+        </div>
         <script type="module" src="./workspace.ts"></script>
     </body>
 </html>

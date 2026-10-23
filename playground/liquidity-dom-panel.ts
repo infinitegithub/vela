@@ -129,8 +129,8 @@ export class DomLadderPanelController {
                 flex-direction: column;
                 height: 100%;
                 width: 100%;
-                background: #121316;
-                color: #d1d4dc;
+                background: var(--panel, #111315);
+                color: var(--text, #d9e2df);
                 font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
                 font-size: 11px;
                 user-select: none;
@@ -142,8 +142,8 @@ export class DomLadderPanelController {
                 flex-direction: column;
                 gap: 6px;
                 padding: 8px 10px;
-                background: #16181d;
-                border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+                background: var(--title, #17171b);
+                border-bottom: 1px solid var(--line, #252b2c);
                 flex-shrink: 0;
             }
             .vela-dom-mark-row {
@@ -161,8 +161,8 @@ export class DomLadderPanelController {
                 font-size: 9px;
                 padding: 2px 6px;
                 border-radius: 3px;
-                background: rgba(46, 189, 133, 0.18);
-                color: #2ebd85;
+                background: color-mix(in srgb, var(--bid, #28cf72) 18%, transparent);
+                color: var(--bid, #28cf72);
                 font-weight: 700;
                 letter-spacing: 0.04em;
             }
@@ -177,12 +177,12 @@ export class DomLadderPanelController {
                 align-items: center;
                 gap: 4px;
                 font-size: 10px;
-                color: #8c909e;
+                color: var(--muted, #7d8785);
             }
             .vela-dom-select {
-                background: #20222a;
-                color: #e0e2e8;
-                border: 1px solid rgba(255, 255, 255, 0.12);
+                background: var(--face, #141618);
+                color: var(--text, #d9e2df);
+                border: 1px solid var(--edge, #252b2c);
                 border-radius: 3px;
                 padding: 2px 4px;
                 font-size: 10px;
@@ -194,9 +194,9 @@ export class DomLadderPanelController {
                 border-color: rgba(255, 255, 255, 0.25);
             }
             .vela-dom-btn {
-                background: #252833;
-                color: #d1d4dc;
-                border: 1px solid rgba(255, 255, 255, 0.12);
+                background: var(--face, #141618);
+                color: var(--text, #d9e2df);
+                border: 1px solid var(--edge, #252b2c);
                 border-radius: 3px;
                 padding: 2px 7px;
                 font-size: 10px;
@@ -218,17 +218,17 @@ export class DomLadderPanelController {
                 display: flex;
                 justify-content: space-between;
                 font-size: 9px;
-                color: #8c909e;
+                color: var(--muted, #7d8785);
             }
             .vela-dom-balance-bar {
                 height: 4px;
                 border-radius: 2px;
-                background: #f6465d;
+                background: var(--ask, #f05d67);
                 overflow: hidden;
                 display: flex;
             }
             .vela-dom-balance-fill {
-                background: #2ebd85;
+                background: var(--bid, #28cf72);
                 height: 100%;
                 width: 50%;
                 transition: width 0.2s ease-out;
