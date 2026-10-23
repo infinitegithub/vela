@@ -1,12 +1,46 @@
-import { applyTheme } from "./liquidity/theme";
-import { CockpitToolbar } from "./liquidity/cockpit-toolbar";
-import { StatusBarController } from "./liquidity/statusbar";
-import { DomLadderPanelController } from "./liquidity-dom-panel";
-import { applyThemeTokens } from "../src/ui/tokens";
-import { resolveTheme, DARK_THEME } from "../src/core/theme";
-import './quant-watchlist.css';
-import type { Vela } from '../src';
-import { registerSW } from 'virtual:pwa-register';
+import './hlm/app/styles.css';
+import './hlm/app/mobile.css';
+import './hlm/app/chrome.css';
+// LiquidityMapper & LuxAlgo Vela Workstation: 100% Authentic Integration
+import { Hub } from './hlm/app/hub.ts';
+import { ServerSource } from './hlm/app/server-source.ts';
+import { BrowserSource } from './hlm/app/browser-source.ts';
+import { chooseCoin, currentCoin, forCoin, keepCoinRecordings, scaledUsd, type CoinChoice } from './hlm/app/coin.ts';
+import { withAnchor } from './hlm/app/vwap/settings.ts';
+import type { DataSource } from './hlm/app/source.ts';
+import { loadKernels } from './hlm/app/kernels.ts';
+import { Store, initialState } from './hlm/app/store.ts';
+import { applyTheme } from './hlm/app/theme.ts';
+import { UiGlass } from './hlm/app/glass/ui-glass.ts';
+import { Sounds } from './hlm/app/sound/sounds.ts';
+import { Alerts } from './hlm/app/sound/alerts.ts';
+import { Toolbar } from './hlm/app/toolbar.ts';
+import { StatusBar } from './hlm/app/statusbar.ts';
+import { setTimeZone } from './hlm/app/format.ts';
+import { installTips } from './hlm/app/tip.ts';
+import { installTouchSelects } from './hlm/app/touch-select.ts';
+import { lazy, preload } from './hlm/app/lazy.ts';
+import { ScreenWake } from './hlm/app/wake.ts';
+import { HeatPane, gutter, leftGutter } from './hlm/app/panes/heat-pane.ts';
+import { LadderPane } from './hlm/app/panes/ladder-pane.ts';
+import { CvdPane } from './hlm/app/panes/cvd-pane.ts';
+import { BarStatsPane, DepthPane, LtPane, OiPane } from './hlm/app/panes/lower-panes.ts';
+import { DeltaPane } from './hlm/app/panes/delta-pane.ts';
+import { LsPane } from './hlm/app/panes/ls-pane.ts';
+import { CandlePane } from './hlm/app/panes/candle-pane.ts';
+import { matchShortcut, togglePatch } from './hlm/app/shortcuts.ts';
+import { ReplayBar } from './hlm/app/replay/bar.ts';
+import { replaying } from './hlm/app/replay/clock.ts';
+import { topShown } from './hlm/app/measures/strip.ts';
+import { tableHeight } from './hlm/app/panes/bar-stats.ts';
+import { Layout } from './hlm/app/layout.ts';
+import { Dock } from './hlm/app/dock.ts';
+import { RangeTool } from './hlm/app/range/tool.ts';
+import { startDevice, onLayoutMode, isPhone } from './hlm/app/device.ts';
+import { loadLanguage } from './hlm/app/i18n-load.ts';
+import { useMarkets } from './hlm/app/venue-marks.ts';
+
+// Vela Workstation imports
 import { VelaWorkspace } from '../src/workspace';
 import { BinanceProvider } from '../src/data/providers/binance';
 import { CoinbaseProvider } from '../src/data/providers/coinbase';
@@ -14,14 +48,10 @@ import { HyperliquidProvider } from '../src/data/providers/hyperliquid';
 import { PineWorkerEngine } from '@luxalgo/vela-pinets';
 import { DemoEngine } from './demo-engine';
 import { playgroundStorage } from './persistence';
-import { addSampleMarks } from './marks';
 import { registerClassicIndicators } from '../src/core/native-indicators/classics';
+import { widgetActions } from '../src/widget/contributions';
 import { registerTradingLinesLayer } from './trading-lines';
 import { registerFootprintPlugin } from './footprint-plugin';
-import { registerWidgetAction } from '../src/plugin';
-import { LiquidityClient } from './liquidity-client';
-import { registerLiquidityIndicators } from './liquidity-indicators';
-import { registerLiquidityDomPanel } from './liquidity-dom-panel';
 import {
     registerWatchlistSidePanel,
     setWatchlistWorkspaceInstance,
@@ -40,7 +70,6 @@ import {
     setWorkspaceInstance,
     mountBottomAccountStrip,
     setActiveSymbol,
-    refreshWorkspaceIndicators,
 } from './trade-suite';
 import {
     registerTemplateManager,
@@ -54,6 +83,7 @@ import {
 import {
     registerIndicatorExplorer,
     setExplorerWorkspaceInstance,
+    openIndicatorExplorer,
 } from './indicator-explorer';
 import { registerIndicatorsPersistence } from './indicators-persistence';
 import {
@@ -64,16 +94,16 @@ import {
     registerIndicatorTemplatesPicker,
     createLocalIndicatorTemplatesSource,
 } from './indicator-templates';
+import { applyThemeTokens } from '../src/ui/tokens';
+import { resolveTheme, DARK_THEME } from '../src/core/theme';
 
-// 1. Register Extensions
+// Register Vela plugins
 registerIndicatorsPersistence();
 registerWorkspaceLayoutPicker();
 registerIndicatorTemplatesPicker();
 registerClassicIndicators();
 registerTradingLinesLayer();
 registerFootprintPlugin();
-registerLiquidityIndicators();
-registerLiquidityDomPanel();
 registerWatchlistSidePanel();
 registerAlertsSidePanel();
 registerTradingSidePanel();
@@ -83,123 +113,117 @@ registerPineEditor();
 registerThemeSwitcher();
 registerIndicatorExplorer();
 
-// Quick topbar button to toggle Footprint chart style
-registerWidgetAction({
-    id: 'footprint.toggle',
-    target: 'topbar',
-    align: 'left',
-    order: 22,
-    label: 'Footprint',
-    run: (ctx) => {
-        const next = ctx.priceStyle === 'footprint' ? 'candles' : 'footprint';
-        ctx.setPriceStyle(next);
-        if (next === 'footprint') {
-            try {
-                const chart = ctx.chart;
-                const native: any = (chart?.renderer as any)?.renderer;
-                if (native && typeof native.applyViewport === 'function') {
-                    const vp = native.coords?.getViewport?.();
-                    if (!vp || vp.barSpacing < 70) {
-                        native.applyViewport({ barSpacing: 95, rightOffset: 5 });
-                    }
-                }
-            } catch (e) {
-                console.warn('[Footprint] Auto-frame failed:', e);
-            }
-        }
-        ctx.toast(next === 'footprint' ? 'Switched to Footprint (Order Flow)' : 'Switched to Candlesticks');
-    }
-});
-
-// Quick topbar button to toggle DOM Ladder
-registerWidgetAction({
-    id: 'domladder.toggle',
-    target: 'topbar',
-    align: 'left',
-    order: 23,
-    label: 'DOM Ladder',
-    run: (ctx) => {
-        ctx.togglePanel('liquidity.dom');
-    }
-});
-
-async function startVela() {
-    // 1. Initialize authentic LiquidityMapper theme (Darker / Editor frame)
-    try {
-        const saved = (typeof window !== 'undefined' && window.localStorage.getItem('hlm-theme')) || 'darker';
-        applyTheme(saved);
-    } catch (e) {
-        console.warn('[Theme] Initial apply warning:', e);
-    }
-
-    // Pre-flight fetch authoritative workspace from LXC 115 backend before mounting
-    try {
-        const controller = new AbortController();
-        const timeoutId = setTimeout(() => controller.abort(), 2000);
-        const res = await fetch('/api/workspaces', { signal: controller.signal });
-        clearTimeout(timeoutId);
-        if (res.ok) {
-            const data = await res.json();
-            if (data && Array.isArray(data.workspaces) && data.workspaces.length > 0) {
-                const activeId = data.activeId || data.workspaces[0].id;
-                const activeWs = data.workspaces.find((w: any) => w.id === activeId) || data.workspaces[0];
-                if (activeWs && activeWs.document) {
-                    try {
-                        window.localStorage.setItem('vela-play:vela-workspace', JSON.stringify(activeWs.document));
-                        window.localStorage.setItem('vela:workspaces-list', JSON.stringify(data.workspaces));
-                        window.localStorage.setItem('vela:active-workspace-id', activeId);
-                    } catch (_) {}
-                }
-            }
-        }
-    } catch (e) {
-        console.warn('[Workspace] Server pre-flight sync warning (using cached/fallback):', e);
-    }
-
-function getBootLayout(): string {
-    try {
-        if (typeof window !== 'undefined') {
-            const raw = window.localStorage.getItem('vela-play:vela-workspace');
-            if (raw) {
-                const parsed = JSON.parse(raw);
-                if (parsed && typeof parsed.layout === 'string') {
-                    return parsed.layout;
-                }
-            }
-            const tplCache = window.localStorage.getItem('vela-play:templates-cache');
-            if (tplCache) {
-                const tpls = JSON.parse(tplCache);
-                if (Array.isArray(tpls)) {
-                    const def = tpls.find((t: any) => t.isDefault);
-                    if (def?.layout && typeof def.layout === 'string') {
-                        return def.layout;
-                    }
-                }
-            }
-        }
-    } catch {}
-    return '1';
+async function serverAnswers(): Promise<boolean> {
+  try {
+    const response = await fetch('/api/v2/state', { signal: AbortSignal.timeout(1_500), cache: 'no-store' });
+    return response.ok && (response.headers.get('content-type') ?? '').includes('json');
+  } catch { return false; }
 }
 
-// 2. Instantiate the multi-chart VelaWorkspace
-const ws = new VelaWorkspace('#workspace', {
-    layout: getBootLayout(), // Restores saved/default layout immediately with zero flicker
-    symbol: 'BTCUSDT',
-    timeframe: '60',
+async function chooseSource(params: URLSearchParams, choice: CoinChoice): Promise<DataSource> {
+  const wanted = params.get('source');
+  if (choice.coin.coin === 'BTC' && (wanted === 'server' || (wanted !== 'browser' && await serverAnswers()))) {
+    return new ServerSource();
+  }
+  return new BrowserSource(new Worker(new URL('./hlm/app/browser/feeds.worker.ts', import.meta.url), { type: 'module' }), {
+    persist: params.get('persist') !== '0',
+    coin: choice.coin,
+    tier: choice.tier
+  });
+}
+
+function mapTimeframeToVela(tf: string): string {
+  const map: Record<string, string> = {
+    '1s': '1S', '5s': '5S', '15s': '15S',
+    '1m': '1', '5m': '5', '15m': '15', '30m': '30',
+    '1h': '60', '4h': '240', '1d': 'D', '1w': 'W'
+  };
+  return map[tf] || tf;
+}
+
+async function bootUnifiedWorkstation() {
+  const app = document.getElementById('app')!;
+  app.innerHTML = '';
+  await loadLanguage();
+  startDevice();
+  const params = new URLSearchParams(location.search);
+  const choice = await chooseCoin(params);
+  const init = forCoin(initialState(), choice.coin, choice.from);
+  if (!init.themePicked || init.theme === 'light') {
+    init.theme = 'darker';
+    init.themePicked = true;
+  }
+  const store = new Store(init);
+  useMarkets(() => store.state.markets);
+  setTimeZone(store.state.timeZone);
+  applyTheme(store.state.theme);
+  installTips();
+  installTouchSelects();
+  const kernels = await loadKernels();
+  keepCoinRecordings();
+  const source = await chooseSource(params, choice);
+  const hub = new Hub(store, source);
+  const wake = new ScreenWake(); wake.set(store.state.keepAwake);
+
+  const toolbar = new Toolbar(store, source.venues);
+  toolbar.flow = hub.flow;
+  toolbar.sourceKind = source.kind === 'server' ? 'server' : 'browser';
+
+  const main = document.createElement('main');
+  const chart = document.createElement('div'); chart.className = 'chart-col';
+  const side = document.createElement('div'); side.className = 'side-col';
+  const flowCol = document.createElement('div'); flowCol.className = 'flow-col';
+  main.append(flowCol, chart, side);
+  const dock = new Dock(main);
+  const statusbar = new StatusBar(source.kind);
+  app.append(toolbar.root, main, dock.root, statusbar.root);
+  toolbar.hostStatusControls(statusbar.controls);
+  source.venues.watch?.(entries => statusbar.setVenues(entries));
+  const showStatus = (): void => statusbar.update(store.state, hub.recordedSince, source.kind === 'server' ? 'server' : source.saving?.(Date.now()) ?? 'starting');
+  window.setInterval(showStatus, 1000);
+
+  // 1. Mount LiquidityMapper native panes
+  const heat = new HeatPane(chart, store, hub, kernels);
+  toolbar.placeRecenter(heat.root);
+  const bars = new BarStatsPane(chart, store, heat.view, heat, hub);
+  const depth = new DepthPane(chart, store, heat.view, hub);
+  const oi = new OiPane(chart, store, heat.view, hub.flow);
+  const delta = new DeltaPane(chart, store, heat.view, hub);
+  heat.divergences = () => delta.divergences; delta.onDivergences = () => heat.invalidate();
+  const ls = new LsPane(chart, store, heat.view, hub);
+  const lt = new LtPane(chart, store, heat.view, hub);
+  const ladder = new LadderPane(side, store, kernels, hub);
+  const cvd = new CvdPane(flowCol, store, hub, heat.view);
+  const candle = new CandlePane(main, store, hub, kernels, s => heat.footprintMarkets(s));
+  toolbar.tapeFields = () => candle.settingsFields();
+
+  // 2. Dock Vela Multi-Chart Workspace into chart-col
+  const velaContainer = document.createElement('div');
+  velaContainer.id = 'vela-workspace-container';
+  velaContainer.className = 'vela-workspace-container';
+  velaContainer.style.display = 'none'; // starts in Heatmap mode
+  velaContainer.innerHTML = '<div id="workspace"></div>';
+  chart.insertBefore(velaContainer, chart.firstChild);
+
+  // 3. Mount Vela Workspace
+  const ws = new VelaWorkspace('#workspace', {
+    layout: '1',
+    symbol: choice.coin.coin + 'USDT',
+    timeframe: mapTimeframeToVela(store.state.timeframe || '1h'),
     cells: {
-        btc: { symbol: 'BTCUSDT', timeframe: '1' },
-        eth: { symbol: 'ETHUSDT', timeframe: '15' },
-        sol: { symbol: 'SOLUSDT', timeframe: '60' },
-        bnb: { symbol: 'BNBUSDT', timeframe: 'D' },
+      btc: { symbol: 'BTCUSDT', timeframe: '1' },
+      eth: { symbol: 'ETHUSDT', timeframe: '15' },
+      sol: { symbol: 'SOLUSDT', timeframe: '60' },
+      bnb: { symbol: 'BNBUSDT', timeframe: 'D' },
     },
     providers: {
-        binance: () => new BinanceProvider(),
-        coinbase: () => new CoinbaseProvider(),
-        hyperliquid: () => new HyperliquidProvider(),
+      binance: () => new BinanceProvider(),
+      coinbase: () => new CoinbaseProvider(),
+      hyperliquid: () => new HyperliquidProvider(),
     },
     engines: {
-        pine: () => new PineWorkerEngine(), // Official Pine Script v5 / v4 web worker runtime
-        demo: () => new DemoEngine(),
+      pine: () => new PineWorkerEngine(),
+      demo: () => new DemoEngine(),
     },
     defaultLanguage: 'pine',
     live: true,
@@ -209,355 +233,342 @@ const ws = new VelaWorkspace('#workspace', {
     storage: playgroundStorage(),
     settings: { hidden: ['advanced'] },
     indicators: async () => {
-        try {
-            const res = await fetch('/api/indicators');
-            if (res.ok) return await res.json();
-        } catch (e) {
-            console.warn('[indicators] Failed to load from /api/indicators:', e);
-        }
-        return [];
+      try {
+        const res = await fetch('/api/indicators');
+        if (res.ok) return await res.json();
+      } catch (e) {
+        console.warn('[indicators] Failed to load from /api/indicators:', e);
+      }
+      return [];
     },
-
-    // ── Synchronization across all grid cells ─────────────────────────────
     sync: {
-        viewport: false,  // false: charts adjust independently; toggled via Time switch
-        crosshair: true,  // ghost crosshair follows time across every chart
-        drawings: true,   // drawings created on one chart mirror across peers
-        style: true,      // canvas / scale styling mirrors across cells
+      viewport: false,
+      crosshair: true,
+      drawings: true,
+      style: true,
     },
+    drawingToolbar: true,
+  });
 
-    drawingToolbar: true, // full left drawing tools suite (67+ tools)
+  setWorkspaceInstance(ws);
+  (window as any).ws = ws;
+  setWatchlistWorkspaceInstance(ws);
+  setAlertsWorkspaceInstance(ws);
+  setThemeWorkspaceInstance(ws);
+  setExplorerWorkspaceInstance(ws);
+  createLocalWorkspaceSource(ws);
+  createLocalIndicatorTemplatesSource(ws);
+  mountBottomAccountStrip(ws);
 
-    topbar: {
-        // Left: Symbol, Timeframes, Style (Candles icon), Layout, Indicators, Replay, Undo/Redo
-        left: ['symbol', 'timeframes', 'style', 'layout', 'indicators', 'quant:indicator-templates.open', 'replay.toggle', 'undo-redo'],
-        // Right: Pine Editor, Screenshot, Theme Toggle, Panels, Trade button
-        right: ['pine.editor', 'screenshot', 'theme.toggle', 'panels', 'trade.toggle'],
-    },
-});
+  // 4. View Mode Deck in Cockpit Toolbar
+  const modeDeck = document.createElement('div');
+  modeDeck.className = 'view-mode-deck';
+  modeDeck.innerHTML = `
+    <button type="button" class="view-mode-btn active" id="mode-heat" title="Native Liquidity Heatmap & Footprint Engine">Heatmap</button>
+    <button type="button" class="view-mode-btn" id="mode-vela" title="LuxAlgo Vela Multi-Pane Workstation, Pine Script & Drawing Tools">Vela TA</button>
+    <button type="button" class="view-mode-btn" id="mode-split" title="Side-by-Side Dual View">Split</button>
+  `;
 
-// 3. Bind workspace instances
-setWorkspaceInstance(ws);
-(window as any).ws = ws;
-setWatchlistWorkspaceInstance(ws);
-setAlertsWorkspaceInstance(ws);
-setThemeWorkspaceInstance(ws);
-setExplorerWorkspaceInstance(ws);
-createLocalWorkspaceSource(ws);
-createLocalIndicatorTemplatesSource(ws);
+  // Vela tools deck for quick access to Pine Editor, Indicators, Watchlist
+  const velaTools = document.createElement('div');
+  velaTools.className = 'vela-tools-deck';
+  velaTools.innerHTML = `
+    <button type="button" class="vela-tool-btn" id="btn-pine" title="Open Pine Script v5 / v4 Editor">Pine</button>
+    <button type="button" class="vela-tool-btn" id="btn-indicators" title="Explore LuxAlgo & Classic Indicators">Indicators</button>
+    <button type="button" class="vela-tool-btn" id="btn-watchlist" title="Toggle Watchlist">Watchlist</button>
+  `;
 
-// ── LiquidityMapper Cockpit, 3-Column Layout & DOM Ladder Mount ─────────────
-function initSplitters(): void {
-    const sideSplitter = document.getElementById("side-splitter");
-    const sideCol = document.getElementById("side-column");
-    if (sideSplitter && sideCol) {
-        let startX = 0;
-        let startW = 0;
-        const onMouseMove = (e: MouseEvent) => {
-            const dx = e.clientX - startX;
-            const newW = Math.max(260, Math.min(650, startW - dx));
-            sideCol.style.width = `${newW}px`;
-            sideCol.style.flex = `0 0 ${newW}px`;
-            window.dispatchEvent(new Event("resize"));
-        };
-        const onMouseUp = () => {
-            sideSplitter.classList.remove("active");
-            window.removeEventListener("mousemove", onMouseMove);
-            window.removeEventListener("mouseup", onMouseUp);
-        };
-        sideSplitter.addEventListener("mousedown", (e) => {
-            e.preventDefault();
-            startX = e.clientX;
-            startW = sideCol.getBoundingClientRect().width;
-            sideSplitter.classList.add("active");
-            window.addEventListener("mousemove", onMouseMove);
-            window.addEventListener("mouseup", onMouseUp);
-        });
+  const toolbarSeg = toolbar.root.querySelector('.seg.toggles') || toolbar.root.querySelector('.seg') || toolbar.root;
+  toolbarSeg.after(modeDeck);
+  modeDeck.after(velaTools);
+
+  let currentViewMode: 'heat' | 'vela' | 'split' = 'heat';
+  const setViewMode = (mode: 'heat' | 'vela' | 'split') => {
+    currentViewMode = mode;
+    modeDeck.querySelectorAll('.view-mode-btn').forEach(b => b.classList.remove('active'));
+    modeDeck.querySelector(`#mode-${mode}`)?.classList.add('active');
+
+    if (mode === 'heat') {
+      heat.root.style.display = '';
+      heat.root.style.height = '';
+      heat.root.style.flex = '';
+      velaContainer.style.display = 'none';
+      heat.fit();
+      heat.invalidate();
+    } else if (mode === 'vela') {
+      heat.root.style.display = 'none';
+      velaContainer.style.display = 'flex';
+      velaContainer.style.height = '100%';
+      velaContainer.style.flex = '1 1 auto';
+      window.dispatchEvent(new Event('resize'));
+    } else if (mode === 'split') {
+      heat.root.style.display = '';
+      heat.root.style.height = '50%';
+      heat.root.style.flex = '1 1 50%';
+      velaContainer.style.display = 'flex';
+      velaContainer.style.height = '50%';
+      velaContainer.style.flex = '1 1 50%';
+      window.dispatchEvent(new Event('resize'));
+      heat.fit();
+      heat.invalidate();
     }
+  };
 
-    const flowSplitter = document.getElementById("flow-splitter");
-    const flowCol = document.getElementById("flow-column");
-    if (flowSplitter && flowCol) {
-        let startX = 0;
-        let startW = 0;
-        const onMouseMove = (e: MouseEvent) => {
-            const dx = e.clientX - startX;
-            const newW = Math.max(200, Math.min(500, startW + dx));
-            flowCol.style.width = `${newW}px`;
-            flowCol.style.flex = `0 0 ${newW}px`;
-            window.dispatchEvent(new Event("resize"));
-        };
-        const onMouseUp = () => {
-            flowSplitter.classList.remove("active");
-            window.removeEventListener("mousemove", onMouseMove);
-            window.removeEventListener("mouseup", onMouseUp);
-        };
-        flowSplitter.addEventListener("mousedown", (e) => {
-            e.preventDefault();
-            startX = e.clientX;
-            startW = flowCol.getBoundingClientRect().width;
-            flowSplitter.classList.add("active");
-            window.addEventListener("mousemove", onMouseMove);
-            window.addEventListener("mouseup", onMouseUp);
-        });
-    }
-}
+  modeDeck.querySelector('#mode-heat')?.addEventListener('click', () => setViewMode('heat'));
+  modeDeck.querySelector('#mode-vela')?.addEventListener('click', () => setViewMode('vela'));
+  modeDeck.querySelector('#mode-split')?.addEventListener('click', () => setViewMode('split'));
 
-initSplitters();
+  velaTools.querySelector('#btn-pine')?.addEventListener('click', () => {
+    setViewMode('vela');
+    const act = widgetActions('topbar').find(a => a.id === 'pine.editor');
+    if (act) act.run((ws as any).context());
+  });
+  velaTools.querySelector('#btn-indicators')?.addEventListener('click', () => {
+    setViewMode('vela');
+    void openIndicatorExplorer();
+  });
+  velaTools.querySelector('#btn-watchlist')?.addEventListener('click', () => {
+    setViewMode('vela');
+    (ws as any).dock?.toggle('watchlist.panel');
+  });
 
-// Mount DOM Ladder in Side Column
-const sideColEl = document.getElementById("side-column");
-let domLadderCtrl: DomLadderPanelController | null = null;
-if (sideColEl) {
+  // 5. Setup Layout & Splitters
+  const arrange = new Layout(main, chart, side, [
+    { id: 'heat', root: heat.root, min: 240 },
+    { id: 'bars', root: bars.root, height: 84, min: 56, head: bars.header },
+    { id: 'depth', root: depth.root, height: 132, min: 70, head: depth.header },
+    { id: 'oi', root: oi.root, height: 150, min: 60, head: oi.header },
+    { id: 'delta', root: delta.root, height: 150, min: 60, head: delta.header },
+    { id: 'ls', root: ls.root, height: 120, min: 60, head: ls.header },
+    { id: 'lt', root: lt.root, height: 128, min: 70, head: lt.header },
+  ], flowCol);
+
+  const lower = () => {
+    depth.invalidate(); oi.invalidate(); delta.invalidate(); ls.invalidate(); lt.invalidate(); bars.invalidate(); cvd.followMap();
+  };
+
+  let stripLoads = hub.flow.loads;
+  hub.onFlowChanged = () => {
+    cvd.invalidate(); delta.invalidate();
+    const landed = stripLoads !== hub.flow.loads;
+    stripLoads = hub.flow.loads;
+    if (replaying() || (landed && topShown(store.state))) heat.invalidate();
+    hub.refreshOiMarkets();
+  };
+
+  for (const pane of [depth, oi, delta, ls, lt, bars]) pane.useTimeGestures(heat.timeGestures());
+  heat.onFrame = lower;
+  heat.onView = lower;
+  heat.onTopProfile = () => toolbar.openTradedPanel();
+  heat.onArrangedChange = () => toolbar.refreshTradedPanel();
+  toolbar.profileRoom = () => heat.profileRoom();
+
+  const range = new RangeTool(store, hub);
+  range.anchor = toolbar.rangeButton;
+  range.mapWindow = () => ({ t0: heat.view.t0, t1: heat.view.t1 });
+  heat.range = range;
+  cvd.range = range;
+  for (const pane of [depth, oi, delta, ls, lt, bars]) pane.useRange(range);
+
+  toolbar.onRange = () => range.toggle();
+  toolbar.onRecenter = () => {
+    heat.fit();
+    ladder.recenter();
     try {
-        domLadderCtrl = new DomLadderPanelController(sideColEl);
-    } catch (e) {
-        console.warn("[DOM Ladder] Mount warning:", e);
+      const native: any = (ws.active?.chart?.renderer as any)?.renderer;
+      if (native && typeof native.applyViewport === 'function') {
+        native.applyViewport({ rightOffset: 5 });
+      }
+    } catch (_) {}
+  };
+
+  window.setInterval(() => heat.tick(), 1000);
+
+  const replayBar = new ReplayBar(store, {
+    redraw: () => heat.invalidate(),
+    placeAt: t => heat.placeAt(t),
+    live: () => toolbar.onRecenter()
+  });
+  heat.root.append(replayBar.root);
+
+  toolbar.goTo = {
+    replay: t => replayBar.start(t),
+    centre: () => (heat.view.t0 + heat.view.t1) / 2,
+    earliest: () => ({ depth: hub.recordedSince > 0 ? hub.recordedSince : null, candles: store.state.candles[0]?.[0] ?? null }),
+    go: t => heat.goTo(t),
+    live: () => { if (replaying()) replayBar.stop(); else toolbar.onRecenter(); },
+  };
+
+  hub.onWhaleChanged = () => toolbar.refreshOpenPanel();
+  toolbar.panes = { arrangement: () => arrange.arrangement(), apply: a => arrange.apply(a), defaults: () => arrange.defaults() };
+  toolbar.onSelectMarket = id => store.set({ marketId: id });
+  toolbar.onVenuesApplied = () => {
+    void hub.refreshMarkets();
+    window.setTimeout(() => void hub.refreshMarkets(), 15_000);
+  };
+
+  const sounds = new Sounds(store);
+  toolbar.attachSounds(sounds);
+  sounds.start();
+
+  const alerts = new Alerts(store, hub.flow, sounds.engine, Date.now, (ids, from) => { void hub.ensureFlow(ids, from); }, (ids, from, to) => hub.source.columns(ids, from, to, 60_000));
+  toolbar.attachAlerts(alerts);
+  alerts.start();
+  alerts.onChange = () => cvd.invalidate();
+  cvd.events = alerts.bursts;
+
+  hub.onPrints = fresh => { if (replaying()) return; sounds.feed(fresh); cvd.flash(fresh); };
+  hub.onPrintsChanged = () => { heat.invalidate(); range.refreshHeld(); };
+
+  const candleShown = (): boolean => dock.tab === 'candle' && isPhone();
+  const glass = new UiGlass((price, t) => heat.liveSpot(price, t), () => hub.tape);
+  cvd.onLargeFlow = (x, y, usd) => glass.pulse(x, y, usd, scaledUsd(100_000), usd > 0 ? 0 : 1);
+
+  const applyMaterial = (): void => {
+    glass.setPalette(applyTheme(store.state.theme));
+    glass.setOn(store.state.material === 'glass');
+    document.documentElement.dataset.material = glass.on ? 'glass' : 'solid';
+  };
+
+  const tapeWanted = (): boolean => (store.state.show.bubbles && store.state.tradeBubbles.live) || candleShown() || store.state.material === 'glass' || isPhone();
+  const coverPanes = (): void => { const covered = candleShown(); heat.setSuspended(covered); ladder.setSuspended(covered); };
+  dock.onChange = () => { candle.setShown(candleShown()); coverPanes(); hub.setTape(tapeWanted()); };
+  hub.setTape(tapeWanted());
+  hub.onTape = () => { heat.tapeArrived(); candle.tapeArrived(); glass.tapeArrived(); };
+  applyMaterial();
+
+  hub.onRecovered = (id, _from, to) => { alerts.recovered.set(id, Math.max(alerts.recovered.get(id) ?? 0, to)); };
+  hub.onLiquidationsChanged = () => { heat.invalidate(); range.refreshHeld(); };
+  toolbar.keyHistory = hub.keyHistory;
+  toolbar.profileHistory = barMs => hub.profileHistory(barMs);
+  toolbar.whaleInfo = () => ({ since: hub.whale?.since ?? null, state: hub.whaleState, browser: source.kind === 'browser' });
+
+  heat.onAnchor = at => {
+    const s = store.state;
+    store.set({ vwap: withAnchor({ ...s.vwap, on: true }, currentCoin().coin, at, Date.now()), vwapAnchoring: false });
+  };
+  hub.onTraded = () => heat.invalidate();
+  hub.onAbsorptionChanged = () => { heat.invalidate(); range.refreshHeld(); };
+  toolbar.absorptionInfo = () => heat.absorptionThresholdText();
+
+  toolbar.onPreviewTheme = id => {
+    const name = id ?? store.state.theme;
+    glass.setPalette(applyTheme(name));
+    for (const p of [heat, ladder, depth, oi, delta, ls, lt, bars, cvd, candle]) p.setPalette(name);
+    toolbar.previewTheme(name);
+  };
+  heat.onStats = () => toolbar.sync(store.state, heat.window);
+
+  window.addEventListener('keydown', e => {
+    const hit = matchShortcut(e, document.querySelector('dialog[open]') !== null);
+    if (!hit) return;
+    e.preventDefault();
+    const a = hit.action;
+    if (a.kind === 'timeframe') store.set({ timeframe: a.tf });
+    else if (a.kind === 'recenter') toolbar.onRecenter();
+    else if (a.kind === 'zoom') heat.zoomStep(a.dir);
+    else if (a.kind === 'toggle') { store.set(togglePatch(store.state, a.feature)); toolbar.refreshOpenPanel(); }
+    else if (a.kind === 'range') range.toggle();
+    else if (a.kind === 'goto') toolbar.openGoTo();
+    else if (a.kind === 'screenshot') void lazy(() => import('./hlm/app/screenshot/editor.ts')).then(m => m?.startScreenshot());
+    else toolbar.openShortcuts();
+  });
+
+  onLayoutMode(() => {
+    layout(); heat.invalidate(); lower(); toolbar.sync(store.state, heat.window); candle.setShown(candleShown()); coverPanes(); hub.setTape(tapeWanted());
+  });
+
+  const gutters = () => {
+    const s = store.state;
+    document.documentElement.style.setProperty('--gutter', `${gutter(s)}px`);
+    document.documentElement.style.setProperty('--gutter-left', `${leftGutter(s)}px`);
+  };
+
+  const layout = () => {
+    const s = store.state;
+    gutters();
+    depth.root.hidden = !s.show.depth;
+    oi.root.hidden = !s.show.oi;
+    delta.root.hidden = !s.show.delta;
+    ls.root.hidden = !s.show.ls;
+    lt.root.hidden = !s.show.lt;
+    bars.root.hidden = !s.show.stats;
+    cvd.root.hidden = !s.show.cvd;
+    ladder.root.hidden = !s.show.book;
+    arrange.columns({ flow: s.show.cvd, book: s.show.book });
+    arrange.rebuild();
+    if (s.show.cvd) cvd.invalidate();
+    if (s.show.book) ladder.invalidate();
+    dock.sync(s.show);
+  };
+
+  let tableShape = `${store.state.barStats.join(',')}|${store.state.barStatOptions.grouped}|${store.state.barStatOptions.folded.join(',')}`;
+
+  store.subscribe((state, changed) => {
+    if (changed.has('keepAwake')) wake.set(state.keepAwake);
+    if (changed.has('timeZone')) { setTimeZone(state.timeZone); heat.invalidate(); lower(); cvd.invalidate(); showStatus(); }
+    if (changed.has('theme')) {
+      glass.setPalette(applyTheme(state.theme));
+      for (const p of [heat, ladder, depth, oi, delta, ls, lt, bars, cvd, candle]) p.setPalette(state.theme);
+      try {
+        const t = resolveTheme(state.theme);
+        applyThemeTokens(document.body, t);
+        applyThemeTokens(document.documentElement, t);
+      } catch (_) {}
     }
+    if (changed.has('material')) { applyMaterial(); hub.setTape(tapeWanted()); }
+    if (changed.has('cvd')) cvd.settingsChanged();
+    if (changed.has('status') || changed.has('connected') || changed.has('mark')) showStatus();
+    if (changed.has('show')) layout(); else if (changed.has('traded')) gutters();
+    if (changed.has('marketId') || changed.has('timeframe')) {
+      void hub.loadSeries(true).then(() => { heat.fit(); lower(); });
+      const baseCoin = currentCoin().coin;
+      ws.active?.setSymbol(baseCoin + 'USDT');
+      ws.active?.setTimeframe(mapTimeframeToVela(state.timeframe));
+    }
+    if (changed.has('sounds')) heat.invalidate();
+    if (changed.has('mark') && state.show.book) ladder.markMoved();
+    if (changed.has('levels')) { if (state.show.book) ladder.levelsArrived(); ladder.invalidate(); ladder.syncVenues(); heat.invalidate(); }
+    if (changed.has('replay')) { ladder.invalidate(); cvd.invalidate(); heat.invalidate(); lower(); }
+    if (changed.has('layers') || changed.has('layer') || changed.has('candles') || changed.has('mark') || changed.has('heat') || changed.has('show')) heat.invalidate();
+    if (changed.has('oi') || changed.has('show')) { oi.invalidate(); bars.invalidate(); }
+    if (changed.has('lt') || changed.has('show') || changed.has('sounds')) lt.refresh();
+    if (changed.has('sounds')) depth.syncSound();
+    const shape = `${state.barStats.join(',')}|${state.barStatOptions.grouped}|${state.barStatOptions.folded.join(',')}`;
+    if (shape !== tableShape) { tableShape = shape; arrange.setPaneHeight('bars', tableHeight(state.barStats, state.barStatOptions)); }
+    if (changed.has('barStatOptions') || changed.has('footprint') || changed.has('barStats')) bars.refresh();
+    if (changed.has('grouping') || changed.has('ladderMode') || changed.has('ladderShow') || changed.has('ladderCurves') || changed.has('cvd') || changed.has('pullStack') || changed.has('ladderVenue') || changed.has('ladderVenues') || changed.has('disabledVenues') || changed.has('scope')) {
+      ladder.invalidate(); ladder.syncControls();
+    }
+    if (changed.has('range')) { heat.invalidate(); oi.invalidate(); depth.invalidate(); lt.invalidate(); bars.invalidate(); cvd.invalidate(); }
+    if (changed.has('hover')) { heat.invalidate(); oi.invalidate(); delta.invalidate(); ls.invalidate(); depth.invalidate(); lt.invalidate(); bars.invalidate(); cvd.syncHover(); }
+    if (changed.has('delta')) delta.settingsChanged();
+    if ((changed.has('oi') || changed.has('oiParts')) && topShown(state)) heat.invalidate();
+    if (changed.has('marketId')) candle.marketChanged();
+    if (['levels', 'mark', 'disabledVenues', 'scope', 'markets', 'footprint', 'customMarkets', 'replay', 'bookGone', 'show'].some(k => changed.has(k as never))) candle.invalidate();
+    if (changed.has('lsMetric')) ls.settingsChanged();
+    if (['show', 'timeframe', 'marketId', 'disabledVenues', 'scope', 'markets', 'oiMarkets', 'customMarkets', 'oiInstrument', 'oiParts', 'seriesInstrument', 'range'].some(k => changed.has(k as never))) ls.invalidate();
+    if (['show', 'candles', 'timeframe', 'marketId', 'disabledVenues', 'scope', 'markets', 'traded', 'timeZone', 'range', 'oi', 'oiInstrument', 'oiParts'].some(k => changed.has(k as never))) delta.invalidate();
+    if (['markets', 'marketId', 'timeframe', 'layer', 'show', 'heat', 'theme', 'status', 'connected', 'disabledVenues', 'heatmapSource', 'levels', 'scope', 'sounds', 'soundState', 'lastSound', 'timeZone', 'absorption', 'highlight', 'range', 'rangeTool', 'liquidations', 'keyLevels', 'vwap', 'footprint'].some(k => changed.has(k as never))) toolbar.sync(state, heat.window);
+  });
+
+  for (const p of [heat, ladder, depth, oi, delta, ls, lt, bars, cvd, candle]) p.setPalette(store.state.theme);
+  layout();
+  ladder.syncControls();
+  lt.refresh();
+  arrange.setPaneHeight('bars', tableHeight(store.state.barStats, store.state.barStatOptions));
+  toolbar.sync(store.state, heat.window);
+  await hub.start();
+  await hub.loadSeries(true);
+  heat.fit();
+  lower();
+
+  window.setInterval(() => { void hub.loadSeries(true); }, 60_000);
+  window.setInterval(() => { void hub.loadOi(); }, 20_000);
+
+  (window as any).__hlm = { store, hub, heat, ladder, cvd, candle, sounds, alerts, glass, ws };
 }
 
-// Mount Status Bar
-const statusbarHost = document.getElementById("app-statusbar");
-let statusBarCtrl: StatusBarController | null = null;
-if (statusbarHost) {
-    try {
-        statusBarCtrl = new StatusBarController(statusbarHost);
-        LiquidityClient.get().onTick((price) => {
-            statusBarCtrl?.updateMark(price);
-        });
-    } catch (e) {
-        console.warn("[StatusBar] Mount warning:", e);
-    }
-}
-
-// Mount Cockpit Toolbar
-const toolbarHost = document.getElementById("cockpit-toolbar");
-let cockpitToolbar: CockpitToolbar | null = null;
-if (toolbarHost) {
-    try {
-        cockpitToolbar = new CockpitToolbar(toolbarHost, {
-            activeCoin: "BTC",
-            activeTimeframe: "1h",
-            activePriceStyle: "candles",
-            onCoinChange: (coin) => {
-                const sym = coin + "USDT";
-                if (ws.active) {
-                    ws.active.setSymbol(sym);
-                }
-                domLadderCtrl?.setSymbol(sym);
-            },
-            onTimeframeChange: (tf) => {
-                const map: Record<string, string> = {
-                    "1s": "1S", "5s": "5S", "15s": "15S",
-                    "1m": "1", "5m": "5", "15m": "15", "30m": "30",
-                    "1h": "60", "4h": "240", "1d": "D"
-                };
-                if (ws.active) {
-                    ws.active.setTimeframe(map[tf] || tf);
-                }
-            },
-            onPriceStyleChange: (style) => {
-                if (ws.active) {
-                    ws.active.setPriceStyle(style);
-                    if (style === "footprint") {
-                        try {
-                            const chart = ws.active.chart;
-                            const native: any = (chart?.renderer as any)?.renderer;
-                            if (native && typeof native.applyViewport === "function") {
-                                const vp = native.coords?.getViewport?.();
-                                if (!vp || vp.barSpacing < 70) {
-                                    native.applyViewport({ barSpacing: 95, rightOffset: 5 });
-                                }
-                            }
-                        } catch (_) {}
-                    }
-                }
-            },
-            onToggleBook: (show) => {
-                const side = document.getElementById("side-column");
-                const split = document.getElementById("side-splitter");
-                if (side) side.style.display = show ? "flex" : "none";
-                if (split) split.style.display = show ? "block" : "none";
-                window.dispatchEvent(new Event("resize"));
-            },
-            onToggleFlow: (show) => {
-                const flow = document.getElementById("flow-column");
-                const split = document.getElementById("flow-splitter");
-                if (flow) flow.style.display = show ? "flex" : "none";
-                if (split) split.style.display = show ? "block" : "none";
-                window.dispatchEvent(new Event("resize"));
-            },
-            onToggleStats: (show) => {
-                const lower = document.getElementById("lower-panes");
-                const split = document.getElementById("lower-splitter");
-                if (lower) lower.style.display = show ? "flex" : "none";
-                if (split) split.style.display = show ? "block" : "none";
-                window.dispatchEvent(new Event("resize"));
-            },
-            onRecenter: () => {
-                try {
-                    const chart = ws.active.chart;
-                    const native: any = (chart?.renderer as any)?.renderer;
-                    if (native && typeof native.applyViewport === "function") {
-                        native.applyViewport({ rightOffset: 5 });
-                    }
-                } catch (_) {}
-            },
-            onThemeChange: (theme) => {
-                statusBarCtrl?.updateTheme(theme);
-            }
-        });
-    } catch (e) {
-        console.warn("[CockpitToolbar] Mount warning:", e);
-    }
-}
-
-// Keep Cockpit Toolbar synchronized with active cell
-ws.on("cell:active", ({ id }) => {
-    const cell = ws.cell(id);
-    if (cell) {
-        const sym = cell.chart.symbol || "BTCUSDT";
-        const base = sym.replace(/USDT$|USD$|-PERP$/, "");
-        cockpitToolbar?.setCoin(base);
-        cockpitToolbar?.setPriceStyle(cell.chart.priceStyle || "candles");
-    }
+bootUnifiedWorkstation().catch(err => {
+  console.error('[UnifiedWorkstation] Fatal boot error:', err);
 });
-
-
-// 4. Mount bottom account drawer (starts collapsed at 28px)
-mountBottomAccountStrip(ws);
-
-// 5. Hook active cell & market changes so order ticket & watchlist follow user chart clicks and symbol changes
-const syncActiveSymbol = (sym: string) => {
-    if (!sym) return;
-    setActiveSymbol(sym);
-    setWatchlistActiveSymbol(sym);
-    setAlertsActiveSymbol(sym);
-    void LiquidityClient.get().switchMarket(sym);
-};
-
-ws.on('cell:active', ({ id }) => {
-    const cell = ws.cell(id);
-    if (cell && cell.symbol) {
-        syncActiveSymbol(cell.symbol);
-    }
-});
-
-const hookCellMarket = (cell: any) => {
-    cell.chart.on('market:changed', ({ symbol }: { symbol: string }) => {
-        if (ws.active?.id === cell.id && symbol) {
-            syncActiveSymbol(symbol);
-        }
-    });
-};
-for (const cell of ws.cells()) {
-    hookCellMarket(cell);
-}
-ws.on('cell:created', ({ id }) => {
-    const cell = ws.cell(id);
-    if (cell) hookCellMarket(cell);
-});
-
-if (ws.active?.symbol) {
-    syncActiveSymbol(ws.active.symbol);
-}
-
-// 6. Reload chart feeds when toggling between Testnet and Production
-if (typeof window !== 'undefined') {
-    window.addEventListener('vela:env-changed', () => {
-        for (const cell of ws.cells()) {
-            if (cell.symbol && cell.chart?.setMarket) {
-                void cell.chart.setMarket({ symbol: cell.symbol });
-            }
-        }
-    });
-}
-
-// 7. Initialize chart tools & drawing favorites (leave dock closed by default for clean full-screen view)
-void ws.cells()[0]?.chart.ready().then(() => {
-    for (const cell of ws.cells()) {
-        try {
-            const currentFavs = cell.chart.drawings.favorites?.();
-            if (!currentFavs || currentFavs.length === 0) {
-                cell.chart.drawings.setFavorites(['trendline', 'hline', 'box', 'position', 'anchoredvwap', 'fixedrangevp']);
-            }
-        } catch (e) {
-            // Drawings favorites setup
-        }
-    }
-});
-
-// 7. Sync shell theme on changes
-const syncShellTheme = (t: any): void => {
-    document.body.style.background = t.background;
-    applyThemeTokens(document.body, t);
-    applyThemeTokens(document.documentElement, t);
-};
-syncShellTheme(ws.opts.theme ? resolveTheme(ws.opts.theme) : DARK_THEME);
-for (const cell of ws.cells()) cell.chart.on('theme:changed', syncShellTheme);
-ws.on('cell:created', ({ id }) => ws.cell(id)?.chart.on('theme:changed', syncShellTheme));
-
-// 8. Seed sample timeline marks
-const seedMarks = (chart: Vela): void => {
-    void chart.ready().then(() => addSampleMarks(chart));
-};
-for (const cell of ws.cells()) seedMarks(cell.chart);
-ws.on('cell:created', ({ id }) => {
-    const cell = ws.cell(id);
-    if (cell) seedMarks(cell.chart);
-});
-
-// 9. Session Stability Guard: prevent sudden background reloads (HMR drops / SW controller shifts)
-if (typeof window !== 'undefined') {
-    const rawReload = window.location.reload.bind(window.location);
-    let explicitReloadAllowed = false;
-    (window as any).__allowReload = () => { explicitReloadAllowed = true; };
-
-    try {
-        window.location.reload = function() {
-            if (explicitReloadAllowed) {
-                return rawReload();
-            }
-            console.warn('[Vela] Blocked spontaneous background reload to preserve active chart workspace and indicators.');
-        };
-    } catch (_) {
-        // sealed location
-    }
-
-    // Keep Cloudflare Tunnel connection alive with light periodic heartbeat
-    setInterval(() => {
-        try {
-            fetch('/api/ping', { method: 'GET', cache: 'no-store' }).catch(() => {});
-        } catch (_) {}
-    }, 25000);
-}
-
-// 10. PWA Service Worker Registration & Storage Persistence
-if (typeof window !== 'undefined' && 'serviceWorker' in navigator && !import.meta.env.DEV) {
-    registerSW({
-        immediate: false,
-        onNeedRefresh() {
-            console.log('[PWA] New version available (auto-reload suppressed to protect active charts)');
-        },
-        onOfflineReady() {
-            console.log('[PWA] Workstation offline ready');
-        },
-        onRegisterError(error) {
-            console.warn('[PWA] Service worker registration failed:', error);
-        },
-    });
-
-    // Request persistent storage so drawings, indicators & templates aren't purged under disk pressure
-    if (navigator.storage && navigator.storage.persist) {
-        navigator.storage.persist().then((persistent) => {
-            console.log(`[PWA] Persistent storage granted: ${persistent}`);
-        }).catch(() => {});
-    }
-}
-
-// Expose on window for browser console access
-(window as unknown as { __ws: VelaWorkspace }).__ws = ws;
-(window as unknown as { __refreshIndicators: () => Promise<void> }).__refreshIndicators = () => refreshWorkspaceIndicators(ws);
-}
-
-void startVela();

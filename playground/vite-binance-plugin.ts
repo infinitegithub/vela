@@ -187,8 +187,12 @@ export function binanceApiPlugin(): Plugin {
                     }
 
                     if (url.pathname === '/api/binance/account') {
-                        const account = await getAccountInfo(testnet);
-                        return sendJson(res, account);
+                        try {
+                            const account = await getAccountInfo(testnet);
+                            return sendJson(res, account);
+                        } catch {
+                            return sendJson(res, { balances: [], totalWalletBalance: '0', availableBalance: '0' });
+                        }
                     }
 
                     if (url.pathname === '/api/binance/orders') {

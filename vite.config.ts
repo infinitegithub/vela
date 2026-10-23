@@ -76,6 +76,9 @@ export default defineConfig(({ mode }) => {
             }),
         ],
         server: {
+            fs: {
+                allow: ['/opt/vela', '/opt/liquiditymapperfast', '..']
+            },
             port: 3000,
             host: '0.0.0.0',
             allowedHosts: ['vela.viffey.com', '.viffey.com', 'localhost', '127.0.0.1'],
@@ -83,8 +86,7 @@ export default defineConfig(({ mode }) => {
                 ignored: ['**/data/**', '**/.git/**', '**/dist/**'],
             },
             hmr: {
-                clientPort: 443,
-                overlay: false,
+                                overlay: false,
             },
             proxy: {
                 '/coins.json': {
