@@ -1,6 +1,7 @@
 /**
- * LiquidityMapper Local Client Bridge
- * Connects Vela directly to LiquidityMapper's v2 data plane running on 127.0.0.1:8787 (proxied via /api/v2).
+ * LiquidityMapper Local Client Bridge & Quantitative Mathematical Engine
+ * Ports exact calculations, order flow models, and dynamic multi-coin data planes
+ * from LiquidityMapper into Vela.
  */
 
 export interface MarketInfo {
@@ -20,6 +21,38 @@ export interface LiquidityState {
     markPrice: number;
     markInstrumentId: string;
     markets: MarketInfo[];
+}
+
+export interface CoinMarketListing {
+    symbol: string;
+    unit?: number;
+    contract?: number;
+    inverse?: boolean;
+}
+
+export interface CoinEntry {
+    coin: string;
+    volumeUsd: number;
+    price: number;
+    tier: number;
+    markets: Partial<Record<string, CoinMarketListing>>;
+}
+
+export interface CoinsCatalogue {
+    version: number;
+    builtAt: number;
+    coins: CoinEntry[];
+}
+
+export interface ResolvedCoinInfo {
+    base: string;
+    multiVenueInst: string;
+    binanceInst: string;
+    bybitInst: string;
+    okxInst: string;
+    unit: number;
+    price: number;
+    tier: number;
 }
 
 export interface RawFootprintBar {
@@ -45,6 +78,8 @@ export interface ParsedFootprintLevel {
     askVolume: number; // market buy (hitting ask)
     totalVolume: number;
     delta: number;
+    buyImbalance?: boolean;
+    sellImbalance?: boolean;
 }
 
 export interface ParsedFootprintBar {
@@ -137,10 +172,124 @@ interface FrameHeader {
     instruments: { id: string; venue: string; timestamp: number; coarse: boolean; touch?: unknown }[];
 }
 
+// ============================================================================
+// Mathematical Engine & Grid Formulas (1:1 with LiquidityMapper)
+// ============================================================================
+
 /**
- * Normalizes any timeframe format (e.g. '1', '5', '60', '240', '1D') into
- * LiquidityMapper's supported timeframe format ('1m', '5m', '15m', '30m', '1h', '4h', '1d').
+ * Dynamic 1-2-5 price-grid step of roughly 0.02% of price.
+ * Identical to LiquidityMapper src/shared/grid.ts.
  */
+export function gridStepFor(price: number): number {
+    const raw = Math.max(price * 0.0002, 1e-9);
+    const exp = Math.floor(Math.log10(raw));
+    const unit = raw / 10 ** exp;
+    const nice = unit < 1.5 ? 1 : unit < 3.5 ? 2 : unit < 7.5 ? 5 : 10;
+    return Number((nice * 10 ** exp).toPrecision(12));
+}
+
+/**
+ * Volume bar length fraction relative to busiest row in view (linear, sqrt, or log).
+ * Sqrt is LiquidityMapper's default and industry gold standard for footprint orderflow.
+ */
+export function barFraction(val: number, busiest: number, mode: 'sqrt' | 'linear' | 'log' = 'sqrt'): number {
+    if (!(busiest > 0) || !(val > 0)) return 0;
+    const f = Math.max(0, Math.min(1, val / busiest));
+    if (mode === 'linear') return f;
+    if (mode === 'log') return Math.max(0, Math.log10(1 + 9 * f));
+    return Math.sqrt(f);
+}
+
+/**
+ * Dominant side check for cell volume bar tinting.
+ */
+export function imbalance(buy: number, sell: number, ratio = 1.15): 'buy' | 'sell' | null {
+    if (buy >= ratio * sell && buy > 0) return 'buy';
+    if (sell >= ratio * buy && sell > 0) return 'sell';
+    return null;
+}
+
+/**
+ * Format numbers compactly matching LiquidityMapper (e.g. 1.2M, 450k, 12.5).
+ */
+export function formatVol(val: number): string {
+    if (val === 0) return '0';
+    const abs = Math.abs(val);
+    if (abs >= 1_000_000_000) return (val / 1_000_000_000).toFixed(2) + 'B';
+    if (abs >= 1_000_000) return (val / 1_000_000).toFixed(2) + 'M';
+    if (abs >= 1_000) return (val / 1_000).toFixed(1) + 'k';
+    if (abs < 0.1) return val.toFixed(3);
+    if (abs < 1) return val.toFixed(2);
+    return val.toFixed(1);
+}
+
+/**
+ * Diagonal Imbalance Detection (1:1 with LiquidityMapper bar-stats.ts).
+ */
+export interface RawImbalance {
+    low: number;
+    side: 'buy' | 'sell';
+    ratio: number;
+}
+
+export function diagonalImbalances(
+    rows: [price: number, buyUsd: number, sellUsd: number][],
+    step: number,
+    options: { imbRatio: number; imbMinUsd: number; imbZeros: boolean } = { imbRatio: 3.0, imbMinUsd: 0, imbZeros: true }
+): RawImbalance[] {
+    const at = new Map<number, [number, number]>();
+    let lowest = Infinity, highest = -Infinity;
+    for (const [low, buy, sell] of rows) {
+        const index = Math.round(low / step);
+        at.set(index, [buy, sell]);
+        lowest = Math.min(lowest, index);
+        highest = Math.max(highest, index);
+    }
+    const found: RawImbalance[] = [];
+    const min = options.imbMinUsd;
+
+    const opposite = (index: number, side: 0 | 1): number | null =>
+        index < lowest || index > highest ? null : at.get(index)?.[side] ?? 0;
+
+    const flag = (own: number, other: number | null): number | null => {
+        if (other === null || !(own > 0) || own < min) return null;
+        if (other > 0) return own >= options.imbRatio * other ? own / other : null;
+        return options.imbZeros ? Infinity : null;
+    };
+
+    for (const [low, buy, sell] of rows) {
+        const index = Math.round(low / step);
+        const sellRatio = flag(sell, opposite(index + 1, 0));
+        const buyRatio = flag(buy, opposite(index - 1, 1));
+        if (sellRatio !== null) found.push({ low, side: 'sell', ratio: sellRatio });
+        if (buyRatio !== null) found.push({ low, side: 'buy', ratio: buyRatio });
+    }
+    return found;
+}
+
+/**
+ * Stacked Imbalance Zones: n or more adjacent rows flagged on the same side.
+ */
+export function stackedZones(found: readonly RawImbalance[], step: number, n: number = 3): { side: 'buy' | 'sell'; low: number; high: number }[] {
+    const zones: { side: 'buy' | 'sell'; low: number; high: number }[] = [];
+    for (const side of ['buy', 'sell'] as const) {
+        const indices = [...new Set(found.filter(f => f.side === side).map(f => Math.round(f.low / step)))].sort((a, b) => a - b);
+        let start = 0;
+        for (let i = 1; i <= indices.length; i++) {
+            if (i < indices.length && indices[i] === indices[i - 1]! + 1) continue;
+            if (i - start >= n) {
+                zones.push({
+                    side,
+                    low: indices[start]! * step,
+                    high: (indices[i - 1]! + 1) * step
+                });
+            }
+            start = i;
+        }
+    }
+    return zones;
+}
+
 export function normalizeTimeframe(tf: string): string {
     const raw = (tf || '').trim().toLowerCase();
     if (raw === '1' || raw === '1m') return '1m';
@@ -168,29 +317,48 @@ export function timeframeToMs(tf: string): number {
     return map[norm] || 3_600_000;
 }
 
-export function decodeLevels(buffer: ArrayBuffer): LevelsFrame {
+export function decodeLevels(buffer: ArrayBuffer): LevelsFrame | null {
+    if (buffer.byteLength < 4) return null;
     const view = new DataView(buffer);
     const length = view.getUint32(0, true);
-    if (length === 0 || 4 + length > buffer.byteLength) throw new Error('Malformed frame header length');
-    const header = JSON.parse(new TextDecoder().decode(new Uint8Array(buffer, 4, length))) as FrameHeader;
-    if (header.type !== 'levels' || !Array.isArray(header.parts)) throw new Error('Not a levels frame');
+    if (length === 0 || 4 + length > buffer.byteLength) return null;
+
+    let headerStr = '';
+    try {
+        headerStr = new TextDecoder().decode(new Uint8Array(buffer, 4, length));
+    } catch (_) {
+        return null;
+    }
+
+    let header: FrameHeader;
+    try {
+        header = JSON.parse(headerStr) as FrameHeader;
+    } catch (_) {
+        return null;
+    }
+
+    if (header.type !== 'levels' || !Array.isArray(header.parts)) return null;
+
     const base = (4 + length + 7) & ~7;
     const part = (index: number) => {
         const spec = header.parts[index];
-        if (!spec) throw new Error(`Frame part ${index} is missing`);
+        if (!spec) return new Float64Array(0);
         const bytes = spec.kind === 'f32' || spec.kind === 'i32' ? 4 : 8;
-        if (base + spec.offset + spec.length * bytes > buffer.byteLength) throw new Error('Frame part exceeds the buffer');
+        const offset = base + spec.offset;
+        if (offset + spec.length * bytes > buffer.byteLength) return new Float64Array(0);
         return spec.kind === 'f64'
-            ? new Float64Array(buffer, base + spec.offset, spec.length)
+            ? new Float64Array(buffer, offset, spec.length)
             : spec.kind === 'f32'
-            ? new Float32Array(buffer, base + spec.offset, spec.length)
-            : new Int32Array(buffer, base + spec.offset, spec.length);
+            ? new Float32Array(buffer, offset, spec.length)
+            : new Int32Array(buffer, offset, spec.length);
     };
+
     const side = (at: number): SideArrays => ({
         lo: part(at) as Float64Array,
         hi: part(at + 1) as Float64Array,
         usd: part(at + 2) as Float64Array
     });
+
     const touchOf = (value: unknown): { lo: number; hi: number } | undefined =>
         Array.isArray(value) && value.length === 2 && Number.isFinite(value[0]) && Number.isFinite(value[1]) && value[1] > value[0]
             ? { lo: value[0], hi: value[1] }
@@ -213,19 +381,148 @@ export function decodeLevels(buffer: ArrayBuffer): LevelsFrame {
     };
 }
 
+// ============================================================================
+// LiquidityClient Singleton
+// ============================================================================
+
 export class LiquidityClient {
     private static instance: LiquidityClient | null = null;
     private state: LiquidityState | null = null;
+    private catalogue: CoinsCatalogue | null = null;
+    private catalogueLoading: Promise<CoinsCatalogue | null> | null = null;
+    private activeSymbol = 'BTCUSDT';
     private ws: WebSocket | null = null;
+
     private tickListeners = new Set<(price: number, time: number) => void>();
     private levelsListeners = new Set<(frame: LevelsFrame) => void>();
     private printsListeners = new Set<(prints: any[]) => void>();
     private liqListeners = new Set<(liqs: any[]) => void>();
     private flowListeners = new Set<(flow: any[]) => void>();
+    private marketSwitchListeners = new Set<(symbol: string) => void>();
 
     static get(): LiquidityClient {
         if (!this.instance) this.instance = new LiquidityClient();
         return this.instance;
+    }
+
+    async loadCoinsCatalogue(): Promise<CoinsCatalogue | null> {
+        if (this.catalogue) return this.catalogue;
+        if (this.catalogueLoading) return this.catalogueLoading;
+
+        this.catalogueLoading = (async () => {
+            try {
+                const res = await fetch('/coins.json');
+                if (res.ok) {
+                    const data = await res.json() as CoinsCatalogue;
+                    if (data && Array.isArray(data.coins)) {
+                        this.catalogue = data;
+                        return data;
+                    }
+                }
+            } catch (e) {
+                console.warn('[LiquidityClient] /coins.json fetch warning:', e);
+            }
+            return null;
+        })();
+
+        return this.catalogueLoading;
+    }
+
+    /**
+     * Dynamically maps ANY user symbol (BTC, ETH, SOL, DOGE, PEPE, etc.)
+     * to its multi-venue and single-venue specifications using the 147-coin catalogue.
+     */
+    resolveCoin(symbol: string): ResolvedCoinInfo {
+        const raw = (symbol || '').trim().toUpperCase();
+        // Remove exchange prefixes and contract suffixes
+        const clean = raw
+            .replace(/^(BINANCE:|BYBIT:|OKX:|BITGET:|COINBASE:|HYPERLIQUID:|DERIBIT:)/i, '')
+            .replace(/\.P$/i, '')
+            .replace(/[-_]PERP$/i, '')
+            .replace(/[-_]SWAP$/i, '')
+            .trim();
+
+        let base = clean;
+        if (base.endsWith('USDT') && base.length > 4) base = base.slice(0, -4);
+        else if (base.endsWith('USD') && base.length > 3) base = base.slice(0, -3);
+        else if (base.endsWith('USDC') && base.length > 4) base = base.slice(0, -4);
+
+        let coinEntry: CoinEntry | undefined;
+        if (this.catalogue && this.catalogue.coins) {
+            coinEntry = this.catalogue.coins.find(c => c.coin === base || c.coin === clean);
+        }
+
+        if (coinEntry) {
+            const m = coinEntry.markets;
+            const bSym = m.binance?.symbol || `${base}USDT`;
+            const bySym = m.bybit?.symbol || `${base}USDT`;
+            const okSym = m.okx?.symbol || `${base}-USDT-SWAP`;
+
+            const venues = [
+                `binance:${bSym}`,
+                `bybit:${bySym}`,
+                `okx:${okSym}`
+            ];
+            if (m.bitget?.symbol) venues.push(`bitget:${m.bitget.symbol}`);
+            if (m.hyperliquid?.symbol) venues.push(`hyperliquid:${m.hyperliquid.symbol}-PERP`);
+
+            return {
+                base: coinEntry.coin,
+                multiVenueInst: venues.join(','),
+                binanceInst: `binance:${bSym}`,
+                bybitInst: `bybit:${bySym}`,
+                okxInst: `okx:${okSym}`,
+                unit: m.binance?.unit || 1,
+                price: coinEntry.price || 0,
+                tier: coinEntry.tier || 0
+            };
+        }
+
+        // Robust Fallback
+        const fallbackBinance = clean.includes('USDT') ? clean : `${clean}USDT`;
+        const fallbackOkx = clean.includes('-') ? clean : `${base}-USDT-SWAP`;
+        return {
+            base,
+            multiVenueInst: `binance:${fallbackBinance},bybit:${fallbackBinance},okx:${fallbackOkx}`,
+            binanceInst: `binance:${fallbackBinance}`,
+            bybitInst: `bybit:${fallbackBinance}`,
+            okxInst: `okx:${fallbackOkx}`,
+            unit: 1,
+            price: 0,
+            tier: 0
+        };
+    }
+
+    /**
+     * Dynamically switches the active live market feed on the LiquidityMapper backend.
+     * Notifies all registered listeners (DOM Ladder, Footprint, Indicators).
+     */
+    async switchMarket(symbol: string): Promise<boolean> {
+        await this.loadCoinsCatalogue();
+        const resolved = this.resolveCoin(symbol);
+        this.activeSymbol = resolved.base;
+
+        try {
+            const res = await fetch('/api/market-selection', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ instrumentId: resolved.binanceInst })
+            });
+            if (res.ok || res.status === 202) {
+                this.state = null; // Invalidate cached state
+                await this.getState(); // Fresh state
+                for (const l of this.marketSwitchListeners) l(symbol);
+                return true;
+            }
+        } catch (e) {
+            console.warn('[LiquidityClient] Market selection error:', e);
+        }
+        return false;
+    }
+
+    onMarketSwitch(fn: (symbol: string) => void): () => void {
+        this.marketSwitchListeners.add(fn);
+        return () => this.marketSwitchListeners.delete(fn);
     }
 
     async getState(): Promise<LiquidityState | null> {
@@ -242,42 +539,29 @@ export class LiquidityClient {
         return null;
     }
 
-    resolveInstrumentId(symbol: string): string {
-        const clean = symbol.replace(/^(BINANCE:|BYBIT:|OKX:)/i, '').toUpperCase().replace(/\.P$/i, '').trim();
-        if (clean === 'BTCUSDT' || clean === 'BTC') return 'binance:BTCUSDT,bybit:BTCUSDT,okx:BTC-USDT-SWAP';
-        if (clean === 'ETHUSDT' || clean === 'ETH') return 'binance:ETHUSDT,bybit:ETHUSDT,okx:ETH-USDT-SWAP';
-        if (clean === 'SOLUSDT' || clean === 'SOL') return 'binance:SOLUSDT,bybit:SOLUSDT,okx:SOL-USDT-SWAP';
-        return 'binance:' + clean;
-    }
-
-    resolveSingleInstrumentId(symbol: string, venue: string = 'binance'): string {
-        const clean = symbol.replace(/^(BINANCE:|BYBIT:|OKX:)/i, '').toUpperCase().replace(/\.P$/i, '').trim();
-        if (venue === 'bybit') return `bybit:${clean}`;
-        if (venue === 'okx') return clean.includes('-') ? `okx:${clean}` : `okx:${clean.replace('USDT', '')}-USDT-SWAP`;
-        return `binance:${clean}`;
-    }
-
     async fetchFootprint(symbol: string, tf: string = '1h'): Promise<{
         bars: ParsedFootprintBar[];
         step: number;
         stackedZones: StackedImbalanceZone[];
         nakedPocs: NakedPocRay[];
     }> {
-        const inst = this.resolveInstrumentId(symbol);
+        await this.loadCoinsCatalogue();
+        const resolved = this.resolveCoin(symbol);
         const tfParam = normalizeTimeframe(tf);
+
         try {
-            const url = '/api/v2/footprint?inst=' + encodeURIComponent(inst) + '&tf=' + tfParam;
+            const url = `/api/v2/footprint?inst=${encodeURIComponent(resolved.multiVenueInst)}&tf=${tfParam}`;
             const res = await fetch(url);
             if (!res.ok) {
                 console.warn('[LiquidityClient] Footprint responded with:', res.status, res.statusText);
                 return { bars: [], step: 1.0, stackedZones: [], nakedPocs: [] };
             }
             const data = await res.json() as RawFootprintResponse;
-            const step = data.step || 0.5;
+            const step = data.step || (data.fine ? data.fine : 0.5);
 
             const parsedBars: ParsedFootprintBar[] = [];
-            const stackedZones: StackedImbalanceZone[] = [];
-            const nakedPocs: NakedPocRay[] = [];
+            const stackedZonesList: StackedImbalanceZone[] = [];
+            const nakedPocsList: NakedPocRay[] = [];
 
             for (const b of (data.bars || [])) {
                 if (!b.rows || b.rows.length === 0) continue;
@@ -285,6 +569,29 @@ export class LiquidityClient {
                 let maxVol = 0, poc = 0;
                 const levels: ParsedFootprintLevel[] = [];
 
+                // 1. Detect diagonal imbalances diagonally across adjacent rows
+                const imbFound = diagonalImbalances(b.rows, step, { imbRatio: 3.0, imbMinUsd: 0, imbZeros: true });
+                const imbMap = new Map<number, { buy?: boolean; sell?: boolean }>();
+                for (const imb of imbFound) {
+                    const entry = imbMap.get(imb.low) || {};
+                    if (imb.side === 'buy') entry.buy = true;
+                    if (imb.side === 'sell') entry.sell = true;
+                    imbMap.set(imb.low, entry);
+                }
+
+                // 2. Build stacked zones for this bar (>= 3 consecutive rows)
+                const zones = stackedZones(imbFound, step, 3);
+                for (const z of zones) {
+                    stackedZonesList.push({
+                        side: z.side,
+                        bottomPrice: z.low,
+                        topPrice: z.high,
+                        startTime: b.t,
+                        endTime: null
+                    });
+                }
+
+                // 3. Populate levels
                 for (const r of b.rows) {
                     const price = r[0];
                     const askVol = r[1];
@@ -296,12 +603,15 @@ export class LiquidityClient {
                         maxVol = tot;
                         poc = price;
                     }
+                    const flags = imbMap.get(price);
                     levels.push({
                         price,
                         askVolume: askVol,
                         bidVolume: bidVol,
                         totalVolume: tot,
-                        delta: askVol - bidVol
+                        delta: askVol - bidVol,
+                        buyImbalance: flags?.buy,
+                        sellImbalance: flags?.sell
                     });
                 }
 
@@ -322,57 +632,17 @@ export class LiquidityClient {
                 };
                 parsedBars.push(barObj);
 
-                nakedPocs.push({
+                nakedPocsList.push({
                     price: poc,
                     startTime: b.t,
                     mitigatedTime: null
                 });
-
-                const ratio = 3.0;
-                let buyRun: { start: number; end: number } | null = null;
-                let sellRun: { start: number; end: number } | null = null;
-
-                for (let k = 0; k < levels.length - 1; k++) {
-                    const curr = levels[k]!;
-                    const next = levels[k + 1]!;
-
-                    if (next.askVolume > 0 && (curr.bidVolume === 0 || next.askVolume >= curr.bidVolume * ratio)) {
-                        if (!buyRun) buyRun = { start: curr.price, end: next.price };
-                        else buyRun.end = next.price;
-                    } else {
-                        if (buyRun && (buyRun.end - buyRun.start) >= step * 2) {
-                            stackedZones.push({
-                                side: 'buy',
-                                bottomPrice: buyRun.start,
-                                topPrice: buyRun.end,
-                                startTime: b.t,
-                                endTime: null
-                            });
-                        }
-                        buyRun = null;
-                    }
-
-                    if (curr.bidVolume > 0 && (next.askVolume === 0 || curr.bidVolume >= next.askVolume * ratio)) {
-                        if (!sellRun) sellRun = { start: curr.price, end: next.price };
-                        else sellRun.end = next.price;
-                    } else {
-                        if (sellRun && (sellRun.end - sellRun.start) >= step * 2) {
-                            stackedZones.push({
-                                side: 'sell',
-                                bottomPrice: sellRun.start,
-                                topPrice: sellRun.end,
-                                startTime: b.t,
-                                endTime: null
-                            });
-                        }
-                        sellRun = null;
-                    }
-                }
             }
 
+            // Mitigate stacked zones and naked POCs when traded through by later candles
             for (let i = 0; i < parsedBars.length; i++) {
                 const bar = parsedBars[i]!;
-                for (const zone of stackedZones) {
+                for (const zone of stackedZonesList) {
                     if (zone.endTime === null && bar.time > zone.startTime) {
                         if (zone.side === 'buy' && bar.low <= zone.topPrice) {
                             zone.endTime = bar.time;
@@ -381,7 +651,7 @@ export class LiquidityClient {
                         }
                     }
                 }
-                for (const poc of nakedPocs) {
+                for (const poc of nakedPocsList) {
                     if (poc.mitigatedTime === null && bar.time > poc.startTime) {
                         if (bar.low <= poc.price && bar.high >= poc.price) {
                             poc.mitigatedTime = bar.time;
@@ -390,7 +660,7 @@ export class LiquidityClient {
                 }
             }
 
-            return { bars: parsedBars, step, stackedZones, nakedPocs };
+            return { bars: parsedBars, step, stackedZones: stackedZonesList, nakedPocs: nakedPocsList };
         } catch (e) {
             console.error('[LiquidityClient] Footprint fetch error:', e);
             return { bars: [], step: 1.0, stackedZones: [], nakedPocs: [] };
@@ -398,10 +668,11 @@ export class LiquidityClient {
     }
 
     async fetchFlowDelta(symbol: string, tf: string = '1h'): Promise<{ time: number; delta: number; cumDelta: number }[]> {
-        const inst = this.resolveInstrumentId(symbol);
+        await this.loadCoinsCatalogue();
+        const resolved = this.resolveCoin(symbol);
         const tfParam = normalizeTimeframe(tf);
         try {
-            const url = '/api/v2/candles?inst=' + encodeURIComponent(inst.split(',')[0]!) + '&tf=' + tfParam;
+            const url = `/api/v2/candles?inst=${encodeURIComponent(resolved.binanceInst)}&tf=${tfParam}`;
             const res = await fetch(url);
             if (!res.ok) return [];
             const candles = await res.json() as [time: number, open: number, high: number, low: number, close: number, vol: number, takerVol: number][];
@@ -421,10 +692,11 @@ export class LiquidityClient {
     }
 
     async fetchLongShort(symbol: string, tf: string = '1h', metric: string = 'topPositions'): Promise<LongShortPoint[]> {
-        const inst = this.resolveSingleInstrumentId(symbol, 'binance');
+        await this.loadCoinsCatalogue();
+        const resolved = this.resolveCoin(symbol);
         const tfParam = normalizeTimeframe(tf);
         try {
-            const url = `/api/v2/long-short?inst=${encodeURIComponent(inst)}&tf=${tfParam}&metric=${metric}`;
+            const url = `/api/v2/long-short?inst=${encodeURIComponent(resolved.binanceInst)}&tf=${tfParam}&metric=${metric}`;
             const res = await fetch(url);
             if (!res.ok) return [];
             const data = await res.json() as LongShortResponse;
@@ -436,10 +708,11 @@ export class LiquidityClient {
     }
 
     async fetchOpenInterest(symbol: string, tf: string = '1h'): Promise<OpenInterestBar[]> {
-        const inst = this.resolveSingleInstrumentId(symbol, 'binance');
+        await this.loadCoinsCatalogue();
+        const resolved = this.resolveCoin(symbol);
         const tfParam = normalizeTimeframe(tf);
         try {
-            const url = `/api/v2/oi?inst=${encodeURIComponent(inst)}&tf=${tfParam}`;
+            const url = `/api/v2/oi?inst=${encodeURIComponent(resolved.binanceInst)}&tf=${tfParam}`;
             const res = await fetch(url);
             if (!res.ok) return [];
             const data = await res.json() as { bars: [t: number, o: number, h: number, l: number, c: number][] };
@@ -457,9 +730,11 @@ export class LiquidityClient {
         }
     }
 
-    async fetchLiquidations(): Promise<LiquidationItem[]> {
+    async fetchLiquidations(symbol: string = 'BTCUSDT'): Promise<LiquidationItem[]> {
+        await this.loadCoinsCatalogue();
+        const resolved = this.resolveCoin(symbol);
         try {
-            const url = '/api/v2/liquidations?inst=binance:BTCUSDT';
+            const url = `/api/v2/liquidations?inst=${encodeURIComponent(resolved.binanceInst)}`;
             const res = await fetch(url);
             if (!res.ok) return [];
             const data = await res.json() as { liquidations: [time: number, inst: string, side: 'long'|'short', px: number, usd: number, markPx: number, type: string][] };
@@ -480,8 +755,7 @@ export class LiquidityClient {
         if (this.ws && (this.ws.readyState === WebSocket.OPEN || this.ws.readyState === WebSocket.CONNECTING)) return;
         const proto = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
         const wsUrl = proto + '//' + window.location.host + '/api/v2/ws';
-        
-        console.log('[LiquidityClient] Connecting to WebSocket:', wsUrl);
+
         this.ws = new WebSocket(wsUrl);
         this.ws.binaryType = 'arraybuffer';
 
@@ -513,7 +787,9 @@ export class LiquidityClient {
                     }
                     if (buffer) {
                         const frame = decodeLevels(buffer);
-                        for (const l of this.levelsListeners) l(frame);
+                        if (frame && frame.books && frame.books.length > 0) {
+                            for (const l of this.levelsListeners) l(frame);
+                        }
                     }
                 } catch (_) {}
             }
@@ -524,7 +800,6 @@ export class LiquidityClient {
         };
 
         this.ws.onclose = () => {
-            console.log('[LiquidityClient] WebSocket closed, retrying in 3s...');
             setTimeout(() => this.connectLiveWs(), 3000);
         };
     }

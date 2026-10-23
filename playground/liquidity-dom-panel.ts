@@ -8,6 +8,8 @@ import {
 } from '../src/plugin';
 import {
     LiquidityClient,
+    gridStepFor,
+    formatVol,
     type LevelsFrame,
     type LiveBook
 } from './liquidity-client';
@@ -28,18 +30,10 @@ const VENUE_COLORS: Record<string, string> = {
     bitgetspot: '#0ca5b8',
 };
 
-function formatCompactUsd(val: number): string {
-    if (val === 0) return '0';
-    const abs = Math.abs(val);
-    if (abs >= 1_000_000) return (val / 1_000_000).toFixed(2) + 'M';
-    if (abs >= 1_000) return (val / 1_000).toFixed(1) + 'k';
-    return val.toFixed(0);
-}
-
 function formatSignedUsd(val: number): string {
     if (Math.abs(val) < 1) return '—';
     const sign = val > 0 ? '+' : '−';
-    return `${sign}${formatCompactUsd(Math.abs(val))}`;
+    return `${sign}${formatVol(Math.abs(val))}`;
 }
 
 interface PriceRow {
@@ -54,10 +48,14 @@ interface PriceRow {
 interface DepthSnapshot {
     timestamp: number;
     bins: Map<number, number>; // price -> usd
+    lowMark: number;
+    highMark: number;
 }
 
 export class DomLadderPanelController {
     private root: HTMLElement;
+    private ctx: WidgetContext | null = null;
+    private currentSymbol: string = 'BTCUSDT';
     private markPrice: number = 0;
     private selectedWindowSec: number = 60; // 15, 60, 300
     private manualStep: number = 0; // 0 = auto
@@ -65,19 +63,26 @@ export class DomLadderPanelController {
     private rows: PriceRow[] = [];
     private unsubscribeLevels: (() => void) | null = null;
     private unsubscribeTick: (() => void) | null = null;
+    private unsubscribeMarket: (() => void) | null = null;
     private animFrameId: number | null = null;
     private autoCenter = true;
 
     // DOM References
     private markBanner!: HTMLElement;
+    private badgeEl!: HTMLElement;
     private balanceBar!: HTMLElement;
     private balanceBidsLabel!: HTMLElement;
     private balanceAsksLabel!: HTMLElement;
     private tableBody!: HTMLElement;
     private tooltipEl!: HTMLElement;
+    private stepPillsContainer!: HTMLElement;
 
-    constructor(container: HTMLElement) {
+    constructor(container: HTMLElement, ctx?: WidgetContext) {
         this.root = container;
+        this.ctx = ctx || null;
+        if (ctx && ctx.symbol) {
+            this.currentSymbol = ctx.symbol;
+        }
         this.buildUI();
     }
 
@@ -232,8 +237,8 @@ export class DomLadderPanelController {
                 text-align: right;
                 font-variant-numeric: tabular-nums;
             }
-            .vela-col-ps.stack { color: #2ebd85; }
-            .vela-col-ps.pull { color: #f6465d; }
+            .vela-col-ps.stack { color: #2ebd85; font-weight: 600; }
+            .vela-col-ps.pull { color: #f6465d; font-weight: 600; }
             .vela-col-ps.zero { color: #50535e; }
             .vela-col-usd {
                 width: 58px;
@@ -277,6 +282,15 @@ export class DomLadderPanelController {
                 box-shadow: 0 4px 12px rgba(0, 0, 0, 0.5);
                 white-space: nowrap;
             }
+            .vela-dom-touch-dot {
+                display: inline-block;
+                width: 4px;
+                height: 4px;
+                border-radius: 50%;
+                background: #ffb648;
+                margin-right: 3px;
+                vertical-align: middle;
+            }
         `;
         this.root.appendChild(style);
 
@@ -289,23 +303,23 @@ export class DomLadderPanelController {
 
         this.markBanner = document.createElement('div');
         this.markBanner.className = 'vela-dom-mark-price';
-        this.markBanner.textContent = 'Connecting...';
+        this.markBanner.textContent = '---';
 
-        const badge = document.createElement('div');
-        badge.className = 'vela-dom-badge';
-        badge.textContent = 'AGG LIVE';
+        this.badgeEl = document.createElement('div');
+        this.badgeEl.className = 'vela-dom-badge';
+        this.badgeEl.textContent = 'AGG LIVE';
 
         markRow.appendChild(this.markBanner);
-        markRow.appendChild(badge);
+        markRow.appendChild(this.badgeEl);
         header.appendChild(markRow);
 
         // Controls
         const controls = document.createElement('div');
         controls.className = 'vela-dom-controls';
 
-        // Window pills
-        const pills = document.createElement('div');
-        pills.className = 'vela-dom-pills';
+        // Window pills (Pull/Stack)
+        const windowPills = document.createElement('div');
+        windowPills.className = 'vela-dom-pills';
 
         const windows = [15, 60, 300];
         const labels: Record<number, string> = { 15: '15s', 60: '1m', 300: '5m' };
@@ -316,19 +330,24 @@ export class DomLadderPanelController {
             p.textContent = labels[w]!;
             p.addEventListener('click', () => {
                 this.selectedWindowSec = w;
-                pills.querySelectorAll('.vela-dom-pill').forEach(el => el.classList.remove('active'));
+                windowPills.querySelectorAll('.vela-dom-pill').forEach(el => el.classList.remove('active'));
                 p.classList.add('active');
                 this.scheduleRender();
             });
-            pills.appendChild(p);
+            windowPills.appendChild(p);
         }
+        controls.appendChild(windowPills);
 
-        controls.appendChild(pills);
+        // Step selector pills
+        this.stepPillsContainer = document.createElement('div');
+        this.stepPillsContainer.className = 'vela-dom-pills';
+        this.renderStepPills();
+        controls.appendChild(this.stepPillsContainer);
 
         // Center Button
         const centerBtn = document.createElement('div');
         centerBtn.className = 'vela-dom-pill';
-        centerBtn.textContent = 'Recenter';
+        centerBtn.textContent = 'Center';
         centerBtn.style.cursor = 'pointer';
         centerBtn.addEventListener('click', () => {
             this.autoCenter = true;
@@ -392,24 +411,56 @@ export class DomLadderPanelController {
         });
     }
 
+    private renderStepPills(): void {
+        this.stepPillsContainer.innerHTML = '';
+        const stepOpts = [0]; // 0 = Auto
+        const p = this.markPrice || 80000;
+        const auto = gridStepFor(p);
+
+        if (p >= 10000) stepOpts.push(1, 5, 10);
+        else if (p >= 1000) stepOpts.push(0.5, 1, 2);
+        else if (p >= 100) stepOpts.push(0.05, 0.1, 0.5);
+        else stepOpts.push(0.001, 0.005, 0.01);
+
+        for (const s of stepOpts) {
+            const pEl = document.createElement('div');
+            pEl.className = `vela-dom-pill ${s === this.manualStep ? 'active' : ''}`;
+            pEl.textContent = s === 0 ? 'Auto' : String(s);
+            pEl.addEventListener('click', () => {
+                this.manualStep = s;
+                this.renderStepPills();
+                this.generateInitialLadder(this.markPrice || auto);
+                this.scheduleRender();
+            });
+            this.stepPillsContainer.appendChild(pEl);
+        }
+    }
+
     async start(): Promise<void> {
-        // 1. Immediately fetch REST state to populate mark price and ladder instantly
+        // 1. Resolve coin and switch backend feed if needed
+        const resolved = LiquidityClient.get().resolveCoin(this.currentSymbol);
+        this.badgeEl.textContent = `${resolved.base} AGG LIVE`;
+
+        void LiquidityClient.get().switchMarket(this.currentSymbol);
+
+        // 2. Fetch initial state
         try {
             const state = await LiquidityClient.get().getState();
             if (state && typeof state.markPrice === 'number' && state.markPrice > 0) {
                 this.markPrice = state.markPrice;
-                this.markBanner.textContent = `$${state.markPrice.toLocaleString(undefined, { minimumFractionDigits: 1, maximumFractionDigits: 1 })}`;
+                this.updateMarkDisplay(state.markPrice);
                 this.generateInitialLadder(state.markPrice);
+                this.renderStepPills();
                 this.scheduleRender();
             }
         } catch (e) {
             console.warn('[DomLadder] Initial state fetch warning:', e);
         }
 
-        // 2. Wire live WebSocket streams
+        // 3. Wire live WebSocket streams
         this.unsubscribeTick = LiquidityClient.get().onTick((price) => {
             this.markPrice = price;
-            this.markBanner.textContent = `$${price.toLocaleString(undefined, { minimumFractionDigits: 1, maximumFractionDigits: 1 })}`;
+            this.updateMarkDisplay(price);
             this.scheduleRender();
         });
 
@@ -417,21 +468,45 @@ export class DomLadderPanelController {
             this.processLevelsFrame(frame);
             this.scheduleRender();
         });
+
+        this.unsubscribeMarket = LiquidityClient.get().onMarketSwitch((sym) => {
+            this.setSymbol(sym);
+        });
+
+        // 4. Hook active chart market switches if context is available
+        if (this.ctx && this.ctx.chart) {
+            this.ctx.chart.on('market:changed', ({ symbol }: { symbol: string }) => {
+                if (symbol) this.setSymbol(symbol);
+            });
+        }
+    }
+
+    setSymbol(sym: string): void {
+        if (!sym || sym === this.currentSymbol) return;
+        this.currentSymbol = sym;
+        const resolved = LiquidityClient.get().resolveCoin(sym);
+        this.badgeEl.textContent = `${resolved.base} AGG LIVE`;
+        this.snapshots = [];
+        this.rows = [];
+        void LiquidityClient.get().switchMarket(sym);
+        this.autoCenter = true;
+    }
+
+    private updateMarkDisplay(price: number): void {
+        const decimals = price >= 1000 ? 1 : price >= 10 ? 2 : 4;
+        this.markBanner.textContent = `$${price.toLocaleString(undefined, { minimumFractionDigits: decimals, maximumFractionDigits: decimals })}`;
+    }
+
+    private getActiveStep(): number {
+        if (this.manualStep > 0) return this.manualStep;
+        return gridStepFor(this.markPrice || 80000);
     }
 
     private generateInitialLadder(markPrice: number): void {
-        let step = this.manualStep;
-        if (step <= 0) {
-            if (markPrice >= 50000) step = 5;
-            else if (markPrice >= 10000) step = 1;
-            else if (markPrice >= 1000) step = 0.5;
-            else if (markPrice >= 100) step = 0.1;
-            else step = 0.01;
-        }
-
+        const step = this.getActiveStep();
         const markBin = Math.floor(markPrice / step) * step;
         const newRows: PriceRow[] = [];
-        const numHalfRows = 25;
+        const numHalfRows = 28;
 
         for (let k = numHalfRows; k >= 1; k--) {
             newRows.push({
@@ -467,16 +542,7 @@ export class DomLadderPanelController {
     private processLevelsFrame(frame: LevelsFrame): void {
         if (!frame.books || frame.books.length === 0) return;
 
-        // Determine step from mark price
-        let step = this.manualStep;
-        if (step <= 0) {
-            if (this.markPrice >= 50000) step = 5;
-            else if (this.markPrice >= 10000) step = 1;
-            else if (this.markPrice >= 1000) step = 0.5;
-            else if (this.markPrice >= 100) step = 0.1;
-            else step = 0.01;
-        }
-
+        const step = this.getActiveStep();
         const snapshotMap = new Map<number, number>();
         const aggregatedBids = new Map<number, { usd: number; venues: Map<string, number> }>();
         const aggregatedAsks = new Map<number, { usd: number; venues: Map<string, number> }>();
@@ -525,14 +591,19 @@ export class DomLadderPanelController {
 
         // Record Snapshot for Pull/Stack
         const now = Date.now();
-        this.snapshots.push({ timestamp: now, bins: snapshotMap });
+        this.snapshots.push({
+            timestamp: now,
+            bins: snapshotMap,
+            lowMark: this.markPrice,
+            highMark: this.markPrice
+        });
         // Keep max 360 seconds of snapshots
         const cutoff = now - 360 * 1000;
         while (this.snapshots.length > 0 && this.snapshots[0]!.timestamp < cutoff) {
             this.snapshots.shift();
         }
 
-        // Find reference snapshot for selected window
+        // Find reference snapshot for selected window (15s, 60s, 300s)
         const targetTime = now - this.selectedWindowSec * 1000;
         let pastSnapshot: DepthSnapshot | null = null;
         for (let i = this.snapshots.length - 1; i >= 0; i--) {
@@ -546,13 +617,13 @@ export class DomLadderPanelController {
         }
 
         // Build Rows around mark price
-        const numHalfRows = 25;
+        const numHalfRows = 28;
         const markBin = Math.floor((this.markPrice || 80000) / step) * step;
         const newRows: PriceRow[] = [];
 
         // Asks (above mark price, descending)
         for (let k = numHalfRows; k >= 1; k--) {
-            const p = markBin + k * step;
+            const p = Number((markBin + k * step).toFixed(8));
             const entry = aggregatedAsks.get(p);
             const totalUsd = entry ? entry.usd : 0;
             const venues = entry ? entry.venues : new Map();
@@ -582,7 +653,7 @@ export class DomLadderPanelController {
 
         // Bids (below mark price, descending)
         for (let k = 1; k <= numHalfRows; k++) {
-            const p = markBin - k * step;
+            const p = Number((markBin - k * step).toFixed(8));
             const entry = aggregatedBids.get(p);
             const totalUsd = entry ? entry.usd : 0;
             const venues = entry ? entry.venues : new Map();
@@ -614,6 +685,8 @@ export class DomLadderPanelController {
     private render(): void {
         if (this.rows.length === 0) return;
 
+        const decimals = this.markPrice >= 1000 ? 1 : this.markPrice >= 10 ? 2 : 4;
+
         // Calculate max depth for bar scaling
         let maxDepth = 1;
         let totalBidsUsd = 0;
@@ -631,16 +704,17 @@ export class DomLadderPanelController {
             const bidPct = Math.round((totalBidsUsd / totalVisible) * 100);
             const askPct = 100 - bidPct;
             this.balanceBar.style.width = `${bidPct}%`;
-            this.balanceBidsLabel.textContent = `Bids: ${bidPct}% ($${formatCompactUsd(totalBidsUsd)})`;
-            this.balanceAsksLabel.textContent = `Asks: ${askPct}% ($${formatCompactUsd(totalAsksUsd)})`;
+            this.balanceBidsLabel.textContent = `Bids: ${bidPct}% ($${formatVol(totalBidsUsd)})`;
+            this.balanceAsksLabel.textContent = `Asks: ${askPct}% ($${formatVol(totalAsksUsd)})`;
         }
 
         // Render Rows
         this.tableBody.innerHTML = '';
         const frag = document.createDocumentFragment();
+        const step = this.getActiveStep();
 
         for (const row of this.rows) {
-            const isMark = Math.abs(row.price - this.markPrice) < (this.rows[0]!.price - this.rows[1]!.price);
+            const isMark = Math.abs(row.price - this.markPrice) < (step * 0.9);
             const rowEl = document.createElement('div');
             rowEl.className = `vela-dom-row ${isMark ? 'mark-row' : ''}`;
 
@@ -651,17 +725,17 @@ export class DomLadderPanelController {
             if (psVal > 500) psClass = 'stack';
             else if (psVal < -500) psClass = 'pull';
             psCol.className = `vela-col-ps ${psClass}`;
-            psCol.textContent = formatSignedUsd(psVal);
+            psCol.innerHTML = `${row.touched ? '<span class="vela-dom-touch-dot" title="Price touched"></span>' : ''}${formatSignedUsd(psVal)}`;
 
             // Total USD Column
             const usdCol = document.createElement('div');
             usdCol.className = 'vela-col-usd';
-            usdCol.textContent = row.totalUsd > 0 ? formatCompactUsd(row.totalUsd) : '—';
+            usdCol.textContent = row.totalUsd > 0 ? formatVol(row.totalUsd) : '—';
 
             // Price Column
             const priceCol = document.createElement('div');
             priceCol.className = `vela-col-price ${isMark ? 'mark' : row.side}`;
-            priceCol.textContent = row.price.toLocaleString(undefined, { minimumFractionDigits: 1, maximumFractionDigits: 1 });
+            priceCol.textContent = row.price.toLocaleString(undefined, { minimumFractionDigits: decimals, maximumFractionDigits: decimals });
 
             // Visual Depth Bar (segmented by venue)
             const barCol = document.createElement('div');
@@ -687,14 +761,14 @@ export class DomLadderPanelController {
             rowEl.appendChild(barCol);
 
             // Hover Tooltip
-            rowEl.addEventListener('mouseenter', (e) => {
-                let tooltipHtml = `<strong>$${row.price.toFixed(1)}</strong> — Total: $${row.totalUsd.toLocaleString()}<br/>`;
+            rowEl.addEventListener('mouseenter', () => {
+                let tooltipHtml = `<strong>$${row.price.toFixed(decimals)}</strong> — Depth: $${row.totalUsd.toLocaleString()}<br/>`;
                 tooltipHtml += `Pull/Stack (${this.selectedWindowSec}s): ${formatSignedUsd(row.pullStackUsd)}<br/>`;
                 tooltipHtml += `<div style="margin-top: 4px; border-top: 1px solid rgba(255,255,255,0.1); padding-top: 2px;">`;
                 for (const [v, u] of row.venues.entries()) {
                     const pct = Math.round((u / (row.totalUsd || 1)) * 100);
                     const color = VENUE_COLORS[v] || '#ffffff';
-                    tooltipHtml += `<span style="color:${color}">●</span> ${v}: $${formatCompactUsd(u)} (${pct}%)<br/>`;
+                    tooltipHtml += `<span style="color:${color}">●</span> ${v}: $${formatVol(u)} (${pct}%)<br/>`;
                 }
                 tooltipHtml += `</div>`;
 
@@ -737,6 +811,10 @@ export class DomLadderPanelController {
             this.unsubscribeTick();
             this.unsubscribeTick = null;
         }
+        if (this.unsubscribeMarket) {
+            this.unsubscribeMarket();
+            this.unsubscribeMarket = null;
+        }
         if (this.animFrameId !== null) {
             cancelAnimationFrame(this.animFrameId);
             this.animFrameId = null;
@@ -757,8 +835,8 @@ export function registerLiquidityDomPanel(): void {
         minWidth: 260,
         maxWidth: 480,
         button: true,
-        mount(_ctx: WidgetContext, body: HTMLElement, _header: SidePanelHeader): SidePanelHandle {
-            const ctrl = new DomLadderPanelController(body);
+        mount(ctx: WidgetContext, body: HTMLElement, _header: SidePanelHeader): SidePanelHandle {
+            const ctrl = new DomLadderPanelController(body, ctx);
             ctrl.start();
             return {
                 destroy: () => ctrl.destroy()

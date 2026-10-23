@@ -14,6 +14,8 @@ import { addSampleMarks } from './marks';
 import { registerClassicIndicators } from '../src/core/native-indicators/classics';
 import { registerTradingLinesLayer } from './trading-lines';
 import { registerFootprintPlugin } from './footprint-plugin';
+import { registerWidgetAction } from '../src/plugin';
+import { LiquidityClient } from './liquidity-client';
 import { registerLiquidityIndicators } from './liquidity-indicators';
 import { registerLiquidityDomPanel } from './liquidity-dom-panel';
 import {
@@ -76,6 +78,32 @@ registerReplayButton();
 registerPineEditor();
 registerThemeSwitcher();
 registerIndicatorExplorer();
+
+// Quick topbar button to toggle Footprint chart style
+registerWidgetAction({
+    id: 'footprint.toggle',
+    target: 'topbar',
+    align: 'left',
+    order: 22,
+    label: 'Footprint',
+    run: (ctx) => {
+        const next = ctx.priceStyle === 'footprint' ? 'candles' : 'footprint';
+        ctx.setPriceStyle(next);
+        ctx.toast(next === 'footprint' ? 'Switched to Footprint (Order Flow)' : 'Switched to Candlesticks');
+    }
+});
+
+// Quick topbar button to toggle DOM Ladder
+registerWidgetAction({
+    id: 'domladder.toggle',
+    target: 'topbar',
+    align: 'left',
+    order: 23,
+    label: 'DOM Ladder',
+    run: (ctx) => {
+        ctx.togglePanel('liquidity.dom');
+    }
+});
 
 async function startVela() {
     // Pre-flight fetch authoritative workspace from LXC 115 backend before mounting
@@ -201,6 +229,7 @@ const syncActiveSymbol = (sym: string) => {
     setActiveSymbol(sym);
     setWatchlistActiveSymbol(sym);
     setAlertsActiveSymbol(sym);
+    void LiquidityClient.get().switchMarket(sym);
 };
 
 ws.on('cell:active', ({ id }) => {

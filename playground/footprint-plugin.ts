@@ -6,11 +6,13 @@ import {
     type RendererLayerInstance,
     type RendererLayerArgs,
 } from '../src/plugin';
-import { VALID, INVALID, HIGHLIGHT, NEUTRAL, MUTED } from '../src/core/palette';
 import {
     LiquidityClient,
     normalizeTimeframe,
     timeframeToMs,
+    gridStepFor,
+    barFraction,
+    formatVol,
     type ParsedFootprintBar,
     type ParsedFootprintLevel,
     type StackedImbalanceZone,
@@ -26,16 +28,6 @@ export interface FootprintPayload {
     nakedPocs: NakedPocRay[];
 }
 
-export function formatCompactVolume(val: number): string {
-    if (val === 0) return '0';
-    const abs = Math.abs(val);
-    if (abs >= 1_000_000) return (val / 1_000_000).toFixed(2) + 'M';
-    if (abs >= 1_000) return (val / 1_000).toFixed(1) + 'k';
-    if (abs < 0.1) return val.toFixed(3);
-    if (abs < 1) return val.toFixed(2);
-    return val.toFixed(1);
-}
-
 export class FootprintDataEngine implements SeriesDataEngine {
     private host: SeriesDataEngineHost | null = null;
     private bars: ParsedFootprintBar[] = [];
@@ -47,6 +39,7 @@ export class FootprintDataEngine implements SeriesDataEngine {
     private loadedTimeframe = '';
     private refreshTimer: ReturnType<typeof setInterval> | null = null;
     private unsubscribeTick: (() => void) | null = null;
+    private unsubscribeMarket: (() => void) | null = null;
 
     start(host: SeriesDataEngineHost): void {
         this.host = host;
@@ -54,9 +47,18 @@ export class FootprintDataEngine implements SeriesDataEngine {
         this.loadedSymbol = this.host.symbol || 'BTCUSDT';
         this.loadedTimeframe = normalizeTimeframe(this.host.timeframe || '1h');
         void this.loadData();
+
         this.unsubscribeTick = LiquidityClient.get().onTick((_price, _time) => {
             if (this.active) this.onBars();
         });
+
+        this.unsubscribeMarket = LiquidityClient.get().onMarketSwitch((_sym) => {
+            if (this.active) {
+                this.loadedSymbol = '';
+                void this.loadData();
+            }
+        });
+
         if (this.refreshTimer) clearInterval(this.refreshTimer);
         this.refreshTimer = setInterval(() => {
             if (this.active) void this.loadData();
@@ -73,6 +75,10 @@ export class FootprintDataEngine implements SeriesDataEngine {
             this.unsubscribeTick();
             this.unsubscribeTick = null;
         }
+        if (this.unsubscribeMarket) {
+            this.unsubscribeMarket();
+            this.unsubscribeMarket = null;
+        }
     }
 
     resume(): void {
@@ -82,6 +88,12 @@ export class FootprintDataEngine implements SeriesDataEngine {
         void this.loadData();
         this.unsubscribeTick = LiquidityClient.get().onTick((_price, _time) => {
             if (this.active) this.onBars();
+        });
+        this.unsubscribeMarket = LiquidityClient.get().onMarketSwitch(() => {
+            if (this.active) {
+                this.loadedSymbol = '';
+                void this.loadData();
+            }
         });
         if (this.refreshTimer) clearInterval(this.refreshTimer);
         this.refreshTimer = setInterval(() => {
@@ -98,6 +110,10 @@ export class FootprintDataEngine implements SeriesDataEngine {
         if (this.unsubscribeTick) {
             this.unsubscribeTick();
             this.unsubscribeTick = null;
+        }
+        if (this.unsubscribeMarket) {
+            this.unsubscribeMarket();
+            this.unsubscribeMarket = null;
         }
         this.bars = [];
         this.loadedSymbol = '';
@@ -118,9 +134,7 @@ export class FootprintDataEngine implements SeriesDataEngine {
         this.pushCurrent();
     }
 
-    onViewport(_range: { from: number; to: number }): void {
-        // Viewport pan/zoom
-    }
+    onViewport(_range: { from: number; to: number }): void {}
 
     private async loadData(): Promise<void> {
         if (!this.host) return;
@@ -157,7 +171,7 @@ export class FootprintDataEngine implements SeriesDataEngine {
 
 export class FootprintRendererLayer implements RendererLayerInstance {
     private canvas: HTMLCanvasElement | null = null;
-    private imbalanceRatio = 3.0;
+    private imbRatio = 3.0;
 
     mount(canvas: HTMLCanvasElement): void {
         this.canvas = canvas;
@@ -184,9 +198,12 @@ export class FootprintRendererLayer implements RendererLayerInstance {
 
         const payload = args.data as FootprintPayload | undefined;
         const fpBars = payload?.bars || [];
-        const step = payload?.step || 0.5;
         const stackedZones = payload?.stackedZones || [];
         const nakedPocs = payload?.nakedPocs || [];
+
+        // Estimate step dynamically if not in payload
+        const lastClose = args.bars.length > 0 ? args.bars[args.bars.length - 1]!.close : 80000;
+        const step = (payload?.step && payload.step > 0) ? payload.step : gridStepFor(lastClose);
 
         const barMap = new Map<number, ParsedFootprintBar>();
         for (const b of fpBars) {
@@ -195,7 +212,7 @@ export class FootprintRendererLayer implements RendererLayerInstance {
 
         const tfMs = timeframeToMs(payload?.timeframe || '1h');
 
-        // Pre-reconcile nearest footprint bars for all chart candles to ensure 100% consistent matching
+        // Pre-reconcile nearest footprint bars for chart candles
         const chartBarFpMap = new Map<number, ParsedFootprintBar>();
         for (let i = 0; i < args.bars.length; i++) {
             const chartBar = args.bars[i]!;
@@ -211,8 +228,17 @@ export class FootprintRendererLayer implements RendererLayerInstance {
             if (fpBar) chartBarFpMap.set(chartBar.time, fpBar);
         }
 
-        const statsTableHeight = 64;
+        const statsTableHeight = 66;
         const chartAreaHeight = Math.max(10, bounds.height - statsTableHeight);
+
+        // Find busiest row in view for proportional sqrt volume bars
+        let busiestRowVol = 0;
+        for (const fp of chartBarFpMap.values()) {
+            for (const lvl of fp.levels) {
+                if (lvl.totalVolume > busiestRowVol) busiestRowVol = lvl.totalVolume;
+            }
+        }
+        if (busiestRowVol <= 0) busiestRowVol = 1;
 
         // --- 1. RENDER STACKED IMBALANCE ZONES & NAKED POCS ---
         ctx.save();
@@ -220,10 +246,10 @@ export class FootprintRendererLayer implements RendererLayerInstance {
         ctx.rect(0, bounds.top, coords.width, chartAreaHeight);
         ctx.clip();
 
-        // A. Draw Stacked Imbalance Zones
+        // A. Draw Stacked Imbalance Zones (1:1 with LiquidityMapper runs.ts)
         for (const zone of stackedZones) {
             const startX = coords.timeToX(zone.startTime);
-            const endX = zone.endTime ? coords.timeToX(zone.endTime) : coords.width;
+            const endX = zone.endTime ? coords.timeToX(zone.endTime) : coords.width + 4;
             if (endX < 0 || startX > coords.width) continue;
 
             const yTop = coords.priceToY(zone.topPrice, scale, bounds);
@@ -232,18 +258,23 @@ export class FootprintRendererLayer implements RendererLayerInstance {
             const zoneH = Math.max(2, Math.abs(yBottom - yTop));
             const zoneW = Math.max(4, endX - startX);
 
-            if (zone.side === 'buy') {
-                ctx.fillStyle = 'rgba(46, 189, 133, 0.12)';
-                ctx.strokeStyle = 'rgba(46, 189, 133, 0.4)';
-            } else {
-                ctx.fillStyle = 'rgba(246, 70, 93, 0.12)';
-                ctx.strokeStyle = 'rgba(246, 70, 93, 0.4)';
-            }
+            const isBuy = zone.side === 'buy';
+            const color = isBuy ? '#2ebd85' : '#f6465d';
+
+            // Faint band (alpha 0.14)
+            ctx.fillStyle = isBuy ? 'rgba(46, 189, 133, 0.14)' : 'rgba(246, 70, 93, 0.14)';
             ctx.fillRect(startX, zoneY, zoneW, zoneH);
+
+            // Firm top and bottom boundary lines (alpha 0.60)
+            ctx.strokeStyle = isBuy ? 'rgba(46, 189, 133, 0.60)' : 'rgba(246, 70, 93, 0.60)';
             ctx.lineWidth = 1;
-            ctx.setLineDash([4, 2]);
-            ctx.strokeRect(startX, zoneY, zoneW, zoneH);
             ctx.setLineDash([]);
+            ctx.beginPath();
+            ctx.moveTo(startX, Math.round(zoneY) + 0.5);
+            ctx.lineTo(startX + zoneW, Math.round(zoneY) + 0.5);
+            ctx.moveTo(startX, Math.round(zoneY + zoneH) - 0.5);
+            ctx.lineTo(startX + zoneW, Math.round(zoneY + zoneH) - 0.5);
+            ctx.stroke();
         }
 
         // B. Draw Naked Points of Control (nPOC)
@@ -252,28 +283,27 @@ export class FootprintRendererLayer implements RendererLayerInstance {
             const endX = np.mitigatedTime ? coords.timeToX(np.mitigatedTime) : coords.width;
             if (endX < 0 || startX > coords.width) continue;
 
-            const y = coords.priceToY(np.price, scale, bounds);
-            ctx.strokeStyle = np.mitigatedTime ? 'rgba(224, 180, 0, 0.25)' : 'rgba(224, 180, 0, 0.85)';
-            ctx.lineWidth = 1.5;
-            ctx.setLineDash(np.mitigatedTime ? [3, 3] : [6, 3]);
+            const y = Math.round(coords.priceToY(np.price, scale, bounds)) + 0.5;
+            ctx.strokeStyle = np.mitigatedTime ? 'rgba(224, 180, 0, 0.25)' : '#e0b400';
+            ctx.lineWidth = 1.2;
+            ctx.setLineDash([3, 3]);
             ctx.beginPath();
             ctx.moveTo(startX, y);
             ctx.lineTo(endX, y);
             ctx.stroke();
             ctx.setLineDash([]);
 
-            // Label
-            if (!np.mitigatedTime && endX - startX > 40) {
+            if (!np.mitigatedTime && endX - startX > 45) {
                 ctx.fillStyle = '#e0b400';
                 ctx.font = '9px monospace';
                 ctx.textAlign = 'right';
-                ctx.fillText('nPOC ' + np.price.toFixed(1), endX - 6, y - 3);
+                ctx.fillText(`nPOC ${np.price.toFixed(1)}`, endX - 6, y - 3);
             }
         }
 
         // --- 2. RENDER FOOTPRINT BARS ---
         const bodySpacing = coords.bodySpacing();
-        const barWidth = Math.max(12, Math.min(220, bodySpacing * 0.88));
+        const barWidth = Math.max(16, Math.min(240, bodySpacing * 0.90));
         const showDetailedNumbers = barWidth >= 48;
 
         for (let i = 0; i < args.bars.length; i++) {
@@ -290,7 +320,7 @@ export class FootprintRendererLayer implements RendererLayerInstance {
                 const yOpen = coords.priceToY(chartBar.open, scale, bounds);
                 const yClose = coords.priceToY(chartBar.close, scale, bounds);
 
-                ctx.strokeStyle = 'rgba(117, 120, 130, 0.4)';
+                ctx.strokeStyle = 'rgba(117, 120, 130, 0.3)';
                 ctx.lineWidth = 1;
                 ctx.beginPath();
                 ctx.moveTo(x, yHigh);
@@ -325,55 +355,80 @@ export class FootprintRendererLayer implements RendererLayerInstance {
                 // Diagonal Imbalance
                 const lvlBelow = indexMap.get(k - 1);
                 const buyImbalance = Boolean(
-                    lvlBelow &&
-                    lvl.askVolume > 0 &&
-                    (lvlBelow.bidVolume === 0 || lvl.askVolume >= lvlBelow.bidVolume * this.imbalanceRatio)
+                    lvl.buyImbalance ?? (
+                        lvlBelow &&
+                        lvl.askVolume > 0 &&
+                        (lvlBelow.bidVolume === 0 || lvl.askVolume >= lvlBelow.bidVolume * this.imbRatio)
+                    )
                 );
 
                 const lvlAbove = indexMap.get(k + 1);
                 const sellImbalance = Boolean(
-                    lvlAbove &&
-                    lvl.bidVolume > 0 &&
-                    (lvlAbove.askVolume === 0 || lvl.bidVolume >= lvlAbove.askVolume * this.imbalanceRatio)
+                    lvl.sellImbalance ?? (
+                        lvlAbove &&
+                        lvl.bidVolume > 0 &&
+                        (lvlAbove.askVolume === 0 || lvl.bidVolume >= lvlAbove.askVolume * this.imbRatio)
+                    )
                 );
 
-                // Bid cell (left)
-                if (sellImbalance) ctx.fillStyle = 'rgba(246, 70, 93, 0.32)';
-                else ctx.fillStyle = 'rgba(255, 255, 255, 0.03)';
-                ctx.fillRect(left, cellY, halfWidth - 1, cellH);
+                // Row volume bar: proportional sqrt width behind cell text (LiquidityMapper standard)
+                const frac = barFraction(lvl.totalVolume, busiestRowVol, 'sqrt');
+                if (frac > 0) {
+                    const rowBarW = Math.max(2, Math.min(barWidth, barWidth * frac));
+                    // Tint bar with dominant side color
+                    if (lvl.askVolume >= 1.15 * lvl.bidVolume) {
+                        ctx.fillStyle = 'rgba(46, 189, 133, 0.24)';
+                    } else if (lvl.bidVolume >= 1.15 * lvl.askVolume) {
+                        ctx.fillStyle = 'rgba(246, 70, 93, 0.24)';
+                    } else {
+                        ctx.fillStyle = 'rgba(255, 255, 255, 0.06)';
+                    }
+                    ctx.fillRect(left, cellY, rowBarW, cellH);
+                }
 
-                // Ask cell (right)
-                if (buyImbalance) ctx.fillStyle = 'rgba(46, 189, 133, 0.32)';
-                else ctx.fillStyle = 'rgba(255, 255, 255, 0.03)';
-                ctx.fillRect(left + halfWidth, cellY, halfWidth - 1, cellH);
+                // Diagonal Imbalance Outline Rectangles (1:1 with LiquidityMapper)
+                if (cellH >= 3) {
+                    if (sellImbalance) {
+                        ctx.strokeStyle = '#f6465d';
+                        ctx.lineWidth = cellH >= 8 ? 1.5 : 1;
+                        ctx.strokeRect(left + 0.75, cellY + 0.75, halfWidth - 1.5, cellH - 1.5);
+                    }
+                    if (buyImbalance) {
+                        ctx.strokeStyle = '#2ebd85';
+                        ctx.lineWidth = cellH >= 8 ? 1.5 : 1;
+                        ctx.strokeRect(left + halfWidth + 0.75, cellY + 0.75, halfWidth - 1.5, cellH - 1.5);
+                    }
+                }
 
-                // POC Highlight border
+                // POC Highlight border on candle
                 if (isPoc) {
                     ctx.strokeStyle = '#e0b400';
                     ctx.lineWidth = 1.5;
-                    ctx.strokeRect(left, cellY, barWidth - 1, cellH);
+                    ctx.strokeRect(left + 0.5, cellY + 0.5, barWidth - 1, cellH - 1);
                 }
 
                 // Volume text (when zoomed in)
-                if (showDetailedNumbers && cellH >= 11) {
-                    ctx.font = '10px monospace';
+                if (showDetailedNumbers && cellH >= 10) {
                     ctx.textBaseline = 'middle';
+                    const yText = cellY + cellH / 2;
 
-                    // Bid volume text
+                    // Bid volume text (left side, right-aligned)
                     ctx.textAlign = 'right';
-                    ctx.fillStyle = sellImbalance ? '#ff6675' : '#a0a5b5';
-                    ctx.fillText(formatCompactVolume(lvl.bidVolume), left + halfWidth - 4, cellY + cellH / 2);
+                    ctx.font = sellImbalance ? 'bold 10px monospace' : '10px monospace';
+                    ctx.fillStyle = sellImbalance ? '#ff6675' : '#d1d4dc';
+                    ctx.fillText(formatVol(lvl.bidVolume), left + halfWidth - 4, yText);
 
-                    // Ask volume text
+                    // Ask volume text (right side, left-aligned)
                     ctx.textAlign = 'left';
-                    ctx.fillStyle = buyImbalance ? '#32e09b' : '#a0a5b5';
-                    ctx.fillText(formatCompactVolume(lvl.askVolume), left + halfWidth + 4, cellY + cellH / 2);
+                    ctx.font = buyImbalance ? 'bold 10px monospace' : '10px monospace';
+                    ctx.fillStyle = buyImbalance ? '#32e09b' : '#d1d4dc';
+                    ctx.fillText(formatVol(lvl.askVolume), left + halfWidth + 4, yText);
                 }
             }
 
             // High/Low Wick lines
-            const yHigh = coords.priceToY(fpBar.high, scale, bounds);
-            const yLow = coords.priceToY(fpBar.low, scale, bounds);
+            const yHigh = coords.priceToY(chartBar.high, scale, bounds);
+            const yLow = coords.priceToY(chartBar.low, scale, bounds);
             ctx.strokeStyle = fpBar.delta >= 0 ? '#2ebd85' : '#f6465d';
             ctx.lineWidth = 1;
             ctx.beginPath();
@@ -387,7 +442,7 @@ export class FootprintRendererLayer implements RendererLayerInstance {
 
         // --- 3. DOCKED FOOTPRINT BAR STATS FOOTER ---
         const tableTop = bounds.top + chartAreaHeight;
-        ctx.fillStyle = '#18191e';
+        ctx.fillStyle = '#14151a';
         ctx.fillRect(0, tableTop, coords.width, statsTableHeight);
         ctx.strokeStyle = 'rgba(255, 255, 255, 0.08)';
         ctx.lineWidth = 1;
@@ -396,20 +451,29 @@ export class FootprintRendererLayer implements RendererLayerInstance {
         ctx.lineTo(coords.width, tableTop);
         ctx.stroke();
 
+        // Row divider lines
+        ctx.strokeStyle = 'rgba(255, 255, 255, 0.04)';
+        ctx.beginPath();
+        ctx.moveTo(0, tableTop + 22);
+        ctx.lineTo(coords.width, tableTop + 22);
+        ctx.moveTo(0, tableTop + 44);
+        ctx.lineTo(coords.width, tableTop + 44);
+        ctx.stroke();
+
         // Labels column (left sticky)
-        ctx.font = '10px sans-serif';
+        ctx.font = '10px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
         ctx.textAlign = 'left';
         ctx.textBaseline = 'middle';
         ctx.fillStyle = '#787b86';
-        ctx.fillText('Delta', 12, tableTop + 14);
-        ctx.fillText('Cum Delta', 12, tableTop + 32);
-        ctx.fillText('Volume', 12, tableTop + 50);
+        ctx.fillText('Delta', 12, tableTop + 11);
+        ctx.fillText('Cum Delta', 12, tableTop + 33);
+        ctx.fillText('Volume', 12, tableTop + 55);
 
         let runningCumDelta = 0;
         for (let i = 0; i < args.bars.length; i++) {
             const chartBar = args.bars[i]!;
             const x = coords.timeToX(chartBar.time);
-            if (x < 60 || x > coords.width) continue;
+            if (x < 70 || x > coords.width) continue;
 
             const fpBar = chartBarFpMap.get(chartBar.time);
             const delta = fpBar ? fpBar.delta : 0;
@@ -421,15 +485,15 @@ export class FootprintRendererLayer implements RendererLayerInstance {
 
             // Delta
             ctx.fillStyle = delta >= 0 ? '#2ebd85' : '#f6465d';
-            ctx.fillText((delta >= 0 ? '+' : '') + formatCompactVolume(delta), x, tableTop + 14);
+            ctx.fillText((delta >= 0 ? '+' : '') + formatVol(delta), x, tableTop + 11);
 
             // Cumulative Delta
             ctx.fillStyle = runningCumDelta >= 0 ? '#2ebd85' : '#f6465d';
-            ctx.fillText((runningCumDelta >= 0 ? '+' : '') + formatCompactVolume(runningCumDelta), x, tableTop + 32);
+            ctx.fillText((runningCumDelta >= 0 ? '+' : '') + formatVol(runningCumDelta), x, tableTop + 33);
 
             // Volume
             ctx.fillStyle = '#d1d4dc';
-            ctx.fillText(formatCompactVolume(volume), x, tableTop + 50);
+            ctx.fillText(formatVol(volume), x, tableTop + 55);
         }
     }
 }

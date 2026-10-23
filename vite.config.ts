@@ -86,6 +86,22 @@ export default defineConfig(({ mode }) => {
                 overlay: false,
             },
             proxy: {
+                '/coins.json': {
+                    target: liquidityTarget,
+                    changeOrigin: true,
+                },
+                '/api/market-selection': {
+                    target: liquidityTarget,
+                    changeOrigin: true,
+                },
+                '/api/public-products': {
+                    target: liquidityTarget,
+                    changeOrigin: true,
+                },
+                '/api/orderbooks': {
+                    target: liquidityTarget,
+                    changeOrigin: true,
+                },
                 '/api/liquidity': {
                     target: liquidityTarget,
                     rewrite: (path: string) => path.replace(/^\/api\/liquidity/, '/api/v2'),

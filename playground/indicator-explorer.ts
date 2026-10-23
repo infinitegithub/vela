@@ -1131,7 +1131,9 @@ export async function openIndicatorExplorer() {
         } else if (currentTab === 'basic') {
             pool = cachedCatalog.filter(i => i.family === 'trend' || i.family === 'basic');
         } else if (currentTab === 'orderflow') {
-            pool = cachedCatalog.filter(i => i.family.includes('orderflow') || i.family.includes('volume') || i.tags?.includes('orderflow'));
+            const ofSlugs = new Set(BUILTIN_NATIVES.map(b => b.slug));
+            const otherOf = cachedCatalog.filter(i => !ofSlugs.has(i.slug) && (i.family.includes('orderflow') || i.family.includes('volume') || i.tags?.includes('orderflow')));
+            pool = [...BUILTIN_NATIVES, ...otherOf];
         } else if (currentTab === 'allscripts') {
             pool = [...cachedCatalog, ...savedIndicators];
         } else if (currentTab === 'concepts') {
@@ -1305,7 +1307,32 @@ export async function openIndicatorExplorer() {
 
         // If on Discover and no search active: show New releases + More to explore
         if (currentTab === 'discover' && !searchQuery.trim()) {
-            // 1. New releases
+            // 1. Premier Order Flow & Liquidity Section
+            const ofSection = document.createElement('div');
+            ofSection.className = 'vlx-il-section';
+            ofSection.innerHTML = `
+                <div class="vlx-il-section-head">
+                    <div class="vlx-il-section-title" style="color: #ffb648; display: flex; align-items: center; gap: 6px;">
+                        <span>⚡</span> Order Flow & Liquidity (Multi-Venue Live)
+                    </div>
+                    <button type="button" class="vlx-il-section-action" id="vlx-orderflow-all-btn">View All Order Flow</button>
+                </div>
+            `;
+            const ofGrid = document.createElement('div');
+            ofGrid.className = 'vlx-il-grid';
+            for (const ind of BUILTIN_NATIVES) {
+                ofGrid.appendChild(createCardEl(ind, true));
+            }
+            ofSection.appendChild(ofGrid);
+            content.appendChild(ofSection);
+
+            ofSection.querySelector('#vlx-orderflow-all-btn')?.addEventListener('click', () => {
+                currentTab = 'orderflow';
+                renderRail();
+                renderContent();
+            });
+
+            // 2. New releases
             const newSection = document.createElement('div');
             newSection.className = 'vlx-il-section';
             newSection.innerHTML = `
