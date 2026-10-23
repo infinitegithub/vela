@@ -231,14 +231,7 @@ export class FootprintRendererLayer implements RendererLayerInstance {
         const statsTableHeight = 66;
         const chartAreaHeight = Math.max(10, bounds.height - statsTableHeight);
 
-        // Find busiest row in view for proportional sqrt volume bars
-        let busiestRowVol = 0;
-        for (const fp of chartBarFpMap.values()) {
-            for (const lvl of fp.levels) {
-                if (lvl.totalVolume > busiestRowVol) busiestRowVol = lvl.totalVolume;
-            }
-        }
-        if (busiestRowVol <= 0) busiestRowVol = 1;
+        // busiestRowVol will be derived dynamically after dyadic row grouping
 
         // --- 1. RENDER STACKED IMBALANCE ZONES & NAKED POCS ---
         ctx.save();
@@ -302,6 +295,66 @@ export class FootprintRendererLayer implements RendererLayerInstance {
         }
 
         // --- 2. RENDER FOOTPRINT BARS ---
+        // Dynamic Dyadic Row Grouping (1:1 with LiquidityMapper FootprintLod)
+        // Measures the pixel height of 1 fine step on canvas:
+        const y0 = coords.priceToY(0, scale, bounds);
+        const yStep = coords.priceToY(step, scale, bounds);
+        const fineRowPx = Math.abs(yStep - y0);
+
+        let multiplier = 1;
+        if (fineRowPx > 0) {
+            // Dyadically group levels until row height reaches comfortable threshold (13px - 26px)
+            while (fineRowPx * multiplier < 13 && multiplier < 4096) {
+                multiplier *= 2;
+            }
+        }
+        const effectiveStep = step * multiplier;
+
+        interface GroupedLevel {
+            price: number;
+            askVolume: number;
+            bidVolume: number;
+            totalVolume: number;
+        }
+
+        interface GroupedBarData {
+            levels: GroupedLevel[];
+            pocPrice: number;
+        }
+
+        const groupedBars = new Map<number, GroupedBarData>();
+        let busiestRowVol = 0;
+
+        for (const [time, fp] of chartBarFpMap.entries()) {
+            const grpMap = new Map<number, GroupedLevel>();
+            for (const lvl of fp.levels) {
+                const k = Math.floor(lvl.price / effectiveStep);
+                const bPrice = k * effectiveStep;
+                let g = grpMap.get(k);
+                if (!g) {
+                    g = { price: bPrice, askVolume: 0, bidVolume: 0, totalVolume: 0 };
+                    grpMap.set(k, g);
+                }
+                g.askVolume += lvl.askVolume;
+                g.bidVolume += lvl.bidVolume;
+                g.totalVolume += lvl.totalVolume;
+            }
+            const levels = Array.from(grpMap.values()).sort((a, b) => a.price - b.price);
+            let pocPrice = levels[0]?.price ?? 0;
+            let maxV = 0;
+            for (const g of levels) {
+                if (g.totalVolume > maxV) {
+                    maxV = g.totalVolume;
+                    pocPrice = g.price;
+                }
+                if (g.totalVolume > busiestRowVol) {
+                    busiestRowVol = g.totalVolume;
+                }
+            }
+            groupedBars.set(time, { levels, pocPrice });
+        }
+        if (busiestRowVol <= 0) busiestRowVol = 1;
+
         const bodySpacing = coords.bodySpacing();
         const barWidth = Math.max(16, Math.min(240, bodySpacing * 0.90));
         const showDetailedNumbers = barWidth >= 48;
@@ -312,15 +365,16 @@ export class FootprintRendererLayer implements RendererLayerInstance {
             if (x + barWidth < 0 || x - barWidth > coords.width) continue;
 
             const fpBar = chartBarFpMap.get(chartBar.time);
+            const grpData = groupedBars.get(chartBar.time);
 
-            if (!fpBar || fpBar.levels.length === 0) {
+            if (!fpBar || !grpData || grpData.levels.length === 0) {
                 // Fallback ghost candle
                 const yHigh = coords.priceToY(chartBar.high, scale, bounds);
                 const yLow = coords.priceToY(chartBar.low, scale, bounds);
                 const yOpen = coords.priceToY(chartBar.open, scale, bounds);
                 const yClose = coords.priceToY(chartBar.close, scale, bounds);
 
-                ctx.strokeStyle = 'rgba(117, 120, 130, 0.3)';
+                ctx.strokeStyle = "rgba(117, 120, 130, 0.3)";
                 ctx.lineWidth = 1;
                 ctx.beginPath();
                 ctx.moveTo(x, yHigh);
@@ -329,7 +383,7 @@ export class FootprintRendererLayer implements RendererLayerInstance {
 
                 const bodyY = Math.min(yOpen, yClose);
                 const bodyH = Math.max(2, Math.abs(yClose - yOpen));
-                ctx.fillStyle = 'rgba(255, 255, 255, 0.04)';
+                ctx.fillStyle = "rgba(255, 255, 255, 0.04)";
                 ctx.fillRect(x - barWidth / 2, bodyY, barWidth, bodyH);
                 continue;
             }
@@ -337,51 +391,47 @@ export class FootprintRendererLayer implements RendererLayerInstance {
             const left = x - barWidth / 2;
             const halfWidth = barWidth / 2;
 
-            // Map levels for diagonal lookup
-            const indexMap = new Map<number, ParsedFootprintLevel>();
-            for (const lvl of fpBar.levels) {
-                indexMap.set(Math.round(lvl.price / step), lvl);
+            // Map grouped levels for diagonal lookup
+            const groupIndexMap = new Map<number, GroupedLevel>();
+            for (const g of grpData.levels) {
+                groupIndexMap.set(Math.round(g.price / effectiveStep), g);
             }
 
-            for (const lvl of fpBar.levels) {
-                const yTop = coords.priceToY(lvl.price + step, scale, bounds);
+            for (const lvl of grpData.levels) {
+                const yTop = coords.priceToY(lvl.price + effectiveStep, scale, bounds);
                 const yBottom = coords.priceToY(lvl.price, scale, bounds);
                 const cellY = Math.min(yTop, yBottom);
-                const cellH = Math.max(1.5, Math.abs(yBottom - yTop));
+                const cellH = Math.max(2, Math.abs(yBottom - yTop));
 
-                const isPoc = (lvl.price === fpBar.pocPrice);
-                const k = Math.round(lvl.price / step);
+                const isPoc = (lvl.price === grpData.pocPrice);
+                const k = Math.round(lvl.price / effectiveStep);
 
-                // Diagonal Imbalance
-                const lvlBelow = indexMap.get(k - 1);
+                // Diagonal Imbalance evaluated on effective rows
+                const lvlBelow = groupIndexMap.get(k - 1);
                 const buyImbalance = Boolean(
-                    lvl.buyImbalance ?? (
-                        lvlBelow &&
-                        lvl.askVolume > 0 &&
-                        (lvlBelow.bidVolume === 0 || lvl.askVolume >= lvlBelow.bidVolume * this.imbRatio)
-                    )
+                    lvlBelow &&
+                    lvl.askVolume > 0 &&
+                    (lvlBelow.bidVolume === 0 || lvl.askVolume >= lvlBelow.bidVolume * this.imbRatio)
                 );
 
-                const lvlAbove = indexMap.get(k + 1);
+                const lvlAbove = groupIndexMap.get(k + 1);
                 const sellImbalance = Boolean(
-                    lvl.sellImbalance ?? (
-                        lvlAbove &&
-                        lvl.bidVolume > 0 &&
-                        (lvlAbove.askVolume === 0 || lvl.bidVolume >= lvlAbove.askVolume * this.imbRatio)
-                    )
+                    lvlAbove &&
+                    lvl.bidVolume > 0 &&
+                    (lvlAbove.askVolume === 0 || lvl.bidVolume >= lvlAbove.askVolume * this.imbRatio)
                 );
 
                 // Row volume bar: proportional sqrt width behind cell text (LiquidityMapper standard)
-                const frac = barFraction(lvl.totalVolume, busiestRowVol, 'sqrt');
+                const frac = barFraction(lvl.totalVolume, busiestRowVol, "sqrt");
                 if (frac > 0) {
                     const rowBarW = Math.max(2, Math.min(barWidth, barWidth * frac));
                     // Tint bar with dominant side color
                     if (lvl.askVolume >= 1.15 * lvl.bidVolume) {
-                        ctx.fillStyle = 'rgba(46, 189, 133, 0.24)';
+                        ctx.fillStyle = "rgba(46, 189, 133, 0.24)";
                     } else if (lvl.bidVolume >= 1.15 * lvl.askVolume) {
-                        ctx.fillStyle = 'rgba(246, 70, 93, 0.24)';
+                        ctx.fillStyle = "rgba(246, 70, 93, 0.24)";
                     } else {
-                        ctx.fillStyle = 'rgba(255, 255, 255, 0.06)';
+                        ctx.fillStyle = "rgba(255, 255, 255, 0.06)";
                     }
                     ctx.fillRect(left, cellY, rowBarW, cellH);
                 }
@@ -389,12 +439,12 @@ export class FootprintRendererLayer implements RendererLayerInstance {
                 // Diagonal Imbalance Outline Rectangles (1:1 with LiquidityMapper)
                 if (cellH >= 3) {
                     if (sellImbalance) {
-                        ctx.strokeStyle = '#f6465d';
+                        ctx.strokeStyle = "#f6465d";
                         ctx.lineWidth = cellH >= 8 ? 1.5 : 1;
                         ctx.strokeRect(left + 0.75, cellY + 0.75, halfWidth - 1.5, cellH - 1.5);
                     }
                     if (buyImbalance) {
-                        ctx.strokeStyle = '#2ebd85';
+                        ctx.strokeStyle = "#2ebd85";
                         ctx.lineWidth = cellH >= 8 ? 1.5 : 1;
                         ctx.strokeRect(left + halfWidth + 0.75, cellY + 0.75, halfWidth - 1.5, cellH - 1.5);
                     }
@@ -402,39 +452,52 @@ export class FootprintRendererLayer implements RendererLayerInstance {
 
                 // POC Highlight border on candle
                 if (isPoc) {
-                    ctx.strokeStyle = '#e0b400';
+                    ctx.strokeStyle = "#e0b400";
                     ctx.lineWidth = 1.5;
                     ctx.strokeRect(left + 0.5, cellY + 0.5, barWidth - 1, cellH - 1);
                 }
 
-                // Volume text (when zoomed in)
-                if (showDetailedNumbers && cellH >= 10) {
-                    ctx.textBaseline = 'middle';
+                // Volume text (when candle has room)
+                if (cellH >= 10) {
+                    ctx.textBaseline = "middle";
                     const yText = cellY + cellH / 2;
 
-                    // Bid volume text (left side, right-aligned)
-                    ctx.textAlign = 'right';
-                    ctx.font = sellImbalance ? 'bold 10px monospace' : '10px monospace';
-                    ctx.fillStyle = sellImbalance ? '#ff6675' : '#d1d4dc';
-                    ctx.fillText(formatVol(lvl.bidVolume), left + halfWidth - 4, yText);
+                    if (showDetailedNumbers) {
+                        // Bid volume text (left side, right-aligned)
+                        ctx.textAlign = "right";
+                        ctx.font = sellImbalance ? "bold 10px monospace" : "10px monospace";
+                        ctx.fillStyle = sellImbalance ? "#ff6675" : "#d1d4dc";
+                        ctx.fillText(formatVol(lvl.bidVolume), left + halfWidth - 4, yText);
 
-                    // Ask volume text (right side, left-aligned)
-                    ctx.textAlign = 'left';
-                    ctx.font = buyImbalance ? 'bold 10px monospace' : '10px monospace';
-                    ctx.fillStyle = buyImbalance ? '#32e09b' : '#d1d4dc';
-                    ctx.fillText(formatVol(lvl.askVolume), left + halfWidth + 4, yText);
+                        // Ask volume text (right side, left-aligned)
+                        ctx.textAlign = "left";
+                        ctx.font = buyImbalance ? "bold 10px monospace" : "10px monospace";
+                        ctx.fillStyle = buyImbalance ? "#32e09b" : "#d1d4dc";
+                        ctx.fillText(formatVol(lvl.askVolume), left + halfWidth + 4, yText);
+                    } else if (barWidth >= 28) {
+                        // Intermediate zoom: show delta centered in cell
+                        const rowDelta = lvl.askVolume - lvl.bidVolume;
+                        ctx.textAlign = "center";
+                        ctx.font = "9px monospace";
+                        ctx.fillStyle = rowDelta >= 0 ? "#2ebd85" : "#f6465d";
+                        const sign = rowDelta > 0 ? "+" : "";
+                        ctx.fillText(`${sign}${formatVol(rowDelta)}`, left + halfWidth, yText);
+                    }
                 }
             }
 
             // High/Low Wick lines
             const yHigh = coords.priceToY(chartBar.high, scale, bounds);
             const yLow = coords.priceToY(chartBar.low, scale, bounds);
-            ctx.strokeStyle = fpBar.delta >= 0 ? '#2ebd85' : '#f6465d';
+            const grpPrices = grpData.levels.map(l => coords.priceToY(l.price, scale, bounds));
+            const topLevelY = Math.min(...grpPrices);
+            const btmLevelY = Math.max(...grpPrices);
+            ctx.strokeStyle = fpBar.delta >= 0 ? "#2ebd85" : "#f6465d";
             ctx.lineWidth = 1;
             ctx.beginPath();
             ctx.moveTo(x, yHigh);
-            ctx.lineTo(x, Math.min(...fpBar.levels.map(l => coords.priceToY(l.price, scale, bounds))));
-            ctx.moveTo(x, Math.max(...fpBar.levels.map(l => coords.priceToY(l.price, scale, bounds))));
+            ctx.lineTo(x, Math.min(yHigh, topLevelY));
+            ctx.moveTo(x, Math.max(yLow, btmLevelY));
             ctx.lineTo(x, yLow);
             ctx.stroke();
         }

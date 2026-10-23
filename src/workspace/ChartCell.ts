@@ -1016,9 +1016,9 @@ export class ChartCell {
         if (resolved === 'footprint') {
             const native: any = (this.inner?.renderer as any)?.renderer;
             if (native && typeof native.applyViewport === 'function') {
-                const curSpacing = native.coords?.bodySpacing?.() ?? native.targetBarSpacing ?? 6;
-                if (curSpacing < 60) {
-                    native.applyViewport({ barSpacing: 100, rightOffset: 5 });
+                const curSpacing = native.coords?.getViewport?.()?.barSpacing ?? native.targetBarSpacing ?? 8;
+                if (curSpacing < 70) {
+                    native.applyViewport({ barSpacing: 95, rightOffset: 5 });
                 }
             }
         }

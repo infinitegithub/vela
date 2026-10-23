@@ -89,6 +89,20 @@ registerWidgetAction({
     run: (ctx) => {
         const next = ctx.priceStyle === 'footprint' ? 'candles' : 'footprint';
         ctx.setPriceStyle(next);
+        if (next === 'footprint') {
+            try {
+                const chart = ctx.chart;
+                const native: any = (chart?.renderer as any)?.renderer;
+                if (native && typeof native.applyViewport === 'function') {
+                    const vp = native.coords?.getViewport?.();
+                    if (!vp || vp.barSpacing < 70) {
+                        native.applyViewport({ barSpacing: 95, rightOffset: 5 });
+                    }
+                }
+            } catch (e) {
+                console.warn('[Footprint] Auto-frame failed:', e);
+            }
+        }
         ctx.toast(next === 'footprint' ? 'Switched to Footprint (Order Flow)' : 'Switched to Candlesticks');
     }
 });
