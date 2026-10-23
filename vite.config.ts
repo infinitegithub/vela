@@ -1,3 +1,4 @@
+import fs from 'node:fs';
 import { defineConfig, loadEnv } from 'vite';
 import { VitePWA } from 'vite-plugin-pwa';
 import { binanceApiPlugin } from './playground/vite-binance-plugin';
@@ -6,6 +7,8 @@ import { templateSyncPlugin } from './playground/vite-template-sync-plugin';
 export default defineConfig(({ mode }) => {
     const env = loadEnv(mode, process.cwd(), '');
     Object.assign(process.env, env);
+
+    const liquidityTarget = process.env.LIQUIDITY_BACKEND || (fs.existsSync('/opt/liquiditymapperfast') ? 'http://127.0.0.1:8787' : 'http://10.10.10.107:8787');
 
     return {
         root: 'playground',
@@ -84,18 +87,18 @@ export default defineConfig(({ mode }) => {
             },
             proxy: {
                 '/api/liquidity': {
-                    target: 'http://127.0.0.1:8787',
+                    target: liquidityTarget,
                     rewrite: (path: string) => path.replace(/^\/api\/liquidity/, '/api/v2'),
                     changeOrigin: true,
                     ws: true,
                 },
                 '/api/v2': {
-                    target: 'http://127.0.0.1:8787',
+                    target: liquidityTarget,
                     changeOrigin: true,
                     ws: true,
                 },
                 '/api/footprint': {
-                    target: 'http://127.0.0.1:8787',
+                    target: liquidityTarget,
                     rewrite: (path: string) => path.replace(/^\/api\/footprint/, '/api/v2/footprint'),
                     changeOrigin: true,
                     ws: true,

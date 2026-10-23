@@ -43,19 +43,32 @@ export class FootprintDataEngine implements SeriesDataEngine {
     private stackedZones: StackedImbalanceZone[] = [];
     private nakedPocs: NakedPocRay[] = [];
     private active = false;
+    private loadedSymbol = '';
+    private loadedTimeframe = '';
+    private refreshTimer: ReturnType<typeof setInterval> | null = null;
     private unsubscribeTick: (() => void) | null = null;
 
     start(host: SeriesDataEngineHost): void {
         this.host = host;
         this.active = true;
-        this.loadData();
+        this.loadedSymbol = this.host.symbol || 'BTCUSDT';
+        this.loadedTimeframe = normalizeTimeframe(this.host.timeframe || '1h');
+        void this.loadData();
         this.unsubscribeTick = LiquidityClient.get().onTick((_price, _time) => {
             if (this.active) this.onBars();
         });
+        if (this.refreshTimer) clearInterval(this.refreshTimer);
+        this.refreshTimer = setInterval(() => {
+            if (this.active) void this.loadData();
+        }, 8000);
     }
 
     suspend(): void {
         this.active = false;
+        if (this.refreshTimer) {
+            clearInterval(this.refreshTimer);
+            this.refreshTimer = null;
+        }
         if (this.unsubscribeTick) {
             this.unsubscribeTick();
             this.unsubscribeTick = null;
@@ -64,25 +77,41 @@ export class FootprintDataEngine implements SeriesDataEngine {
 
     resume(): void {
         this.active = true;
-        this.loadData();
+        this.loadedSymbol = this.host?.symbol || 'BTCUSDT';
+        this.loadedTimeframe = normalizeTimeframe(this.host?.timeframe || '1h');
+        void this.loadData();
         this.unsubscribeTick = LiquidityClient.get().onTick((_price, _time) => {
             if (this.active) this.onBars();
         });
+        if (this.refreshTimer) clearInterval(this.refreshTimer);
+        this.refreshTimer = setInterval(() => {
+            if (this.active) void this.loadData();
+        }, 8000);
     }
 
     stop(): void {
         this.active = false;
+        if (this.refreshTimer) {
+            clearInterval(this.refreshTimer);
+            this.refreshTimer = null;
+        }
         if (this.unsubscribeTick) {
             this.unsubscribeTick();
             this.unsubscribeTick = null;
         }
         this.bars = [];
+        this.loadedSymbol = '';
+        this.loadedTimeframe = '';
         this.host = null;
     }
 
     onBars(): void {
         if (!this.host || !this.active) return;
-        if (this.bars.length === 0) {
+        const currentSym = this.host.symbol || 'BTCUSDT';
+        const currentTf = normalizeTimeframe(this.host.timeframe || '1h');
+        if (this.bars.length === 0 || currentSym !== this.loadedSymbol || currentTf !== this.loadedTimeframe) {
+            this.loadedSymbol = currentSym;
+            this.loadedTimeframe = currentTf;
             void this.loadData();
             return;
         }
@@ -104,6 +133,8 @@ export class FootprintDataEngine implements SeriesDataEngine {
             this.step = result.step;
             this.stackedZones = result.stackedZones;
             this.nakedPocs = result.nakedPocs;
+            this.loadedSymbol = symbol;
+            this.loadedTimeframe = timeframe;
             this.pushCurrent();
         } catch (err) {
             console.error('[FootprintDataEngine] Failed to load data:', err);
@@ -120,7 +151,7 @@ export class FootprintDataEngine implements SeriesDataEngine {
             stackedZones: this.stackedZones,
             nakedPocs: this.nakedPocs,
         };
-        this.host.pushData('footprint', payload);
+        this.host.pushData(payload);
     }
 }
 
@@ -144,8 +175,12 @@ export class FootprintRendererLayer implements RendererLayerInstance {
         const ctx = this.canvas.getContext('2d');
         if (!ctx) return;
 
+        ctx.save();
+        ctx.setTransform(1, 0, 0, 1, 0, 0);
+        ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
+        ctx.restore();
+
         ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-        ctx.clearRect(0, 0, coords.width, coords.height);
 
         const payload = args.data as FootprintPayload | undefined;
         const fpBars = payload?.bars || [];
@@ -156,6 +191,24 @@ export class FootprintRendererLayer implements RendererLayerInstance {
         const barMap = new Map<number, ParsedFootprintBar>();
         for (const b of fpBars) {
             barMap.set(b.time, b);
+        }
+
+        const tfMs = timeframeToMs(payload?.timeframe || '1h');
+
+        // Pre-reconcile nearest footprint bars for all chart candles to ensure 100% consistent matching
+        const chartBarFpMap = new Map<number, ParsedFootprintBar>();
+        for (let i = 0; i < args.bars.length; i++) {
+            const chartBar = args.bars[i]!;
+            let fpBar = barMap.get(chartBar.time);
+            if (!fpBar) {
+                for (const [t, b] of barMap.entries()) {
+                    if (Math.abs(t - chartBar.time) <= tfMs / 2) {
+                        fpBar = b;
+                        break;
+                    }
+                }
+            }
+            if (fpBar) chartBarFpMap.set(chartBar.time, fpBar);
         }
 
         const statsTableHeight = 64;
@@ -223,23 +276,12 @@ export class FootprintRendererLayer implements RendererLayerInstance {
         const barWidth = Math.max(12, Math.min(220, bodySpacing * 0.88));
         const showDetailedNumbers = barWidth >= 48;
 
-        const tfMs = timeframeToMs(payload?.timeframe || '1h');
-
         for (let i = 0; i < args.bars.length; i++) {
             const chartBar = args.bars[i]!;
             const x = coords.timeToX(chartBar.time);
             if (x + barWidth < 0 || x - barWidth > coords.width) continue;
 
-            let fpBar = barMap.get(chartBar.time);
-            if (!fpBar) {
-                // Nearest match within timeframe window
-                for (const [t, b] of barMap.entries()) {
-                    if (Math.abs(t - chartBar.time) <= tfMs / 2) {
-                        fpBar = b;
-                        break;
-                    }
-                }
-            }
+            const fpBar = chartBarFpMap.get(chartBar.time);
 
             if (!fpBar || fpBar.levels.length === 0) {
                 // Fallback ghost candle
@@ -369,7 +411,7 @@ export class FootprintRendererLayer implements RendererLayerInstance {
             const x = coords.timeToX(chartBar.time);
             if (x < 60 || x > coords.width) continue;
 
-            const fpBar = barMap.get(chartBar.time);
+            const fpBar = chartBarFpMap.get(chartBar.time);
             const delta = fpBar ? fpBar.delta : 0;
             const volume = fpBar ? fpBar.totalVolume : chartBar.volume || 0;
             runningCumDelta += delta;
@@ -400,7 +442,7 @@ export function registerFootprintPlugin(): void {
         label: 'Footprint (Order Flow)',
         icon: FOOTPRINT_ICON,
         basePainting: 'none',
-        createEngine: () => new FootprintDataEngine(),
+        dataEngine: () => new FootprintDataEngine(),
     });
 
     registerRendererLayer({
