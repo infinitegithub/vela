@@ -13,6 +13,7 @@ import {
     gridStepFor,
     barFraction,
     formatVol,
+    type TapeBatch,
     type ParsedFootprintBar,
     type ParsedFootprintLevel,
     type StackedImbalanceZone,
@@ -38,8 +39,10 @@ export class FootprintDataEngine implements SeriesDataEngine {
     private loadedSymbol = '';
     private loadedTimeframe = '';
     private refreshTimer: ReturnType<typeof setInterval> | null = null;
+    private unsubscribeTape: (() => void) | null = null;
     private unsubscribeTick: (() => void) | null = null;
     private unsubscribeMarket: (() => void) | null = null;
+    private rafPending = false;
 
     start(host: SeriesDataEngineHost): void {
         this.host = host;
@@ -48,8 +51,12 @@ export class FootprintDataEngine implements SeriesDataEngine {
         this.loadedTimeframe = normalizeTimeframe(this.host.timeframe || '1h');
         void this.loadData();
 
-        this.unsubscribeTick = LiquidityClient.get().onTick((_price, _time) => {
-            if (this.active) this.onBars();
+        this.unsubscribeTape = LiquidityClient.get().onTape((batch) => {
+            if (this.active) this.ingestTape(batch);
+        });
+
+        this.unsubscribeTick = LiquidityClient.get().onTick((price, time) => {
+            if (this.active) this.ingestTick(price, time);
         });
 
         this.unsubscribeMarket = LiquidityClient.get().onMarketSwitch((_sym) => {
@@ -62,7 +69,7 @@ export class FootprintDataEngine implements SeriesDataEngine {
         if (this.refreshTimer) clearInterval(this.refreshTimer);
         this.refreshTimer = setInterval(() => {
             if (this.active) void this.loadData();
-        }, 8000);
+        }, 25000);
     }
 
     suspend(): void {
@@ -70,6 +77,10 @@ export class FootprintDataEngine implements SeriesDataEngine {
         if (this.refreshTimer) {
             clearInterval(this.refreshTimer);
             this.refreshTimer = null;
+        }
+        if (this.unsubscribeTape) {
+            this.unsubscribeTape();
+            this.unsubscribeTape = null;
         }
         if (this.unsubscribeTick) {
             this.unsubscribeTick();
@@ -86,19 +97,26 @@ export class FootprintDataEngine implements SeriesDataEngine {
         this.loadedSymbol = this.host?.symbol || 'BTCUSDT';
         this.loadedTimeframe = normalizeTimeframe(this.host?.timeframe || '1h');
         void this.loadData();
-        this.unsubscribeTick = LiquidityClient.get().onTick((_price, _time) => {
-            if (this.active) this.onBars();
+
+        this.unsubscribeTape = LiquidityClient.get().onTape((batch) => {
+            if (this.active) this.ingestTape(batch);
         });
+
+        this.unsubscribeTick = LiquidityClient.get().onTick((price, time) => {
+            if (this.active) this.ingestTick(price, time);
+        });
+
         this.unsubscribeMarket = LiquidityClient.get().onMarketSwitch(() => {
             if (this.active) {
                 this.loadedSymbol = '';
                 void this.loadData();
             }
         });
+
         if (this.refreshTimer) clearInterval(this.refreshTimer);
         this.refreshTimer = setInterval(() => {
             if (this.active) void this.loadData();
-        }, 8000);
+        }, 25000);
     }
 
     stop(): void {
@@ -106,6 +124,10 @@ export class FootprintDataEngine implements SeriesDataEngine {
         if (this.refreshTimer) {
             clearInterval(this.refreshTimer);
             this.refreshTimer = null;
+        }
+        if (this.unsubscribeTape) {
+            this.unsubscribeTape();
+            this.unsubscribeTape = null;
         }
         if (this.unsubscribeTick) {
             this.unsubscribeTick();
@@ -136,6 +158,128 @@ export class FootprintDataEngine implements SeriesDataEngine {
 
     onViewport(_range: { from: number; to: number }): void {}
 
+    private ingestTick(price: number, time: number): void {
+        if (!this.active || !this.host || this.bars.length === 0 || price <= 0) return;
+        const tfMs = timeframeToMs(this.loadedTimeframe);
+        const barTime = Math.floor(time / tfMs) * tfMs;
+        const bar = this.bars.find(b => b.time === barTime);
+        if (bar) {
+            bar.close = price;
+            if (price > bar.high) bar.high = price;
+            if (price < bar.low) bar.low = price;
+            this.schedulePush();
+        }
+    }
+
+    private ingestTape(batch: TapeBatch): void {
+        if (!this.active || !this.host || this.bars.length === 0) return;
+        const tfMs = timeframeToMs(this.loadedTimeframe);
+        const symbol = this.host.symbol || 'BTCUSDT';
+        const resolved = LiquidityClient.get().resolveCoin(symbol);
+        const targetBase = resolved.base.toUpperCase();
+
+        let changed = false;
+
+        for (let i = 0; i < batch.price.length; i++) {
+            const instId = batch.ids[batch.inst[i]!] || '';
+            const instUpper = instId.toUpperCase();
+            if (!instUpper.includes(targetBase)) continue;
+
+            const t = batch.t[i]!;
+            const price = batch.price[i]!;
+            const usd = batch.usd[i]!;
+            if (price <= 0 || !Number.isFinite(price) || usd === 0) continue;
+
+            const barTime = Math.floor(t / tfMs) * tfMs;
+            let bar = this.bars.find(b => b.time === barTime);
+            if (!bar) {
+                const lastBar = this.bars[this.bars.length - 1];
+                if (!lastBar || barTime >= lastBar.time) {
+                    const step = this.step || 0.5;
+                    bar = {
+                        time: barTime,
+                        open: price,
+                        high: price,
+                        low: price,
+                        close: price,
+                        totalBuy: 0,
+                        totalSell: 0,
+                        totalVolume: 0,
+                        delta: 0,
+                        minDelta: 0,
+                        maxDelta: 0,
+                        poc: Math.floor(price / step) * step,
+                        levels: []
+                    };
+                    this.bars.push(bar);
+                    this.bars.sort((a, b) => a.time - b.time);
+                } else {
+                    continue;
+                }
+            }
+
+            bar.close = price;
+            if (price > bar.high) bar.high = price;
+            if (price < bar.low) bar.low = price;
+
+            const step = this.step || 0.5;
+            const lvlLow = Math.round((Math.floor(price / step) * step) * 1e8) / 1e8;
+            let level = bar.levels.find(l => Math.abs(l.low - lvlLow) < step * 0.05);
+            if (!level) {
+                level = {
+                    low: lvlLow,
+                    buy: 0,
+                    sell: 0,
+                    total: 0,
+                    delta: 0,
+                    imbalanceBuy: false,
+                    imbalanceSell: false
+                };
+                bar.levels.push(level);
+                bar.levels.sort((a, b) => a.low - b.low);
+            }
+
+            if (usd > 0) {
+                level.buy += usd;
+                bar.totalBuy += usd;
+            } else {
+                const absUsd = Math.abs(usd);
+                level.sell += absUsd;
+                bar.totalSell += absUsd;
+            }
+            level.total = level.buy + level.sell;
+            level.delta = level.buy - level.sell;
+
+            bar.totalVolume = bar.totalBuy + bar.totalSell;
+            bar.delta = bar.totalBuy - bar.totalSell;
+            if (bar.delta > bar.maxDelta) bar.maxDelta = bar.delta;
+            if (bar.delta < bar.minDelta) bar.minDelta = bar.delta;
+
+            let maxVol = 0, poc = bar.poc;
+            for (const l of bar.levels) {
+                if (l.total > maxVol) {
+                    maxVol = l.total;
+                    poc = l.low;
+                }
+            }
+            bar.poc = poc;
+            changed = true;
+        }
+
+        if (changed) {
+            this.schedulePush();
+        }
+    }
+
+    private schedulePush(): void {
+        if (this.rafPending) return;
+        this.rafPending = true;
+        requestAnimationFrame(() => {
+            this.rafPending = false;
+            this.pushCurrent();
+        });
+    }
+
     private async loadData(): Promise<void> {
         if (!this.host) return;
         const symbol = this.host.symbol || 'BTCUSDT';
@@ -143,12 +287,51 @@ export class FootprintDataEngine implements SeriesDataEngine {
 
         try {
             const result = await LiquidityClient.get().fetchFootprint(symbol, timeframe);
-            this.bars = result.bars;
+            const currentTfMs = timeframeToMs(timeframe);
+            const now = Date.now();
+            const activeBarTime = Math.floor(now / currentTfMs) * currentTfMs;
+
+            if (this.loadedSymbol !== symbol || this.loadedTimeframe !== timeframe || this.bars.length === 0) {
+                this.bars = result.bars;
+                this.step = result.step;
+                this.stackedZones = result.stackedZones;
+                this.nakedPocs = result.nakedPocs;
+                this.loadedSymbol = symbol;
+                this.loadedTimeframe = timeframe;
+                this.pushCurrent();
+                return;
+            }
+
+            // Merge settled bars and preserve the active forming bar
+            const existingActiveBar = this.bars.find(b => b.time === activeBarTime);
+            const serverActiveBar = result.bars.find(b => b.time === activeBarTime);
+
+            const mergedBars: ParsedFootprintBar[] = [];
+            for (const b of result.bars) {
+                if (b.time < activeBarTime) {
+                    mergedBars.push(b);
+                }
+            }
+
+            if (existingActiveBar && serverActiveBar) {
+                serverActiveBar.close = existingActiveBar.close;
+                serverActiveBar.high = Math.max(serverActiveBar.high, existingActiveBar.high);
+                serverActiveBar.low = Math.min(serverActiveBar.low, existingActiveBar.low);
+                serverActiveBar.totalBuy = Math.max(serverActiveBar.totalBuy, existingActiveBar.totalBuy);
+                serverActiveBar.totalSell = Math.max(serverActiveBar.totalSell, existingActiveBar.totalSell);
+                serverActiveBar.totalVolume = serverActiveBar.totalBuy + serverActiveBar.totalSell;
+                serverActiveBar.delta = serverActiveBar.totalBuy - serverActiveBar.totalSell;
+                mergedBars.push(serverActiveBar);
+            } else if (existingActiveBar) {
+                mergedBars.push(existingActiveBar);
+            } else if (serverActiveBar) {
+                mergedBars.push(serverActiveBar);
+            }
+
+            this.bars = mergedBars;
             this.step = result.step;
             this.stackedZones = result.stackedZones;
             this.nakedPocs = result.nakedPocs;
-            this.loadedSymbol = symbol;
-            this.loadedTimeframe = timeframe;
             this.pushCurrent();
         } catch (err) {
             console.error('[FootprintDataEngine] Failed to load data:', err);

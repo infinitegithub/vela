@@ -1,7 +1,6 @@
 import {
     registerSidePanel,
     registerIcon,
-    type SidePanelDescriptor,
     type SidePanelHandle,
     type SidePanelHeader,
     type WidgetContext
@@ -30,17 +29,36 @@ const VENUE_COLORS: Record<string, string> = {
     bitgetspot: '#0ca5b8',
 };
 
+function getVenueColor(venue: string): string {
+    const v = venue.toLowerCase();
+    for (const [key, color] of Object.entries(VENUE_COLORS)) {
+        if (v.includes(key)) return color;
+    }
+    return '#787b86';
+}
+
 function formatSignedUsd(val: number): string {
     if (Math.abs(val) < 1) return '—';
     const sign = val > 0 ? '+' : '−';
     return `${sign}${formatVol(Math.abs(val))}`;
 }
 
-interface PriceRow {
+const ROW_H = 18;
+const PRICE_W = 64;
+const USD_W = 56;
+const PS_W = 58;
+
+interface VenueDepth {
+    venue: string;
+    usd: number;
+}
+
+interface GroupedLevel {
     price: number;
     side: 'bid' | 'ask';
-    totalUsd: number;
-    venues: Map<string, number>;
+    usd: number;
+    cumUsd: number;
+    venues: VenueDepth[];
     pullStackUsd: number;
     touched: boolean;
 }
@@ -48,8 +66,7 @@ interface PriceRow {
 interface DepthSnapshot {
     timestamp: number;
     bins: Map<number, number>; // price -> usd
-    lowMark: number;
-    highMark: number;
+    markPrice: number;
 }
 
 export class DomLadderPanelController {
@@ -57,25 +74,40 @@ export class DomLadderPanelController {
     private ctx: WidgetContext | null = null;
     private currentSymbol: string = 'BTCUSDT';
     private markPrice: number = 0;
-    private selectedWindowSec: number = 60; // 15, 60, 300
+    private selectedWindowSec: number = 60; // 0=off, 15, 60, 300
     private manualStep: number = 0; // 0 = auto
+    private mode: 'aggregated' | 'compact' = 'aggregated';
+
     private snapshots: DepthSnapshot[] = [];
-    private rows: PriceRow[] = [];
+    private currentFrame: LevelsFrame | null = null;
+    private levels: GroupedLevel[] = [];
+    private offsetRows: number = 0;
+
     private unsubscribeLevels: (() => void) | null = null;
     private unsubscribeTick: (() => void) | null = null;
     private unsubscribeMarket: (() => void) | null = null;
-    private animFrameId: number | null = null;
-    private autoCenter = true;
 
-    // DOM References
+    private animFrameId: number | null = null;
+    private flingId: number | null = null;
+
+    // Canvas & UI elements
+    private canvas!: HTMLCanvasElement;
+    private ctx2d!: CanvasRenderingContext2D;
     private markBanner!: HTMLElement;
     private badgeEl!: HTMLElement;
-    private balanceBar!: HTMLElement;
+    private groupSelect!: HTMLSelectElement;
+    private pullSelect!: HTMLSelectElement;
+    private modeSelect!: HTMLSelectElement;
+    private balanceBarFill!: HTMLElement;
     private balanceBidsLabel!: HTMLElement;
     private balanceAsksLabel!: HTMLElement;
-    private tableBody!: HTMLElement;
+    private colsHeader!: HTMLElement;
     private tooltipEl!: HTMLElement;
-    private stepPillsContainer!: HTMLElement;
+
+    // Interaction state
+    private drag: { kind: 'pan' | 'zoom'; startY: number; startOffset: number; startStep: number } | null = null;
+    private hoverRow: number | null = null;
+    private hoverPt: { x: number; y: number } | null = null;
 
     constructor(container: HTMLElement, ctx?: WidgetContext) {
         this.root = container;
@@ -108,10 +140,11 @@ export class DomLadderPanelController {
             .vela-dom-header {
                 display: flex;
                 flex-direction: column;
-                gap: 8px;
-                padding: 10px 12px;
-                background: #18191e;
+                gap: 6px;
+                padding: 8px 10px;
+                background: #16181d;
                 border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+                flex-shrink: 0;
             }
             .vela-dom-mark-row {
                 display: flex;
@@ -119,7 +152,7 @@ export class DomLadderPanelController {
                 justify-content: space-between;
             }
             .vela-dom-mark-price {
-                font-size: 16px;
+                font-size: 17px;
                 font-weight: 700;
                 color: #ffffff;
                 letter-spacing: -0.02em;
@@ -128,50 +161,64 @@ export class DomLadderPanelController {
                 font-size: 9px;
                 padding: 2px 6px;
                 border-radius: 3px;
-                background: rgba(46, 189, 133, 0.2);
+                background: rgba(46, 189, 133, 0.18);
                 color: #2ebd85;
-                font-weight: 600;
-                letter-spacing: 0.05em;
+                font-weight: 700;
+                letter-spacing: 0.04em;
             }
             .vela-dom-controls {
                 display: flex;
                 align-items: center;
-                justify-content: space-between;
-                gap: 6px;
+                gap: 5px;
+                flex-wrap: wrap;
             }
-            .vela-dom-pills {
+            .vela-dom-select-wrap {
                 display: flex;
+                align-items: center;
                 gap: 4px;
-                background: #101114;
-                padding: 2px;
-                border-radius: 4px;
-            }
-            .vela-dom-pill {
-                padding: 2px 7px;
-                border-radius: 3px;
-                cursor: pointer;
                 font-size: 10px;
-                color: #787b86;
-                transition: all 0.15s;
+                color: #8c909e;
             }
-            .vela-dom-pill:hover {
+            .vela-dom-select {
+                background: #20222a;
+                color: #e0e2e8;
+                border: 1px solid rgba(255, 255, 255, 0.12);
+                border-radius: 3px;
+                padding: 2px 4px;
+                font-size: 10px;
+                font-family: inherit;
+                outline: none;
+                cursor: pointer;
+            }
+            .vela-dom-select:hover {
+                border-color: rgba(255, 255, 255, 0.25);
+            }
+            .vela-dom-btn {
+                background: #252833;
                 color: #d1d4dc;
+                border: 1px solid rgba(255, 255, 255, 0.12);
+                border-radius: 3px;
+                padding: 2px 7px;
+                font-size: 10px;
+                font-family: inherit;
+                cursor: pointer;
+                transition: all 0.12s;
             }
-            .vela-dom-pill.active {
-                background: #2a2e39;
+            .vela-dom-btn:hover {
+                background: #2f3442;
                 color: #ffffff;
-                font-weight: 600;
             }
             .vela-dom-balance-wrap {
                 display: flex;
                 flex-direction: column;
-                gap: 3px;
+                gap: 2px;
+                padding-top: 2px;
             }
             .vela-dom-balance-text {
                 display: flex;
                 justify-content: space-between;
                 font-size: 9px;
-                color: #787b86;
+                color: #8c909e;
             }
             .vela-dom-balance-bar {
                 height: 4px;
@@ -184,112 +231,44 @@ export class DomLadderPanelController {
                 background: #2ebd85;
                 height: 100%;
                 width: 50%;
-                transition: width 0.3s;
+                transition: width 0.2s ease-out;
             }
             .vela-dom-cols-header {
                 display: flex;
                 align-items: center;
-                padding: 6px 12px;
+                height: 22px;
+                padding: 0 4px;
                 background: #14151a;
                 border-bottom: 1px solid rgba(255, 255, 255, 0.06);
-                font-size: 10px;
-                font-weight: 600;
-                color: #787b86;
-            }
-            .vela-dom-scroll-area {
-                flex: 1;
-                overflow-y: auto;
-                overflow-x: hidden;
-                position: relative;
-            }
-            .vela-dom-scroll-area::-webkit-scrollbar {
-                width: 4px;
-            }
-            .vela-dom-scroll-area::-webkit-scrollbar-thumb {
-                background: rgba(255, 255, 255, 0.15);
-                border-radius: 2px;
-            }
-            .vela-dom-table {
-                display: flex;
-                flex-direction: column;
-                width: 100%;
-            }
-            .vela-dom-row {
-                display: flex;
-                align-items: center;
-                height: 20px;
-                padding: 0 12px;
-                position: relative;
-                cursor: default;
-                border-bottom: 1px solid rgba(255, 255, 255, 0.02);
-            }
-            .vela-dom-row:hover {
-                background: rgba(255, 255, 255, 0.04);
-            }
-            .vela-dom-row.mark-row {
-                background: rgba(255, 255, 255, 0.08);
-                border-top: 1px solid rgba(255, 255, 255, 0.2);
-                border-bottom: 1px solid rgba(255, 255, 255, 0.2);
+                font-size: 9px;
                 font-weight: 700;
+                color: #787b86;
+                flex-shrink: 0;
             }
-            .vela-col-ps {
-                width: 54px;
-                text-align: right;
-                font-variant-numeric: tabular-nums;
-            }
-            .vela-col-ps.stack { color: #2ebd85; font-weight: 600; }
-            .vela-col-ps.pull { color: #f6465d; font-weight: 600; }
-            .vela-col-ps.zero { color: #50535e; }
-            .vela-col-usd {
-                width: 58px;
-                text-align: right;
-                font-variant-numeric: tabular-nums;
-                color: #d1d4dc;
-            }
-            .vela-col-price {
-                width: 62px;
-                text-align: center;
-                font-variant-numeric: tabular-nums;
-                font-weight: 600;
-            }
-            .vela-col-price.ask { color: #f6465d; }
-            .vela-col-price.bid { color: #2ebd85; }
-            .vela-col-price.mark { color: #ffffff; }
-            .vela-col-bar {
+            .vela-dom-canvas-wrap {
                 flex: 1;
-                height: 10px;
-                display: flex;
-                align-items: center;
-                margin-left: 6px;
                 position: relative;
-                overflow: hidden;
-                border-radius: 1px;
-            }
-            .vela-dom-segment {
+                width: 100%;
                 height: 100%;
+                overflow: hidden;
+                cursor: grab;
+            }
+            .vela-dom-canvas-wrap:active {
+                cursor: grabbing;
             }
             .vela-dom-tooltip {
                 position: absolute;
                 display: none;
                 z-index: 100;
-                background: #1e2026;
-                border: 1px solid rgba(255, 255, 255, 0.15);
+                background: #1c1e24;
+                border: 1px solid rgba(255, 255, 255, 0.2);
                 border-radius: 4px;
                 padding: 6px 10px;
                 font-size: 10px;
                 color: #ffffff;
                 pointer-events: none;
-                box-shadow: 0 4px 12px rgba(0, 0, 0, 0.5);
-                white-space: nowrap;
-            }
-            .vela-dom-touch-dot {
-                display: inline-block;
-                width: 4px;
-                height: 4px;
-                border-radius: 50%;
-                background: #ffb648;
-                margin-right: 3px;
-                vertical-align: middle;
+                box-shadow: 0 4px 16px rgba(0, 0, 0, 0.6);
+                line-height: 1.4;
             }
         `;
         this.root.appendChild(style);
@@ -317,43 +296,63 @@ export class DomLadderPanelController {
         const controls = document.createElement('div');
         controls.className = 'vela-dom-controls';
 
-        // Window pills (Pull/Stack)
-        const windowPills = document.createElement('div');
-        windowPills.className = 'vela-dom-pills';
+        // Recenter Button
+        const recenterBtn = document.createElement('button');
+        recenterBtn.className = 'vela-dom-btn';
+        recenterBtn.textContent = 'Recenter';
+        recenterBtn.onclick = () => this.recenter();
+        controls.appendChild(recenterBtn);
 
-        const windows = [15, 60, 300];
-        const labels: Record<number, string> = { 15: '15s', 60: '1m', 300: '5m' };
+        // Group Select
+        const groupWrap = document.createElement('div');
+        groupWrap.className = 'vela-dom-select-wrap';
+        groupWrap.append('Step:');
+        this.groupSelect = document.createElement('select');
+        this.groupSelect.className = 'vela-dom-select';
+        this.groupSelect.onchange = () => {
+            const v = this.groupSelect.value;
+            this.manualStep = v === 'auto' ? 0 : Number(v);
+            this.rebuildLevels();
+            this.invalidate();
+        };
+        groupWrap.appendChild(this.groupSelect);
+        controls.appendChild(groupWrap);
 
-        for (const w of windows) {
-            const p = document.createElement('div');
-            p.className = `vela-dom-pill ${w === this.selectedWindowSec ? 'active' : ''}`;
-            p.textContent = labels[w]!;
-            p.addEventListener('click', () => {
-                this.selectedWindowSec = w;
-                windowPills.querySelectorAll('.vela-dom-pill').forEach(el => el.classList.remove('active'));
-                p.classList.add('active');
-                this.scheduleRender();
-            });
-            windowPills.appendChild(p);
+        // Pull/Stack Select
+        const pullWrap = document.createElement('div');
+        pullWrap.className = 'vela-dom-select-wrap';
+        pullWrap.append('P/S:');
+        this.pullSelect = document.createElement('select');
+        this.pullSelect.className = 'vela-dom-select';
+        const pullOpts: [number, string][] = [[0, 'off'], [15, '15s'], [60, '1m'], [300, '5m']];
+        for (const [val, txt] of pullOpts) {
+            const opt = new Option(txt, String(val));
+            if (val === this.selectedWindowSec) opt.selected = true;
+            this.pullSelect.append(opt);
         }
-        controls.appendChild(windowPills);
+        this.pullSelect.onchange = () => {
+            this.selectedWindowSec = Number(this.pullSelect.value);
+            this.updateColsHeader();
+            this.rebuildLevels();
+            this.invalidate();
+        };
+        pullWrap.appendChild(this.pullSelect);
+        controls.appendChild(pullWrap);
 
-        // Step selector pills
-        this.stepPillsContainer = document.createElement('div');
-        this.stepPillsContainer.className = 'vela-dom-pills';
-        this.renderStepPills();
-        controls.appendChild(this.stepPillsContainer);
-
-        // Center Button
-        const centerBtn = document.createElement('div');
-        centerBtn.className = 'vela-dom-pill';
-        centerBtn.textContent = 'Center';
-        centerBtn.style.cursor = 'pointer';
-        centerBtn.addEventListener('click', () => {
-            this.autoCenter = true;
-            this.recenterScroll();
-        });
-        controls.appendChild(centerBtn);
+        // Mode Select
+        const modeWrap = document.createElement('div');
+        modeWrap.className = 'vela-dom-select-wrap';
+        modeWrap.append('Mode:');
+        this.modeSelect = document.createElement('select');
+        this.modeSelect.className = 'vela-dom-select';
+        this.modeSelect.append(new Option('Aggregated', 'aggregated'), new Option('Compact', 'compact'));
+        this.modeSelect.value = this.mode;
+        this.modeSelect.onchange = () => {
+            this.mode = this.modeSelect.value as any;
+            this.invalidate();
+        };
+        modeWrap.appendChild(this.modeSelect);
+        controls.appendChild(modeWrap);
 
         header.appendChild(controls);
 
@@ -366,114 +365,276 @@ export class DomLadderPanelController {
         this.balanceBidsLabel = document.createElement('span');
         this.balanceBidsLabel.textContent = 'Bids: 50%';
         this.balanceAsksLabel = document.createElement('span');
-        this.balanceAsksLabel.textContent = 'Asks: 50%';
+        this.balanceAsksLabel.textContent = '50% :Asks';
         balanceText.appendChild(this.balanceBidsLabel);
         balanceText.appendChild(this.balanceAsksLabel);
         balanceWrap.appendChild(balanceText);
 
         const balanceBarContainer = document.createElement('div');
         balanceBarContainer.className = 'vela-dom-balance-bar';
-        this.balanceBar = document.createElement('div');
-        this.balanceBar.className = 'vela-dom-balance-fill';
-        balanceBarContainer.appendChild(this.balanceBar);
+        this.balanceBarFill = document.createElement('div');
+        this.balanceBarFill.className = 'vela-dom-balance-fill';
+        balanceBarContainer.appendChild(this.balanceBarFill);
         balanceWrap.appendChild(balanceBarContainer);
 
         header.appendChild(balanceWrap);
         this.root.appendChild(header);
 
         // Columns Header
-        const colsHeader = document.createElement('div');
-        colsHeader.className = 'vela-dom-cols-header';
-        colsHeader.innerHTML = `
-            <span class="vela-col-ps">PULL/STK</span>
-            <span class="vela-col-usd">DEPTH</span>
-            <span class="vela-col-price">PRICE</span>
-            <span class="vela-col-bar" style="margin-left: 6px;">AGG DEPTH</span>
-        `;
-        this.root.appendChild(colsHeader);
+        this.colsHeader = document.createElement('div');
+        this.colsHeader.className = 'vela-dom-cols-header';
+        this.updateColsHeader();
+        this.root.appendChild(this.colsHeader);
 
-        // Scrollable Table Area
-        const scrollArea = document.createElement('div');
-        scrollArea.className = 'vela-dom-scroll-area';
+        // Canvas Wrap
+        const canvasWrap = document.createElement('div');
+        canvasWrap.className = 'vela-dom-canvas-wrap';
 
-        this.tableBody = document.createElement('div');
-        this.tableBody.className = 'vela-dom-table';
-        scrollArea.appendChild(this.tableBody);
-        this.root.appendChild(scrollArea);
+        this.canvas = document.createElement('canvas');
+        this.canvas.style.width = '100%';
+        this.canvas.style.height = '100%';
+        this.canvas.style.display = 'block';
+        canvasWrap.appendChild(this.canvas);
+
+        const ctx2d = this.canvas.getContext('2d');
+        if (!ctx2d) throw new Error('Could not get 2d context for DOM ladder');
+        this.ctx2d = ctx2d;
 
         // Tooltip
         this.tooltipEl = document.createElement('div');
         this.tooltipEl.className = 'vela-dom-tooltip';
-        this.root.appendChild(this.tooltipEl);
+        canvasWrap.appendChild(this.tooltipEl);
 
-        scrollArea.addEventListener('scroll', () => {
-            this.autoCenter = false;
+        this.root.appendChild(canvasWrap);
+
+        this.setupGestures(canvasWrap);
+        this.updateStepOptions();
+
+        const ro = new ResizeObserver(() => {
+            this.syncCanvasSize();
+            this.rebuildLevels();
+            this.invalidate();
         });
+        ro.observe(canvasWrap);
     }
 
-    private renderStepPills(): void {
-        this.stepPillsContainer.innerHTML = '';
-        const stepOpts = [0]; // 0 = Auto
-        const p = this.markPrice || 80000;
-        const auto = gridStepFor(p);
+    private updateColsHeader(): void {
+        const hasPs = this.selectedWindowSec > 0;
+        this.colsHeader.innerHTML = `
+            ${hasPs ? `<span style="width: ${PS_W}px; text-align: right; padding-right: 6px;">PULL/STK</span>` : ''}
+            <span style="width: ${USD_W}px; text-align: right; padding-right: 6px;">DEPTH</span>
+            <span style="width: ${PRICE_W}px; text-align: center;">PRICE</span>
+            <span style="flex: 1; text-align: left; padding-left: 8px;">AGG DEPTH / VENUES</span>
+        `;
+    }
 
-        if (p >= 10000) stepOpts.push(1, 5, 10);
-        else if (p >= 1000) stepOpts.push(0.5, 1, 2);
-        else if (p >= 100) stepOpts.push(0.05, 0.1, 0.5);
-        else stepOpts.push(0.001, 0.005, 0.01);
+    private updateStepOptions(): void {
+        const mark = this.markPrice || 80000;
+        const auto = gridStepFor(mark);
+        const steps: number[] = [];
 
-        for (const s of stepOpts) {
-            const pEl = document.createElement('div');
-            pEl.className = `vela-dom-pill ${s === this.manualStep ? 'active' : ''}`;
-            pEl.textContent = s === 0 ? 'Auto' : String(s);
-            pEl.addEventListener('click', () => {
-                this.manualStep = s;
-                this.renderStepPills();
-                this.generateInitialLadder(this.markPrice || auto);
-                this.scheduleRender();
-            });
-            this.stepPillsContainer.appendChild(pEl);
+        if (mark >= 10000) steps.push(0.5, 1, 2, 5, 10, 25, 50);
+        else if (mark >= 1000) steps.push(0.1, 0.2, 0.5, 1, 2, 5);
+        else if (mark >= 50) steps.push(0.01, 0.02, 0.05, 0.1, 0.2, 0.5);
+        else steps.push(0.0001, 0.0005, 0.001, 0.005, 0.01);
+
+        this.groupSelect.innerHTML = '';
+        this.groupSelect.append(new Option(`Auto (${auto})`, 'auto'));
+        for (const s of steps) {
+            const opt = new Option(String(s), String(s));
+            if (s === this.manualStep) opt.selected = true;
+            this.groupSelect.append(opt);
         }
     }
 
+    private getActiveStep(): number {
+        if (this.manualStep > 0) return this.manualStep;
+        return gridStepFor(this.markPrice || 80000);
+    }
+
+    private syncCanvasSize(): void {
+        const rect = this.canvas.getBoundingClientRect();
+        const dpr = window.devicePixelRatio || 1;
+        const w = Math.floor(rect.width);
+        const h = Math.floor(rect.height);
+        if (w <= 0 || h <= 0) return;
+
+        if (this.canvas.width !== w * dpr || this.canvas.height !== h * dpr) {
+            this.canvas.width = w * dpr;
+            this.canvas.height = h * dpr;
+        }
+    }
+
+    private setupGestures(wrap: HTMLElement): void {
+        wrap.addEventListener('pointerdown', (e) => {
+            const rect = this.canvas.getBoundingClientRect();
+            const x = e.clientX - rect.left;
+            const y = e.clientY - rect.top;
+            this.stopFling();
+
+            const isPriceAxis = x >= (this.selectedWindowSec > 0 ? PS_W + USD_W : USD_W) && x <= (this.selectedWindowSec > 0 ? PS_W + USD_W + PRICE_W : USD_W + PRICE_W);
+            this.drag = {
+                kind: isPriceAxis ? 'zoom' : 'pan',
+                startY: y,
+                startOffset: this.offsetRows,
+                startStep: this.getActiveStep()
+            };
+            wrap.setPointerCapture(e.pointerId);
+        });
+
+        wrap.addEventListener('pointermove', (e) => {
+            const rect = this.canvas.getBoundingClientRect();
+            const x = e.clientX - rect.left;
+            const y = e.clientY - rect.top;
+
+            if (this.drag) {
+                const dy = y - this.drag.startY;
+                if (this.drag.kind === 'pan') {
+                    const rowDelta = Math.round(dy / ROW_H);
+                    this.offsetRows = this.drag.startOffset + rowDelta;
+                    this.rebuildLevels();
+                    this.invalidate();
+                } else if (this.drag.kind === 'zoom') {
+                    const notches = Math.trunc(-dy / 25);
+                    if (notches !== 0) {
+                        const factor = notches > 0 ? 1.5 : 0.67;
+                        this.manualStep = Number((this.drag.startStep * factor).toPrecision(4));
+                        this.updateStepOptions();
+                        this.rebuildLevels();
+                        this.invalidate();
+                    }
+                }
+            } else {
+                const r = Math.floor(y / ROW_H);
+                if (r >= 0 && r < this.levels.length) {
+                    this.hoverRow = r;
+                    this.hoverPt = { x, y };
+                    this.updateTooltip(this.levels[r]!, x, y);
+                } else {
+                    this.hoverRow = null;
+                    this.hoverPt = null;
+                    this.tooltipEl.style.display = 'none';
+                }
+                this.invalidate();
+            }
+        });
+
+        wrap.addEventListener('pointerup', (e) => {
+            this.drag = null;
+            try { wrap.releasePointerCapture(e.pointerId); } catch (_) {}
+        });
+
+        wrap.addEventListener('pointercancel', () => {
+            this.drag = null;
+        });
+
+        wrap.addEventListener('wheel', (e) => {
+            e.preventDefault();
+            const delta = e.deltaY;
+            const step = this.getActiveStep();
+            const nextStep = delta < 0 ? step * 0.8 : step * 1.25;
+            this.manualStep = Number(nextStep.toPrecision(3));
+            this.updateStepOptions();
+            this.rebuildLevels();
+            this.invalidate();
+        }, { passive: false });
+
+        wrap.addEventListener('dblclick', () => {
+            this.recenter();
+        });
+
+        wrap.addEventListener('mouseleave', () => {
+            this.hoverRow = null;
+            this.hoverPt = null;
+            this.tooltipEl.style.display = 'none';
+            this.invalidate();
+        });
+    }
+
+    private updateTooltip(level: GroupedLevel, x: number, y: number): void {
+        const decimals = this.markPrice >= 1000 ? 1 : this.markPrice >= 10 ? 2 : 4;
+        const priceStr = `$${level.price.toLocaleString(undefined, { minimumFractionDigits: decimals, maximumFractionDigits: decimals })}`;
+        const depthStr = `$${formatVol(level.usd)}`;
+        const cumStr = `$${formatVol(level.cumUsd)}`;
+        const psStr = this.selectedWindowSec > 0 ? formatSignedUsd(level.pullStackUsd) : '';
+
+        let venuesHtml = '';
+        if (level.venues.length > 0) {
+            venuesHtml = '<div style="margin-top: 4px; border-top: 1px solid rgba(255,255,255,0.1); padding-top: 4px;">';
+            for (const v of level.venues) {
+                const color = getVenueColor(v.venue);
+                venuesHtml += `<div style="display: flex; justify-content: space-between; gap: 8px;">
+                    <span style="color: ${color}; font-weight: 600;">${v.venue}</span>
+                    <span>$${formatVol(v.usd)}</span>
+                </div>`;
+            }
+            venuesHtml += '</div>';
+        }
+
+        this.tooltipEl.innerHTML = `
+            <div style="font-weight: 700; color: ${level.side === 'ask' ? '#f6465d' : '#2ebd85'};">${priceStr} (${level.side.toUpperCase()})</div>
+            <div>Resting: <strong>${depthStr}</strong> · Cumulative: ${cumStr}</div>
+            ${this.selectedWindowSec > 0 ? `<div>Pull/Stack: <span style="font-weight: 600; color: ${level.pullStackUsd >= 0 ? '#2ebd85' : '#f6465d'};">${psStr}</span></div>` : ''}
+            ${venuesHtml}
+        `;
+
+        const wrapRect = this.canvas.getBoundingClientRect();
+        const tooltipX = Math.min(x + 12, wrapRect.width - 200);
+        const tooltipY = Math.min(y + 10, wrapRect.height - 120);
+
+        this.tooltipEl.style.left = `${tooltipX}px`;
+        this.tooltipEl.style.top = `${tooltipY}px`;
+        this.tooltipEl.style.display = 'block';
+    }
+
+    private stopFling(): void {
+        if (this.flingId !== null) {
+            cancelAnimationFrame(this.flingId);
+            this.flingId = null;
+        }
+    }
+
+    recenter(): void {
+        this.offsetRows = 0;
+        this.rebuildLevels();
+        this.invalidate();
+    }
+
     async start(): Promise<void> {
-        // 1. Resolve coin and switch backend feed if needed
         const resolved = LiquidityClient.get().resolveCoin(this.currentSymbol);
         this.badgeEl.textContent = `${resolved.base} AGG LIVE`;
 
         void LiquidityClient.get().switchMarket(this.currentSymbol);
 
-        // 2. Fetch initial state
         try {
             const state = await LiquidityClient.get().getState();
             if (state && typeof state.markPrice === 'number' && state.markPrice > 0) {
                 this.markPrice = state.markPrice;
                 this.updateMarkDisplay(state.markPrice);
-                this.generateInitialLadder(state.markPrice);
-                this.renderStepPills();
-                this.scheduleRender();
+                this.updateStepOptions();
+                this.rebuildLevels();
+                this.invalidate();
             }
-        } catch (e) {
-            console.warn('[DomLadder] Initial state fetch warning:', e);
-        }
+        } catch (_) {}
 
-        // 3. Wire live WebSocket streams
         this.unsubscribeTick = LiquidityClient.get().onTick((price) => {
             this.markPrice = price;
             this.updateMarkDisplay(price);
-            this.scheduleRender();
+            this.rebuildLevels();
+            this.invalidate();
         });
 
         this.unsubscribeLevels = LiquidityClient.get().onLevels((frame) => {
-            this.processLevelsFrame(frame);
-            this.scheduleRender();
+            this.currentFrame = frame;
+            this.recordSnapshot(frame);
+            this.rebuildLevels();
+            this.invalidate();
         });
 
         this.unsubscribeMarket = LiquidityClient.get().onMarketSwitch((sym) => {
             this.setSymbol(sym);
         });
 
-        // 4. Hook active chart market switches if context is available
         if (this.ctx && this.ctx.chart) {
             this.ctx.chart.on('market:changed', ({ symbol }: { symbol: string }) => {
                 if (symbol) this.setSymbol(symbol);
@@ -487,9 +648,11 @@ export class DomLadderPanelController {
         const resolved = LiquidityClient.get().resolveCoin(sym);
         this.badgeEl.textContent = `${resolved.base} AGG LIVE`;
         this.snapshots = [];
-        this.rows = [];
+        this.levels = [];
+        this.offsetRows = 0;
         void LiquidityClient.get().switchMarket(sym);
-        this.autoCenter = true;
+        this.updateStepOptions();
+        this.invalidate();
     }
 
     private updateMarkDisplay(price: number): void {
@@ -497,184 +660,163 @@ export class DomLadderPanelController {
         this.markBanner.textContent = `$${price.toLocaleString(undefined, { minimumFractionDigits: decimals, maximumFractionDigits: decimals })}`;
     }
 
-    private getActiveStep(): number {
-        if (this.manualStep > 0) return this.manualStep;
-        return gridStepFor(this.markPrice || 80000);
-    }
-
-    private generateInitialLadder(markPrice: number): void {
+    private recordSnapshot(frame: LevelsFrame): void {
+        const now = Date.now();
         const step = this.getActiveStep();
-        const markBin = Math.floor(markPrice / step) * step;
-        const newRows: PriceRow[] = [];
-        const numHalfRows = 28;
-
-        for (let k = numHalfRows; k >= 1; k--) {
-            newRows.push({
-                price: markBin + k * step,
-                side: 'ask',
-                totalUsd: 0,
-                venues: new Map(),
-                pullStackUsd: 0,
-                touched: false
-            });
-        }
-        newRows.push({
-            price: markBin,
-            side: 'bid',
-            totalUsd: 0,
-            venues: new Map(),
-            pullStackUsd: 0,
-            touched: true
-        });
-        for (let k = 1; k <= numHalfRows; k++) {
-            newRows.push({
-                price: markBin - k * step,
-                side: 'bid',
-                totalUsd: 0,
-                venues: new Map(),
-                pullStackUsd: 0,
-                touched: false
-            });
-        }
-        this.rows = newRows;
-    }
-
-    private processLevelsFrame(frame: LevelsFrame): void {
-        if (!frame.books || frame.books.length === 0) return;
-
-        const step = this.getActiveStep();
-        const snapshotMap = new Map<number, number>();
-        const aggregatedBids = new Map<number, { usd: number; venues: Map<string, number> }>();
-        const aggregatedAsks = new Map<number, { usd: number; venues: Map<string, number> }>();
+        const bins = new Map<number, number>();
 
         for (const book of frame.books) {
-            const venue = book.venue;
-
-            // Aggregate Bids
-            const bids = book.bids;
-            for (let i = 0; i < bids.lo.length; i++) {
-                const price = bids.lo[i]!;
-                const usd = bids.usd[i]!;
-                if (usd <= 0) continue;
-
-                const bin = Math.floor(price / step) * step;
-                snapshotMap.set(bin, (snapshotMap.get(bin) || 0) + usd);
-
-                let entry = aggregatedBids.get(bin);
-                if (!entry) {
-                    entry = { usd: 0, venues: new Map() };
-                    aggregatedBids.set(bin, entry);
+            for (let i = 0; i < book.bids.lo.length; i++) {
+                const p = book.bids.lo[i]!;
+                const usd = book.bids.usd[i]!;
+                if (usd > 0) {
+                    const bin = Math.round((Math.floor(p / step) * step) * 1e8) / 1e8;
+                    bins.set(bin, (bins.get(bin) || 0) + usd);
                 }
-                entry.usd += usd;
-                entry.venues.set(venue, (entry.venues.get(venue) || 0) + usd);
             }
-
-            // Aggregate Asks
-            const asks = book.asks;
-            for (let i = 0; i < asks.lo.length; i++) {
-                const price = asks.lo[i]!;
-                const usd = asks.usd[i]!;
-                if (usd <= 0) continue;
-
-                const bin = Math.floor(price / step) * step;
-                snapshotMap.set(bin, (snapshotMap.get(bin) || 0) + usd);
-
-                let entry = aggregatedAsks.get(bin);
-                if (!entry) {
-                    entry = { usd: 0, venues: new Map() };
-                    aggregatedAsks.set(bin, entry);
+            for (let i = 0; i < book.asks.lo.length; i++) {
+                const p = book.asks.lo[i]!;
+                const usd = book.asks.usd[i]!;
+                if (usd > 0) {
+                    const bin = Math.round((Math.floor(p / step) * step) * 1e8) / 1e8;
+                    bins.set(bin, (bins.get(bin) || 0) + usd);
                 }
-                entry.usd += usd;
-                entry.venues.set(venue, (entry.venues.get(venue) || 0) + usd);
             }
         }
 
-        // Record Snapshot for Pull/Stack
-        const now = Date.now();
-        this.snapshots.push({
-            timestamp: now,
-            bins: snapshotMap,
-            lowMark: this.markPrice,
-            highMark: this.markPrice
-        });
-        // Keep max 360 seconds of snapshots
+        this.snapshots.push({ timestamp: now, bins, markPrice: this.markPrice });
         const cutoff = now - 360 * 1000;
         while (this.snapshots.length > 0 && this.snapshots[0]!.timestamp < cutoff) {
             this.snapshots.shift();
         }
-
-        // Find reference snapshot for selected window (15s, 60s, 300s)
-        const targetTime = now - this.selectedWindowSec * 1000;
-        let pastSnapshot: DepthSnapshot | null = null;
-        for (let i = this.snapshots.length - 1; i >= 0; i--) {
-            if (this.snapshots[i]!.timestamp <= targetTime) {
-                pastSnapshot = this.snapshots[i]!;
-                break;
-            }
-        }
-        if (!pastSnapshot && this.snapshots.length > 0) {
-            pastSnapshot = this.snapshots[0]!;
-        }
-
-        // Build Rows around mark price
-        const numHalfRows = 28;
-        const markBin = Math.floor((this.markPrice || 80000) / step) * step;
-        const newRows: PriceRow[] = [];
-
-        // Asks (above mark price, descending)
-        for (let k = numHalfRows; k >= 1; k--) {
-            const p = Number((markBin + k * step).toFixed(8));
-            const entry = aggregatedAsks.get(p);
-            const totalUsd = entry ? entry.usd : 0;
-            const venues = entry ? entry.venues : new Map();
-
-            const pastUsd = pastSnapshot ? (pastSnapshot.bins.get(p) || 0) : totalUsd;
-            const pullStackUsd = totalUsd - pastUsd;
-
-            newRows.push({
-                price: p,
-                side: 'ask',
-                totalUsd,
-                venues,
-                pullStackUsd,
-                touched: false
-            });
-        }
-
-        // Mark Price row
-        newRows.push({
-            price: markBin,
-            side: 'bid',
-            totalUsd: (aggregatedBids.get(markBin)?.usd || 0) + (aggregatedAsks.get(markBin)?.usd || 0),
-            venues: aggregatedBids.get(markBin)?.venues || new Map(),
-            pullStackUsd: 0,
-            touched: true
-        });
-
-        // Bids (below mark price, descending)
-        for (let k = 1; k <= numHalfRows; k++) {
-            const p = Number((markBin - k * step).toFixed(8));
-            const entry = aggregatedBids.get(p);
-            const totalUsd = entry ? entry.usd : 0;
-            const venues = entry ? entry.venues : new Map();
-
-            const pastUsd = pastSnapshot ? (pastSnapshot.bins.get(p) || 0) : totalUsd;
-            const pullStackUsd = totalUsd - pastUsd;
-
-            newRows.push({
-                price: p,
-                side: 'bid',
-                totalUsd,
-                venues,
-                pullStackUsd,
-                touched: false
-            });
-        }
-
-        this.rows = newRows;
     }
 
-    private scheduleRender(): void {
+    private rebuildLevels(): void {
+        const h = this.canvas?.getBoundingClientRect()?.height || 400;
+        const numRows = Math.max(10, Math.floor(h / ROW_H));
+        const step = this.getActiveStep();
+        const mark = this.markPrice || 80000;
+
+        const markBin = Math.round((Math.floor(mark / step) * step) * 1e8) / 1e8;
+        const centerBin = Math.round((markBin + this.offsetRows * step) * 1e8) / 1e8;
+
+        const halfRows = Math.floor(numRows / 2);
+        const topPrice = Math.round((centerBin + halfRows * step) * 1e8) / 1e8;
+
+        // Group live orderbook
+        const bidsMap = new Map<number, { usd: number; venues: Map<string, number> }>();
+        const asksMap = new Map<number, { usd: number; venues: Map<string, number> }>();
+
+        if (this.currentFrame && this.currentFrame.books) {
+            for (const book of this.currentFrame.books) {
+                const v = book.venue;
+                // Bids
+                for (let i = 0; i < book.bids.lo.length; i++) {
+                    const lo = book.bids.lo[i]!, usd = book.bids.usd[i]!;
+                    if (usd <= 0) continue;
+                    const bin = Math.round((Math.floor(lo / step) * step) * 1e8) / 1e8;
+                    let entry = bidsMap.get(bin);
+                    if (!entry) { entry = { usd: 0, venues: new Map() }; bidsMap.set(bin, entry); }
+                    entry.usd += usd;
+                    entry.venues.set(v, (entry.venues.get(v) || 0) + usd);
+                }
+                // Asks
+                for (let i = 0; i < book.asks.lo.length; i++) {
+                    const lo = book.asks.lo[i]!, usd = book.asks.usd[i]!;
+                    if (usd <= 0) continue;
+                    const bin = Math.round((Math.floor(lo / step) * step) * 1e8) / 1e8;
+                    let entry = asksMap.get(bin);
+                    if (!entry) { entry = { usd: 0, venues: new Map() }; asksMap.set(bin, entry); }
+                    entry.usd += usd;
+                    entry.venues.set(v, (entry.venues.get(v) || 0) + usd);
+                }
+            }
+        }
+
+        // Pull/Stack delta lookup
+        const now = Date.now();
+        const targetTime = now - this.selectedWindowSec * 1000;
+        let refSnapshot: DepthSnapshot | null = null;
+        if (this.selectedWindowSec > 0) {
+            for (let i = this.snapshots.length - 1; i >= 0; i--) {
+                if (this.snapshots[i]!.timestamp <= targetTime) {
+                    refSnapshot = this.snapshots[i]!;
+                    break;
+                }
+            }
+            if (!refSnapshot && this.snapshots.length > 0) {
+                refSnapshot = this.snapshots[0]!;
+            }
+        }
+
+        const built: GroupedLevel[] = [];
+
+        for (let r = 0; r < numRows; r++) {
+            const p = Math.round((topPrice - r * step) * 1e8) / 1e8;
+            const isAsk = p > markBin;
+            const entry = isAsk ? asksMap.get(p) : bidsMap.get(p);
+            const usd = entry ? entry.usd : 0;
+
+            const venues: VenueDepth[] = [];
+            if (entry) {
+                for (const [venue, vUsd] of entry.venues.entries()) {
+                    if (vUsd > 0) venues.push({ venue, usd: vUsd });
+                }
+                venues.sort((a, b) => b.usd - a.usd);
+            }
+
+            let pullStackUsd = 0;
+            if (refSnapshot) {
+                const pastUsd = refSnapshot.bins.get(p) || 0;
+                pullStackUsd = usd - pastUsd;
+            }
+
+            built.push({
+                price: p,
+                side: isAsk ? 'ask' : 'bid',
+                usd,
+                cumUsd: 0,
+                venues,
+                pullStackUsd,
+                touched: Math.abs(p - mark) < step
+            });
+        }
+
+        let runAsk = 0;
+        for (let r = built.length - 1; r >= 0; r--) {
+            const item = built[r]!;
+            if (item.side === 'ask') {
+                runAsk += item.usd;
+                item.cumUsd = runAsk;
+            }
+        }
+        let runBid = 0;
+        for (let r = 0; r < built.length; r++) {
+            const item = built[r]!;
+            if (item.side === 'bid') {
+                runBid += item.usd;
+                item.cumUsd = runBid;
+            }
+        }
+
+        this.levels = built;
+
+        let visibleBids = 0, visibleAsks = 0;
+        for (const l of built) {
+            if (l.side === 'bid') visibleBids += l.usd;
+            else visibleAsks += l.usd;
+        }
+        const totalVis = visibleBids + visibleAsks;
+        if (totalVis > 0) {
+            const bidPct = Math.round((visibleBids / totalVis) * 100);
+            const askPct = 100 - bidPct;
+            this.balanceBarFill.style.width = `${bidPct}%`;
+            this.balanceBidsLabel.textContent = `Bids: ${bidPct}% ($${formatVol(visibleBids)})`;
+            this.balanceAsksLabel.textContent = `${askPct}% ($${formatVol(visibleAsks)}) :Asks`;
+        }
+    }
+
+    private invalidate(): void {
         if (this.animFrameId !== null) return;
         this.animFrameId = requestAnimationFrame(() => {
             this.animFrameId = null;
@@ -683,123 +825,127 @@ export class DomLadderPanelController {
     }
 
     private render(): void {
-        if (this.rows.length === 0) return;
+        const dpr = window.devicePixelRatio || 1;
+        const rect = this.canvas.getBoundingClientRect();
+        const w = rect.width;
+        const h = rect.height;
+        if (w <= 0 || h <= 0) return;
+
+        this.syncCanvasSize();
+        const ctx = this.ctx2d;
+
+        ctx.save();
+        ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+        ctx.clearRect(0, 0, w, h);
+
+        const hasPs = this.selectedWindowSec > 0;
+        const psW = hasPs ? PS_W : 0;
+        const usdW = USD_W;
+        const priceW = PRICE_W;
+        const barX = psW + usdW + priceW + 8;
+        const barW = Math.max(20, w - barX - 10);
+
+        let maxDepth = 1;
+        for (const l of this.levels) {
+            if (l.usd > maxDepth) maxDepth = l.usd;
+        }
 
         const decimals = this.markPrice >= 1000 ? 1 : this.markPrice >= 10 ? 2 : 4;
-
-        // Calculate max depth for bar scaling
-        let maxDepth = 1;
-        let totalBidsUsd = 0;
-        let totalAsksUsd = 0;
-
-        for (const r of this.rows) {
-            if (r.totalUsd > maxDepth) maxDepth = r.totalUsd;
-            if (r.side === 'bid') totalBidsUsd += r.totalUsd;
-            else totalAsksUsd += r.totalUsd;
-        }
-
-        // Update balance bar
-        const totalVisible = totalBidsUsd + totalAsksUsd;
-        if (totalVisible > 0) {
-            const bidPct = Math.round((totalBidsUsd / totalVisible) * 100);
-            const askPct = 100 - bidPct;
-            this.balanceBar.style.width = `${bidPct}%`;
-            this.balanceBidsLabel.textContent = `Bids: ${bidPct}% ($${formatVol(totalBidsUsd)})`;
-            this.balanceAsksLabel.textContent = `Asks: ${askPct}% ($${formatVol(totalAsksUsd)})`;
-        }
-
-        // Render Rows
-        this.tableBody.innerHTML = '';
-        const frag = document.createDocumentFragment();
         const step = this.getActiveStep();
 
-        for (const row of this.rows) {
-            const isMark = Math.abs(row.price - this.markPrice) < (step * 0.9);
-            const rowEl = document.createElement('div');
-            rowEl.className = `vela-dom-row ${isMark ? 'mark-row' : ''}`;
+        ctx.font = '10.5px ui-monospace, SFMono-Regular, Menlo, monospace';
+        ctx.textBaseline = 'middle';
 
-            // Pull/Stack Column
-            const psCol = document.createElement('div');
-            const psVal = row.pullStackUsd;
-            let psClass = 'zero';
-            if (psVal > 500) psClass = 'stack';
-            else if (psVal < -500) psClass = 'pull';
-            psCol.className = `vela-col-ps ${psClass}`;
-            psCol.innerHTML = `${row.touched ? '<span class="vela-dom-touch-dot" title="Price touched"></span>' : ''}${formatSignedUsd(psVal)}`;
+        for (let r = 0; r < this.levels.length; r++) {
+            const l = this.levels[r]!;
+            const y = r * ROW_H;
+            const isMark = Math.abs(l.price - this.markPrice) < (step * 0.9);
+            const isHover = this.hoverRow === r;
 
-            // Total USD Column
-            const usdCol = document.createElement('div');
-            usdCol.className = 'vela-col-usd';
-            usdCol.textContent = row.totalUsd > 0 ? formatVol(row.totalUsd) : '—';
-
-            // Price Column
-            const priceCol = document.createElement('div');
-            priceCol.className = `vela-col-price ${isMark ? 'mark' : row.side}`;
-            priceCol.textContent = row.price.toLocaleString(undefined, { minimumFractionDigits: decimals, maximumFractionDigits: decimals });
-
-            // Visual Depth Bar (segmented by venue)
-            const barCol = document.createElement('div');
-            barCol.className = 'vela-col-bar';
-
-            if (row.totalUsd > 0) {
-                const totalWidthPct = Math.min(100, (row.totalUsd / maxDepth) * 100);
-                for (const [venue, usd] of row.venues.entries()) {
-                    if (usd <= 0) continue;
-                    const segPct = (usd / row.totalUsd) * totalWidthPct;
-                    const seg = document.createElement('div');
-                    seg.className = 'vela-dom-segment';
-                    seg.style.width = `${segPct}%`;
-                    seg.style.background = VENUE_COLORS[venue] || (row.side === 'bid' ? '#2ebd85' : '#f6465d');
-                    seg.style.opacity = '0.85';
-                    barCol.appendChild(seg);
-                }
+            // Row background
+            if (isMark) {
+                ctx.fillStyle = 'rgba(212, 161, 6, 0.16)';
+                ctx.fillRect(0, y, w, ROW_H);
+                ctx.fillStyle = '#d4a106';
+                ctx.fillRect(0, y, 3, ROW_H);
+            } else if (isHover) {
+                ctx.fillStyle = 'rgba(255, 255, 255, 0.05)';
+                ctx.fillRect(0, y, w, ROW_H);
             }
 
-            rowEl.appendChild(psCol);
-            rowEl.appendChild(usdCol);
-            rowEl.appendChild(priceCol);
-            rowEl.appendChild(barCol);
+            // Row separator
+            ctx.fillStyle = 'rgba(255, 255, 255, 0.03)';
+            ctx.fillRect(0, y + ROW_H - 1, w, 1);
 
-            // Hover Tooltip
-            rowEl.addEventListener('mouseenter', () => {
-                let tooltipHtml = `<strong>$${row.price.toFixed(decimals)}</strong> — Depth: $${row.totalUsd.toLocaleString()}<br/>`;
-                tooltipHtml += `Pull/Stack (${this.selectedWindowSec}s): ${formatSignedUsd(row.pullStackUsd)}<br/>`;
-                tooltipHtml += `<div style="margin-top: 4px; border-top: 1px solid rgba(255,255,255,0.1); padding-top: 2px;">`;
-                for (const [v, u] of row.venues.entries()) {
-                    const pct = Math.round((u / (row.totalUsd || 1)) * 100);
-                    const color = VENUE_COLORS[v] || '#ffffff';
-                    tooltipHtml += `<span style="color:${color}">●</span> ${v}: $${formatVol(u)} (${pct}%)<br/>`;
+            let curX = 0;
+
+            // 1. PULL / STACK Column
+            if (hasPs) {
+                const psVal = l.pullStackUsd;
+                ctx.textAlign = 'right';
+                if (l.touched) {
+                    ctx.fillStyle = '#787b86';
+                    ctx.fillText('•', curX + 10, y + ROW_H / 2);
                 }
-                tooltipHtml += `</div>`;
+                if (Math.abs(psVal) > 100) {
+                    ctx.fillStyle = psVal > 0 ? '#2ebd85' : '#f6465d';
+                    ctx.fillText(formatSignedUsd(psVal), curX + psW - 6, y + ROW_H / 2);
+                } else {
+                    ctx.fillStyle = '#50535e';
+                    ctx.fillText('—', curX + psW - 6, y + ROW_H / 2);
+                }
+                curX += psW;
+            }
 
-                this.tooltipEl.innerHTML = tooltipHtml;
-                this.tooltipEl.style.display = 'block';
-                this.tooltipEl.style.top = `${rowEl.offsetTop + 20}px`;
-                this.tooltipEl.style.left = `20px`;
-            });
+            // 2. DEPTH USD Column
+            ctx.textAlign = 'right';
+            ctx.fillStyle = '#d1d4dc';
+            if (l.usd > 0) {
+                ctx.fillText(formatVol(l.usd), curX + usdW - 6, y + ROW_H / 2);
+            } else {
+                ctx.fillStyle = '#3a3d47';
+                ctx.fillText('—', curX + usdW - 6, y + ROW_H / 2);
+            }
+            curX += usdW;
 
-            rowEl.addEventListener('mouseleave', () => {
-                this.tooltipEl.style.display = 'none';
-            });
+            // 3. PRICE Column
+            ctx.textAlign = 'center';
+            if (isMark) {
+                ctx.fillStyle = '#ffffff';
+                ctx.font = '700 11px ui-monospace, SFMono-Regular, Menlo, monospace';
+            } else {
+                ctx.fillStyle = l.side === 'ask' ? '#f6465d' : '#2ebd85';
+                ctx.font = '10.5px ui-monospace, SFMono-Regular, Menlo, monospace';
+            }
+            const pStr = l.price.toLocaleString(undefined, { minimumFractionDigits: decimals, maximumFractionDigits: decimals });
+            ctx.fillText(pStr, curX + priceW / 2, y + ROW_H / 2);
+            curX += priceW;
 
-            frag.appendChild(rowEl);
-        }
+            // 4. AGG DEPTH BAR (segmented by venue)
+            if (l.usd > 0) {
+                const totalBarLen = Math.max(2, (l.usd / maxDepth) * barW);
+                let segX = barX;
 
-        this.tableBody.appendChild(frag);
-
-        if (this.autoCenter) {
-            this.recenterScroll();
-        }
-    }
-
-    private recenterScroll(): void {
-        const markRow = this.tableBody.querySelector('.mark-row') as HTMLElement | null;
-        if (markRow && markRow.parentElement) {
-            const scroller = markRow.parentElement.parentElement;
-            if (scroller) {
-                scroller.scrollTop = markRow.offsetTop - scroller.clientHeight / 2 + markRow.clientHeight / 2;
+                if (this.mode === 'compact') {
+                    const color = l.venues[0] ? getVenueColor(l.venues[0].venue) : (l.side === 'ask' ? '#f6465d' : '#2ebd85');
+                    ctx.fillStyle = color;
+                    ctx.globalAlpha = 0.85;
+                    ctx.fillRect(segX, y + 2, totalBarLen, ROW_H - 4);
+                    ctx.globalAlpha = 1.0;
+                } else {
+                    for (const v of l.venues) {
+                        const segW = Math.max(1, (v.usd / l.usd) * totalBarLen);
+                        ctx.fillStyle = getVenueColor(v.venue);
+                        ctx.globalAlpha = 0.88;
+                        ctx.fillRect(segX, y + 2, segW - 0.5, ROW_H - 4);
+                        segX += segW;
+                    }
+                    ctx.globalAlpha = 1.0;
+                }
             }
         }
+
+        ctx.restore();
     }
 
     destroy(): void {
@@ -815,6 +961,7 @@ export class DomLadderPanelController {
             this.unsubscribeMarket();
             this.unsubscribeMarket = null;
         }
+        this.stopFling();
         if (this.animFrameId !== null) {
             cancelAnimationFrame(this.animFrameId);
             this.animFrameId = null;

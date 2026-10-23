@@ -317,31 +317,84 @@ export function timeframeToMs(tf: string): number {
     return map[norm] || 3_600_000;
 }
 
-export function decodeLevels(buffer: ArrayBuffer): LevelsFrame | null {
+export interface TapeBatch {
+    seq: number;
+    dropped: number;
+    ids: string[];
+    inst: Int32Array;
+    t: Float64Array;
+    price: Float64Array;
+    usd: Float32Array;
+    lo: Float64Array;
+    hi: Float64Array;
+}
+
+export function decodeTape(buffer: ArrayBuffer, header?: any, headerLen?: number): TapeBatch | null {
     if (buffer.byteLength < 4) return null;
     const view = new DataView(buffer);
-    const length = view.getUint32(0, true);
+    const length = headerLen ?? view.getUint32(0, true);
     if (length === 0 || 4 + length > buffer.byteLength) return null;
 
-    let headerStr = '';
-    try {
-        headerStr = new TextDecoder().decode(new Uint8Array(buffer, 4, length));
-    } catch (_) {
-        return null;
+    let h = header;
+    if (!h) {
+        try {
+            const str = new TextDecoder().decode(new Uint8Array(buffer, 4, length));
+            h = JSON.parse(str);
+        } catch (_) {
+            return null;
+        }
     }
 
-    let header: FrameHeader;
-    try {
-        header = JSON.parse(headerStr) as FrameHeader;
-    } catch (_) {
-        return null;
-    }
-
-    if (header.type !== 'levels' || !Array.isArray(header.parts)) return null;
+    if (h.type !== 'tape' || !Array.isArray(h.parts)) return null;
 
     const base = (4 + length + 7) & ~7;
     const part = (index: number) => {
-        const spec = header.parts[index];
+        const spec = h.parts[index];
+        if (!spec) return new Float64Array(0);
+        const bytes = spec.kind === 'f32' || spec.kind === 'i32' ? 4 : 8;
+        const offset = base + spec.offset;
+        if (offset + spec.length * bytes > buffer.byteLength) return new Float64Array(0);
+        return spec.kind === 'f64'
+            ? new Float64Array(buffer, offset, spec.length)
+            : spec.kind === 'f32'
+            ? new Float32Array(buffer, offset, spec.length)
+            : new Int32Array(buffer, offset, spec.length);
+    };
+
+    return {
+        seq: typeof h.seq === 'number' ? h.seq : 0,
+        dropped: typeof h.dropped === 'number' ? h.dropped : 0,
+        ids: Array.isArray(h.ids) ? h.ids : [],
+        inst: part(0) as Int32Array,
+        t: part(1) as Float64Array,
+        price: part(2) as Float64Array,
+        usd: part(3) as Float32Array,
+        lo: part(4) as Float64Array,
+        hi: part(5) as Float64Array,
+    };
+}
+
+export function decodeLevels(buffer: ArrayBuffer, header?: any, headerLen?: number): LevelsFrame | null {
+    if (buffer.byteLength < 4) return null;
+    const view = new DataView(buffer);
+    const length = headerLen ?? view.getUint32(0, true);
+    if (length === 0 || 4 + length > buffer.byteLength) return null;
+
+    let h = header;
+    if (!h) {
+        try {
+            const str = new TextDecoder().decode(new Uint8Array(buffer, 4, length));
+            h = JSON.parse(str);
+        } catch (_) {
+            return null;
+        }
+    }
+
+    if (h.type !== 'levels' || !Array.isArray(h.parts)) return null;
+
+    const base = (4 + length + 7) & ~7;
+    const part = (index: number) => {
+        const spec = h.parts[index];
         if (!spec) return new Float64Array(0);
         const bytes = spec.kind === 'f32' || spec.kind === 'i32' ? 4 : 8;
         const offset = base + spec.offset;
@@ -365,8 +418,8 @@ export function decodeLevels(buffer: ArrayBuffer): LevelsFrame | null {
             : undefined;
 
     return {
-        asOf: Number(header.asOf),
-        books: (header.instruments || []).map((item, i) => {
+        asOf: Number(h.asOf),
+        books: (h.instruments || []).map((item: any, i: number) => {
             const touch = touchOf(item.touch);
             return {
                 id: item.id,
@@ -394,6 +447,7 @@ export class LiquidityClient {
     private ws: WebSocket | null = null;
 
     private tickListeners = new Set<(price: number, time: number) => void>();
+    private tapeListeners = new Set<(batch: TapeBatch) => void>();
     private levelsListeners = new Set<(frame: LevelsFrame) => void>();
     private printsListeners = new Set<(prints: any[]) => void>();
     private liqListeners = new Set<(liqs: any[]) => void>();
@@ -761,6 +815,9 @@ export class LiquidityClient {
 
         this.ws.onopen = () => {
             console.log('[LiquidityClient] Live WebSocket connected successfully');
+            if (this.ws?.readyState === WebSocket.OPEN) {
+                this.ws.send(JSON.stringify({ t: 'tape', on: true }));
+            }
         };
 
         this.ws.onmessage = async (evt) => {
@@ -785,13 +842,28 @@ export class LiquidityClient {
                     } else if (typeof Blob !== 'undefined' && evt.data instanceof Blob) {
                         buffer = await evt.data.arrayBuffer();
                     }
-                    if (buffer) {
-                        const frame = decodeLevels(buffer);
-                        if (frame && frame.books && frame.books.length > 0) {
-                            for (const l of this.levelsListeners) l(frame);
+                    if (buffer && buffer.byteLength >= 4) {
+                        const view = new DataView(buffer);
+                        const length = view.getUint32(0, true);
+                        if (length > 0 && 4 + length <= buffer.byteLength) {
+                            const headerStr = new TextDecoder().decode(new Uint8Array(buffer, 4, length));
+                            const header = JSON.parse(headerStr);
+                            if (header.type === 'tape') {
+                                const tape = decodeTape(buffer, header, length);
+                                if (tape && tape.price.length > 0) {
+                                    for (const l of this.tapeListeners) l(tape);
+                                }
+                            } else if (header.type === 'levels') {
+                                const frame = decodeLevels(buffer, header, length);
+                                if (frame && frame.books && frame.books.length > 0) {
+                                    for (const l of this.levelsListeners) l(frame);
+                                }
+                            }
                         }
                     }
-                } catch (_) {}
+                } catch (err) {
+                    console.warn('[LiquidityClient] Binary frame processing error:', err);
+                }
             }
         };
 
@@ -802,6 +874,15 @@ export class LiquidityClient {
         this.ws.onclose = () => {
             setTimeout(() => this.connectLiveWs(), 3000);
         };
+    }
+
+    onTape(fn: (batch: TapeBatch) => void): () => void {
+        this.tapeListeners.add(fn);
+        this.connectLiveWs();
+        if (this.ws?.readyState === WebSocket.OPEN) {
+            this.ws.send(JSON.stringify({ t: 'tape', on: true }));
+        }
+        return () => this.tapeListeners.delete(fn);
     }
 
     onTick(fn: (price: number, time: number) => void): () => void {
