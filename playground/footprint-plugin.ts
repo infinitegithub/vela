@@ -9,6 +9,8 @@ import {
 import { VALID, INVALID, HIGHLIGHT, NEUTRAL, MUTED } from '../src/core/palette';
 import {
     LiquidityClient,
+    normalizeTimeframe,
+    timeframeToMs,
     type ParsedFootprintBar,
     type ParsedFootprintLevel,
     type StackedImbalanceZone,
@@ -80,6 +82,10 @@ export class FootprintDataEngine implements SeriesDataEngine {
 
     onBars(): void {
         if (!this.host || !this.active) return;
+        if (this.bars.length === 0) {
+            void this.loadData();
+            return;
+        }
         this.pushCurrent();
     }
 
@@ -90,7 +96,7 @@ export class FootprintDataEngine implements SeriesDataEngine {
     private async loadData(): Promise<void> {
         if (!this.host) return;
         const symbol = this.host.symbol || 'BTCUSDT';
-        const timeframe = this.host.timeframe || '1m';
+        const timeframe = normalizeTimeframe(this.host.timeframe || '1h');
 
         try {
             const result = await LiquidityClient.get().fetchFootprint(symbol, timeframe);
@@ -108,7 +114,7 @@ export class FootprintDataEngine implements SeriesDataEngine {
         if (!this.host) return;
         const payload: FootprintPayload = {
             symbol: this.host.symbol || 'BTCUSDT',
-            timeframe: this.host.timeframe || '1m',
+            timeframe: normalizeTimeframe(this.host.timeframe || '1h'),
             step: this.step,
             bars: this.bars,
             stackedZones: this.stackedZones,
@@ -217,12 +223,23 @@ export class FootprintRendererLayer implements RendererLayerInstance {
         const barWidth = Math.max(12, Math.min(220, bodySpacing * 0.88));
         const showDetailedNumbers = barWidth >= 48;
 
+        const tfMs = timeframeToMs(payload?.timeframe || '1h');
+
         for (let i = 0; i < args.bars.length; i++) {
             const chartBar = args.bars[i]!;
             const x = coords.timeToX(chartBar.time);
             if (x + barWidth < 0 || x - barWidth > coords.width) continue;
 
-            const fpBar = barMap.get(chartBar.time);
+            let fpBar = barMap.get(chartBar.time);
+            if (!fpBar) {
+                // Nearest match within timeframe window
+                for (const [t, b] of barMap.entries()) {
+                    if (Math.abs(t - chartBar.time) <= tfMs / 2) {
+                        fpBar = b;
+                        break;
+                    }
+                }
+            }
 
             if (!fpBar || fpBar.levels.length === 0) {
                 // Fallback ghost candle

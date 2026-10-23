@@ -137,6 +137,37 @@ interface FrameHeader {
     instruments: { id: string; venue: string; timestamp: number; coarse: boolean; touch?: unknown }[];
 }
 
+/**
+ * Normalizes any timeframe format (e.g. '1', '5', '60', '240', '1D') into
+ * LiquidityMapper's supported timeframe format ('1m', '5m', '15m', '30m', '1h', '4h', '1d').
+ */
+export function normalizeTimeframe(tf: string): string {
+    const raw = (tf || '').trim().toLowerCase();
+    if (raw === '1' || raw === '1m') return '1m';
+    if (raw === '3' || raw === '5' || raw === '5m') return '5m';
+    if (raw === '15' || raw === '15m') return '15m';
+    if (raw === '30' || raw === '30m') return '30m';
+    if (raw === '60' || raw === '1h' || raw === '60m') return '1h';
+    if (raw === '120' || raw === '240' || raw === '4h' || raw === '240m') return '4h';
+    if (raw === '1d' || raw === 'd' || raw === '1440' || raw === 'd1') return '1d';
+    if (['1m', '5m', '15m', '30m', '1h', '4h', '1d'].includes(raw)) return raw;
+    return '1h';
+}
+
+export function timeframeToMs(tf: string): number {
+    const norm = normalizeTimeframe(tf);
+    const map: Record<string, number> = {
+        '1m': 60_000,
+        '5m': 300_000,
+        '15m': 900_000,
+        '30m': 1_800_000,
+        '1h': 3_600_000,
+        '4h': 14_400_000,
+        '1d': 86_400_000,
+    };
+    return map[norm] || 3_600_000;
+}
+
 export function decodeLevels(buffer: ArrayBuffer): LevelsFrame {
     const view = new DataView(buffer);
     const length = view.getUint32(0, true);
@@ -226,18 +257,21 @@ export class LiquidityClient {
         return `binance:${clean}`;
     }
 
-    async fetchFootprint(symbol: string, tf: string = '1m'): Promise<{
+    async fetchFootprint(symbol: string, tf: string = '1h'): Promise<{
         bars: ParsedFootprintBar[];
         step: number;
         stackedZones: StackedImbalanceZone[];
         nakedPocs: NakedPocRay[];
     }> {
         const inst = this.resolveInstrumentId(symbol);
-        const tfParam = tf.toLowerCase();
+        const tfParam = normalizeTimeframe(tf);
         try {
             const url = '/api/v2/footprint?inst=' + encodeURIComponent(inst) + '&tf=' + tfParam;
             const res = await fetch(url);
-            if (!res.ok) return { bars: [], step: 1.0, stackedZones: [], nakedPocs: [] };
+            if (!res.ok) {
+                console.warn('[LiquidityClient] Footprint responded with:', res.status, res.statusText);
+                return { bars: [], step: 1.0, stackedZones: [], nakedPocs: [] };
+            }
             const data = await res.json() as RawFootprintResponse;
             const step = data.step || 0.5;
 
@@ -245,7 +279,7 @@ export class LiquidityClient {
             const stackedZones: StackedImbalanceZone[] = [];
             const nakedPocs: NakedPocRay[] = [];
 
-            for (const b of data.bars) {
+            for (const b of (data.bars || [])) {
                 if (!b.rows || b.rows.length === 0) continue;
                 let high = -Infinity, low = Infinity;
                 let maxVol = 0, poc = 0;
@@ -363,10 +397,11 @@ export class LiquidityClient {
         }
     }
 
-    async fetchFlowDelta(symbol: string, tf: string = '1m'): Promise<{ time: number; delta: number; cumDelta: number }[]> {
+    async fetchFlowDelta(symbol: string, tf: string = '1h'): Promise<{ time: number; delta: number; cumDelta: number }[]> {
         const inst = this.resolveInstrumentId(symbol);
+        const tfParam = normalizeTimeframe(tf);
         try {
-            const url = '/api/v2/candles?inst=' + encodeURIComponent(inst.split(',')[0]!) + '&tf=' + tf;
+            const url = '/api/v2/candles?inst=' + encodeURIComponent(inst.split(',')[0]!) + '&tf=' + tfParam;
             const res = await fetch(url);
             if (!res.ok) return [];
             const candles = await res.json() as [time: number, open: number, high: number, low: number, close: number, vol: number, takerVol: number][];
@@ -387,8 +422,9 @@ export class LiquidityClient {
 
     async fetchLongShort(symbol: string, tf: string = '1h', metric: string = 'topPositions'): Promise<LongShortPoint[]> {
         const inst = this.resolveSingleInstrumentId(symbol, 'binance');
+        const tfParam = normalizeTimeframe(tf);
         try {
-            const url = `/api/v2/long-short?inst=${encodeURIComponent(inst)}&tf=${tf}&metric=${metric}`;
+            const url = `/api/v2/long-short?inst=${encodeURIComponent(inst)}&tf=${tfParam}&metric=${metric}`;
             const res = await fetch(url);
             if (!res.ok) return [];
             const data = await res.json() as LongShortResponse;
@@ -399,10 +435,11 @@ export class LiquidityClient {
         }
     }
 
-    async fetchOpenInterest(symbol: string, tf: string = '1m'): Promise<OpenInterestBar[]> {
+    async fetchOpenInterest(symbol: string, tf: string = '1h'): Promise<OpenInterestBar[]> {
         const inst = this.resolveSingleInstrumentId(symbol, 'binance');
+        const tfParam = normalizeTimeframe(tf);
         try {
-            const url = `/api/v2/oi?inst=${encodeURIComponent(inst)}&tf=${tf}`;
+            const url = `/api/v2/oi?inst=${encodeURIComponent(inst)}&tf=${tfParam}`;
             const res = await fetch(url);
             if (!res.ok) return [];
             const data = await res.json() as { bars: [t: number, o: number, h: number, l: number, c: number][] };
@@ -443,14 +480,16 @@ export class LiquidityClient {
         if (this.ws && (this.ws.readyState === WebSocket.OPEN || this.ws.readyState === WebSocket.CONNECTING)) return;
         const proto = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
         const wsUrl = proto + '//' + window.location.host + '/api/v2/ws';
+        
+        console.log('[LiquidityClient] Connecting to WebSocket:', wsUrl);
         this.ws = new WebSocket(wsUrl);
         this.ws.binaryType = 'arraybuffer';
 
         this.ws.onopen = () => {
-            console.log('[LiquidityClient] Live WebSocket connected');
+            console.log('[LiquidityClient] Live WebSocket connected successfully');
         };
 
-        this.ws.onmessage = (evt) => {
+        this.ws.onmessage = async (evt) => {
             if (typeof evt.data === 'string') {
                 try {
                     const msg = JSON.parse(evt.data);
@@ -464,15 +503,28 @@ export class LiquidityClient {
                         for (const l of this.flowListeners) l(msg.items);
                     }
                 } catch (_) {}
-            } else if (evt.data instanceof ArrayBuffer) {
+            } else {
                 try {
-                    const frame = decodeLevels(evt.data);
-                    for (const l of this.levelsListeners) l(frame);
+                    let buffer: ArrayBuffer | null = null;
+                    if (evt.data instanceof ArrayBuffer) {
+                        buffer = evt.data;
+                    } else if (typeof Blob !== 'undefined' && evt.data instanceof Blob) {
+                        buffer = await evt.data.arrayBuffer();
+                    }
+                    if (buffer) {
+                        const frame = decodeLevels(buffer);
+                        for (const l of this.levelsListeners) l(frame);
+                    }
                 } catch (_) {}
             }
         };
 
+        this.ws.onerror = (err) => {
+            console.warn('[LiquidityClient] WebSocket error:', err);
+        };
+
         this.ws.onclose = () => {
+            console.log('[LiquidityClient] WebSocket closed, retrying in 3s...');
             setTimeout(() => this.connectLiveWs(), 3000);
         };
     }

@@ -392,7 +392,21 @@ export class DomLadderPanelController {
         });
     }
 
-    start(): void {
+    async start(): Promise<void> {
+        // 1. Immediately fetch REST state to populate mark price and ladder instantly
+        try {
+            const state = await LiquidityClient.get().getState();
+            if (state && typeof state.markPrice === 'number' && state.markPrice > 0) {
+                this.markPrice = state.markPrice;
+                this.markBanner.textContent = `$${state.markPrice.toLocaleString(undefined, { minimumFractionDigits: 1, maximumFractionDigits: 1 })}`;
+                this.generateInitialLadder(state.markPrice);
+                this.scheduleRender();
+            }
+        } catch (e) {
+            console.warn('[DomLadder] Initial state fetch warning:', e);
+        }
+
+        // 2. Wire live WebSocket streams
         this.unsubscribeTick = LiquidityClient.get().onTick((price) => {
             this.markPrice = price;
             this.markBanner.textContent = `$${price.toLocaleString(undefined, { minimumFractionDigits: 1, maximumFractionDigits: 1 })}`;
@@ -403,6 +417,51 @@ export class DomLadderPanelController {
             this.processLevelsFrame(frame);
             this.scheduleRender();
         });
+    }
+
+    private generateInitialLadder(markPrice: number): void {
+        let step = this.manualStep;
+        if (step <= 0) {
+            if (markPrice >= 50000) step = 5;
+            else if (markPrice >= 10000) step = 1;
+            else if (markPrice >= 1000) step = 0.5;
+            else if (markPrice >= 100) step = 0.1;
+            else step = 0.01;
+        }
+
+        const markBin = Math.floor(markPrice / step) * step;
+        const newRows: PriceRow[] = [];
+        const numHalfRows = 25;
+
+        for (let k = numHalfRows; k >= 1; k--) {
+            newRows.push({
+                price: markBin + k * step,
+                side: 'ask',
+                totalUsd: 0,
+                venues: new Map(),
+                pullStackUsd: 0,
+                touched: false
+            });
+        }
+        newRows.push({
+            price: markBin,
+            side: 'bid',
+            totalUsd: 0,
+            venues: new Map(),
+            pullStackUsd: 0,
+            touched: true
+        });
+        for (let k = 1; k <= numHalfRows; k++) {
+            newRows.push({
+                price: markBin - k * step,
+                side: 'bid',
+                totalUsd: 0,
+                venues: new Map(),
+                pullStackUsd: 0,
+                touched: false
+            });
+        }
+        this.rows = newRows;
     }
 
     private processLevelsFrame(frame: LevelsFrame): void {
