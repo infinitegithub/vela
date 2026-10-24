@@ -1013,6 +1013,10 @@ export class ChartCell {
         const resolved = (style === 'footprint' && !chartType('footprint')) ? 'candles' : style;
         this.state.priceStyle = resolved;
         this.inner?.renderer.set('priceStyle', resolved);
+        const native: any = (this.inner?.renderer as any)?.renderer ?? this.inner?.renderer;
+        if (native?.scheduler?.invalidate) {
+            native.scheduler.invalidate(2);
+        }
         if (resolved === 'footprint') {
             const native: any = (this.inner?.renderer as any)?.renderer;
             if (native && typeof native.applyViewport === 'function') {
@@ -1200,7 +1204,13 @@ export class ChartCell {
      *  then the manifest in the host's own order. */
     libraryRows(): Array<{ name: string; language?: string; category?: string; native?: boolean; nativeType?: string; beta?: boolean }> {
         return [
-            ...this.supportedNatives().map((n) => ({ name: n.title, category: 'Built-in', native: true, nativeType: n.type, beta: n.beta })),
+            ...this.supportedNatives().map((n) => ({
+                name: n.title,
+                category: n.type.startsWith('lux-liquidity-') ? 'Liquidity Mapper' : 'Built-in',
+                native: true,
+                nativeType: n.type,
+                beta: n.beta
+            })),
             ...this.manifest.map((e) => ({ name: e.name, language: e.language, category: e.category })),
         ];
     }

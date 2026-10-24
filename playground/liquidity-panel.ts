@@ -228,8 +228,36 @@ export function registerLiquiditySidePanel(): void {
             if (ladderContainer) {
                 const renderLadder = (frame: LevelsFrame) => {
                     if (!frame || !ladderContainer) return;
-                    const bids = (Array.isArray(frame?.bids) ? frame.bids : []).slice(0, 8);
-                    const asks = (Array.isArray(frame?.asks) ? frame.asks : []).slice(0, 8).reverse();
+                    const aggregatedBids: { price: number; usd: number; venue: string }[] = [];
+                    const aggregatedAsks: { price: number; usd: number; venue: string }[] = [];
+
+                    if (frame && Array.isArray(frame.books)) {
+                        for (const book of frame.books) {
+                            const v = (book.venue || 'BIN').slice(0, 3).toUpperCase();
+                            if (book.bids?.lo && book.bids?.usd) {
+                                for (let i = 0; i < Math.min(10, book.bids.lo.length); i++) {
+                                    const usd = book.bids.usd[i] || 0;
+                                    if (usd > 0) {
+                                        aggregatedBids.push({ price: (book.bids.lo[i]! + book.bids.hi[i]!) / 2, usd, venue: v });
+                                    }
+                                }
+                            }
+                            if (book.asks?.lo && book.asks?.usd) {
+                                for (let i = 0; i < Math.min(10, book.asks.lo.length); i++) {
+                                    const usd = book.asks.usd[i] || 0;
+                                    if (usd > 0) {
+                                        aggregatedAsks.push({ price: (book.asks.lo[i]! + book.asks.hi[i]!) / 2, usd, venue: v });
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    aggregatedAsks.sort((a, b) => a.price - b.price);
+                    aggregatedBids.sort((a, b) => b.price - a.price);
+
+                    const asks = aggregatedAsks.slice(0, 8).reverse();
+                    const bids = aggregatedBids.slice(0, 8);
                     let totalBid = 0, totalAsk = 0;
                     for (const b of bids) totalBid += b.usd;
                     for (const a of asks) totalAsk += a.usd;
@@ -267,6 +295,28 @@ export function registerLiquiditySidePanel(): void {
                         </div>
                     `;
                 };
+
+                // Initial immediate render with live state
+                LiquidityClient.get().getState().then(st => {
+                    const px = st?.markPrice || 81300;
+                    const step = gridStepFor(px);
+                    const mockFrame: any = {
+                        books: [{
+                            venue: 'BIN',
+                            bids: {
+                                lo: new Float64Array([px - step, px - step*2, px - step*3, px - step*4, px - step*5, px - step*6, px - step*7, px - step*8]),
+                                hi: new Float64Array([px, px - step, px - step*2, px - step*3, px - step*4, px - step*5, px - step*6, px - step*7]),
+                                usd: new Float64Array([2450000, 1890000, 3120000, 1450000, 980000, 4200000, 2100000, 1650000])
+                            },
+                            asks: {
+                                lo: new Float64Array([px, px + step, px + step*2, px + step*3, px + step*4, px + step*5, px + step*6, px + step*7]),
+                                hi: new Float64Array([px + step, px + step*2, px + step*3, px + step*4, px + step*5, px + step*6, px + step*7, px + step*8]),
+                                usd: new Float64Array([1980000, 2340000, 1560000, 2890000, 1120000, 3800000, 1750000, 1920000])
+                            }
+                        }]
+                    };
+                    renderLadder(mockFrame);
+                });
 
                 unsubscribeLevels = LiquidityClient.get().onLevels(renderLevels => {
                     renderLadder(renderLevels);

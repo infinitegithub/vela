@@ -520,6 +520,7 @@ export class NativeRenderer implements IChartRenderer {
                 break;
             case 'priceStyle':
                 this.setPriceStyle(isPriceStyle(value) ? value : 'candles');
+                this.scheduler?.invalidate(InvalidateLevel.Full);
                 break;
             case 'priceBaseline':
                 this.scene.baselineValue = value == null ? null : Number(value);
@@ -2307,11 +2308,15 @@ export class NativeRenderer implements IChartRenderer {
      * which owns the DATA side of styles that need one (a chart type's SeriesDataEngine).
      */
     private setPriceStyle(style: PriceStyle): void {
-        if (style === this.scene.priceStyle) return;
+        if (style === this.scene.priceStyle) {
+            this.scheduler?.invalidate(InvalidateLevel.Full);
+            return;
+        }
         this.scene.priceStyle = style;
         this.scene.basePainting = basePaintingOf(style);
         this.scene.candleOverride = candleOverrideFor(style, this.scene.style.chartTypes);
         for (const cb of this.priceStyleCbs) cb(style);
+        this.scheduler?.invalidate(InvalidateLevel.Full);
     }
 
     onRemoveIndicator(cb: (id: string) => void): Unsubscribe {

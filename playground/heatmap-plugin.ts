@@ -17,6 +17,45 @@ import {
 
 const HEATMAP_ICON = '<svg width="18" height="18" viewBox="0 0 18 18" fill="none" xmlns="http://www.w3.org/2000/svg"><rect x="2" y="2" width="14" height="14" rx="2" stroke="currentColor" stroke-width="1.2"/><line x1="2" y1="6" x2="16" y2="6" stroke="currentColor" stroke-opacity="0.4"/><line x1="2" y1="10" x2="16" y2="10" stroke="currentColor" stroke-opacity="0.6"/><line x1="2" y1="14" x2="16" y2="14" stroke="currentColor" stroke-opacity="0.4"/><circle cx="9" cy="9" r="3.5" fill="#f0883e" fill-opacity="0.8"/><circle cx="9" cy="9" r="6" stroke="#f0883e" stroke-width="1" stroke-dasharray="2 2" stroke-opacity="0.5"/></svg>';
 
+// ============================================================================
+// Authentic LiquidityMapper Dark Colormap Ramp (from src/app/heatmap/lut.ts)
+// ============================================================================
+const DARK_STOPS: [number, string][] = [
+    [0.0, '#050f1f'],
+    [0.22, '#0a3a66'],
+    [0.42, '#1479b8'],
+    [0.60, '#7fd0f0'],
+    [0.70, '#f4fbff'],
+    [0.80, '#ffe14a'],
+    [0.90, '#ff8a00'],
+    [1.00, '#e8281c']
+];
+
+const hexToRgb = (h: string): [number, number, number] => {
+    const n = parseInt(h.slice(1), 16);
+    return [(n >> 16) & 255, (n >> 8) & 255, n & 255];
+};
+
+export const LUT_DARK: string[] = (() => {
+    const lut: string[] = [];
+    for (let i = 0; i < 256; i++) {
+        const t = i / 255;
+        let k = 1;
+        while (k < DARK_STOPS.length - 1 && DARK_STOPS[k]![0] < t) k++;
+        const [t0, c0] = DARK_STOPS[k - 1]!;
+        const [t1, c1] = DARK_STOPS[k]!;
+        const f = Math.min(1, Math.max(0, (t - t0) / (t1 - t0)));
+        const a = hexToRgb(c0);
+        const b = hexToRgb(c1);
+        const r = Math.round(a[0] + (b[0] - a[0]) * f);
+        const g = Math.round(a[1] + (b[1] - a[1]) * f);
+        const bl = Math.round(a[2] + (b[2] - a[2]) * f);
+        const alpha = Math.min(0.92, 0.22 + 0.70 * (i / 255)).toFixed(2);
+        lut.push('rgba(' + r + ',' + g + ',' + bl + ',' + alpha + ')');
+    }
+    return lut;
+})();
+
 export interface HeatmapBarLevel {
     price: number;
     bidUsd: number;
@@ -38,7 +77,63 @@ export interface HeatmapPayload {
     step: number;
     maxLevelUsd: number;
     barLevels: Map<number, HeatmapBarLevel[]>;
+    liveLevels: HeatmapBarLevel[];
     liquidations: HeatmapLiquidation[];
+}
+
+function decodeColumnsBinary(buffer: ArrayBuffer): {
+    stepMs: number;
+    step: number;
+    columns: Map<number, HeatmapBarLevel[]>;
+    maxUsd: number;
+} {
+    const view = new DataView(buffer);
+    const length = view.getUint32(0, true);
+    if (length === 0 || 4 + length > buffer.byteLength) throw new Error('Malformed header');
+    const headerStr = new TextDecoder().decode(new Uint8Array(buffer, 4, length));
+    const header = JSON.parse(headerStr);
+    const base = (4 + length + 7) & ~7;
+
+    const part = (index: number) => {
+        const spec = header.parts[index];
+        const bytes = spec.kind === 'f32' || spec.kind === 'i32' ? 4 : 8;
+        const offset = base + spec.offset;
+        return spec.kind === 'f64'
+            ? new Float64Array(buffer, offset, spec.length)
+            : spec.kind === 'f32'
+            ? new Float32Array(buffer, offset, spec.length)
+            : new Int32Array(buffer, offset, spec.length);
+    };
+
+    const inst = header.instruments?.[0];
+    const columns = new Map<number, HeatmapBarLevel[]>();
+    let maxUsd = 100_000;
+    if (!inst) return { stepMs: 60000, step: 20, columns, maxUsd };
+
+    const bins = part(0) as Int32Array;
+    const bid = part(1) as Float32Array;
+    const ask = part(2) as Float32Array;
+    let at = 0;
+
+    for (let c = 0; c < inst.times.length; c++) {
+        const t = inst.times[c];
+        const count = inst.counts[c];
+        const lvls: HeatmapBarLevel[] = [];
+        for (let k = 0; k < count; k++) {
+            const p = bins[at + k]! * inst.step;
+            const b = bid[at + k] || 0;
+            const a = ask[at + k] || 0;
+            const tot = b + a;
+            if (tot > 10_000) {
+                if (tot > maxUsd) maxUsd = tot;
+                lvls.push({ price: p, bidUsd: b, askUsd: a, totalUsd: tot });
+            }
+        }
+        columns.set(t, lvls);
+        at += count;
+    }
+
+    return { stepMs: Number(header.stepMs) || 60000, step: Number(inst.step) || 20, columns, maxUsd };
 }
 
 export class HeatmapDataEngine implements SeriesDataEngine {
@@ -50,13 +145,15 @@ export class HeatmapDataEngine implements SeriesDataEngine {
     private unsubscribeTape: any = null;
     private unsubscribeMarket: any = null;
     private barLevels = new Map<number, HeatmapBarLevel[]>();
+    private liveLevels: HeatmapBarLevel[] = [];
     private liquidations: HeatmapLiquidation[] = [];
-    private step = 50;
+    private step = 20;
     private maxLevelUsd = 100_000;
 
     start(host: SeriesDataEngineHost): void {
         this.host = host;
         this.active = true;
+        this.pushCurrent();
         void this.loadData();
 
         this.unsubscribeTick = LiquidityClient.get().onTick((price, time) => {
@@ -74,6 +171,7 @@ export class HeatmapDataEngine implements SeriesDataEngine {
         this.unsubscribeMarket = LiquidityClient.get().onMarketSwitch(() => {
             if (this.active) {
                 this.barLevels.clear();
+                this.liveLevels = [];
                 void this.loadData();
             }
         });
@@ -110,6 +208,7 @@ export class HeatmapDataEngine implements SeriesDataEngine {
 
     resume(): void {
         this.active = true;
+        this.pushCurrent();
         void this.loadData();
     }
 
@@ -120,15 +219,36 @@ export class HeatmapDataEngine implements SeriesDataEngine {
 
     private async loadData(): Promise<void> {
         if (!this.host) return;
-        const symbol = this.host.symbol || 'BTCUSDT';
+        const sym = this.host.symbol || 'BTCUSDT';
+        let raw = sym.trim().toUpperCase();
+        if (raw.includes(':')) raw = raw.split(':')[1];
+        raw = raw.replace(/\.P$|-PERP$|_PERP$|-SWAP$|_SWAP$/i, '');
+        const base = raw.replace(/USDT$|USD$|USDC$|BUSD$/i, '');
+        const cleanSymbol = (base || 'BTC') + 'USDT';
         const tf = normalizeTimeframe(this.host.timeframe || '1h');
         const tfMs = timeframeToMs(tf);
 
         try {
+            // 1. Fetch real historical resting columns
+            const colResp = await fetch('/api/v2/columns?inst=binance:' + cleanSymbol);
+            if (colResp.ok) {
+                const buf = await colResp.arrayBuffer();
+                const decoded = decodeColumnsBinary(buf);
+                if (decoded.columns.size > 0) {
+                    this.step = decoded.step;
+                    this.maxLevelUsd = Math.max(this.maxLevelUsd, decoded.maxUsd);
+                    for (const [t, lvls] of decoded.columns.entries()) {
+                        this.barLevels.set(t, lvls);
+                    }
+                }
+            }
+
+            // 2. Initial state & step
             const state = await LiquidityClient.get().getState();
             const currentPrice = state?.markPrice || 81300;
-            this.step = gridStepFor(currentPrice);
+            if (!this.step || this.step <= 0) this.step = gridStepFor(currentPrice);
 
+            // 3. Liquidations feed
             const now = Date.now();
             if (this.liquidations.length === 0) {
                 this.liquidations = [
@@ -143,32 +263,49 @@ export class HeatmapDataEngine implements SeriesDataEngine {
             this.pushCurrent();
         } catch (e) {
             console.warn('[HeatmapDataEngine] loadData warning:', e);
+            this.pushCurrent();
         }
     }
 
     private ingestLevels(frame: LevelsFrame): void {
-        if (!this.host || !frame) return;
+        if (!this.host || !frame || !Array.isArray(frame.books)) return;
+        const now = frame.asOf || Date.now();
         const tf = normalizeTimeframe(this.host.timeframe || '1h');
         const tfMs = timeframeToMs(tf);
-        const barTime = Math.floor(frame.timestamp / tfMs) * tfMs;
+        const barTime = Math.floor(now / tfMs) * tfMs;
 
         const levels: HeatmapBarLevel[] = [];
         let maxLvl = this.maxLevelUsd;
 
-        for (const b of (frame.bids || [])) {
-            const usd = b.usd || (b.size * b.price);
-            if (usd > maxLvl) maxLvl = usd;
-            levels.push({ price: b.price, bidUsd: usd, askUsd: 0, totalUsd: usd });
-        }
-        for (const a of (frame.asks || [])) {
-            const usd = a.usd || (a.size * a.price);
-            if (usd > maxLvl) maxLvl = usd;
-            levels.push({ price: a.price, bidUsd: 0, askUsd: usd, totalUsd: usd });
+        for (const book of frame.books) {
+            if (book.bids?.lo && book.bids?.usd) {
+                for (let i = 0; i < book.bids.lo.length; i++) {
+                    const price = (book.bids.lo[i]! + book.bids.hi[i]!) / 2;
+                    const usd = book.bids.usd[i] || 0;
+                    if (usd > 10_000) {
+                        if (usd > maxLvl) maxLvl = usd;
+                        levels.push({ price, bidUsd: usd, askUsd: 0, totalUsd: usd });
+                    }
+                }
+            }
+            if (book.asks?.lo && book.asks?.usd) {
+                for (let i = 0; i < book.asks.lo.length; i++) {
+                    const price = (book.asks.lo[i]! + book.asks.hi[i]!) / 2;
+                    const usd = book.asks.usd[i] || 0;
+                    if (usd > 10_000) {
+                        if (usd > maxLvl) maxLvl = usd;
+                        levels.push({ price, bidUsd: 0, askUsd: usd, totalUsd: usd });
+                    }
+                }
+            }
         }
 
-        this.maxLevelUsd = maxLvl;
-        this.barLevels.set(barTime, levels);
-        this.pushCurrent();
+        if (levels.length > 0) {
+            this.maxLevelUsd = maxLvl;
+            this.barLevels.set(barTime, levels);
+            this.liveLevels = levels;
+            this.pushCurrent();
+        }
     }
 
     private ingestTape(batch: any): void {
@@ -199,6 +336,7 @@ export class HeatmapDataEngine implements SeriesDataEngine {
             step: this.step,
             maxLevelUsd: this.maxLevelUsd,
             barLevels: this.barLevels,
+            liveLevels: this.liveLevels,
             liquidations: this.liquidations,
         };
         this.host.pushData(payload);
@@ -216,6 +354,13 @@ export class HeatmapRendererLayer implements RendererLayerInstance {
         this.canvas = null;
     }
 
+    modulateBase(_args: RendererLayerArgs) {
+        return {
+            candleBodyAlpha: 0.88,
+            gridAlpha: 0.35,
+        };
+    }
+
     render(args: RendererLayerArgs): void {
         if (!this.canvas || (args.priceStyle !== 'heatmap' && !(window as any).__heatmapOverlayActive)) return;
         const { coords, scale, bounds, bars } = args;
@@ -230,62 +375,112 @@ export class HeatmapRendererLayer implements RendererLayerInstance {
 
         ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
 
+        ctx.save();
+        ctx.beginPath();
+        const plotW = Math.max(1, coords.width || (this.canvas.width / dpr));
+        ctx.rect(0, bounds.top, plotW, bounds.height);
+        ctx.clip();
+
         const payload = args.data as HeatmapPayload | undefined;
         const barLevels = payload?.barLevels;
+        const liveLevels = payload?.liveLevels || [];
         const maxUsd = Math.max(100_000, payload?.maxLevelUsd || 1_000_000);
         const lastClose = bars.length > 0 ? bars[bars.length - 1]!.close : 80000;
         const step = payload?.step || gridStepFor(lastClose);
 
-        for (let i = 0; i < bars.length; i++) {
+        const r = coords.visibleLogicalRange();
+        const i0 = Math.max(0, Math.floor(r.from));
+        const i1 = Math.min(bars.length - 1, Math.ceil(r.to));
+
+        const lo = Math.log(20_000);
+        const hi = Math.log(Math.max(400_000, maxUsd));
+        const span = Math.max(0.1, hi - lo);
+
+        for (let i = i0; i <= i1; i++) {
             const bar = bars[i]!;
-            const x = coords.timeToX(bar.time);
-            if (x < -60 || x > bounds.width + 60) continue;
+            const x = coords.logicalToX(i);
+            const barW = Math.max(2, coords.bodySpacing());
+            const xLeft = x - barW / 2;
 
-            const nextX = i + 1 < bars.length ? coords.timeToX(bars[i + 1]!.time) : x + 20;
-            const barW = Math.max(2, nextX - x);
+            // Try exact bar.time or closest recorded column within bar window
+            let levels = barLevels?.get(bar.time);
+            if (!levels || levels.length === 0) {
+                if (barLevels && barLevels.size > 0) {
+                    for (const [colT, colLvls] of barLevels.entries()) {
+                        if (Math.abs(colT - bar.time) <= 1800_000 && colLvls.length > 0) {
+                            levels = colLvls;
+                            break;
+                        }
+                    }
+                }
+            }
 
-            const levels = barLevels?.get(bar.time);
             if (levels && levels.length > 0) {
                 for (const lvl of levels) {
                     const y = coords.priceToY(lvl.price, scale, bounds);
                     const yTop = coords.priceToY(lvl.price + step, scale, bounds);
-                    const h = Math.max(1.5, Math.abs(yTop - y));
+                    const h = Math.max(1.2, Math.abs(yTop - y));
+                    const topY = Math.min(y, yTop);
 
-                    const ratio = Math.min(1, lvl.totalUsd / maxUsd);
-                    if (ratio < 0.04) continue;
+                    if (topY + h < bounds.top || topY > bounds.top + bounds.height) continue;
 
-                    if (lvl.bidUsd > lvl.askUsd) {
-                        ctx.fillStyle = `rgba(0, 210, 255, ${0.12 + ratio * 0.75})`;
-                    } else {
-                        ctx.fillStyle = `rgba(255, 110, 40, ${0.12 + ratio * 0.75})`;
-                    }
-                    ctx.fillRect(x - barW / 2, y - h / 2, barW, h);
+                    const s = (Math.log(Math.max(1, lvl.totalUsd)) - lo) / span;
+                    if (s < 0.02) continue;
+
+                    const idx = Math.min(255, Math.max(0, Math.floor(s * 255)));
+                    ctx.fillStyle = LUT_DARK[idx]!;
+                    ctx.fillRect(xLeft, topY, barW, h);
                 }
             } else {
-                const spread = Math.max(step * 4, (bar.high - bar.low) * 1.6);
-                const rows = 10;
+                // Shader-style smooth density backfill around bar price
+                const spread = Math.max(step * 6, (bar.high - bar.low) * 1.8);
+                const rows = 12;
                 const rowStep = spread / rows;
                 const centerPrice = (bar.high + bar.low) / 2;
 
-                for (let r = -rows; r <= rows; r++) {
-                    const p = centerPrice + r * rowStep;
+                for (let row = -rows; row <= rows; row++) {
+                    const p = centerPrice + row * rowStep;
                     const y = coords.priceToY(p, scale, bounds);
                     const yTop = coords.priceToY(p + rowStep, scale, bounds);
-                    const h = Math.max(1.5, Math.abs(yTop - y));
+                    const h = Math.max(1.2, Math.abs(yTop - y));
+                    const topY = Math.min(y, yTop);
 
-                    const dist = Math.abs(r) / rows;
-                    const intensity = (1 - dist) * 0.38 * (bar.volume ? Math.min(1, bar.volume / 400) : 0.6);
-                    if (intensity < 0.04) continue;
+                    if (topY + h < bounds.top || topY > bounds.top + bounds.height) continue;
 
-                    if (r < 0) {
-                        ctx.fillStyle = `rgba(0, 210, 255, ${intensity})`;
-                    } else {
-                        ctx.fillStyle = `rgba(240, 120, 50, ${intensity})`;
-                    }
-                    ctx.fillRect(x - barW / 2, y - h / 2, barW, h);
+                    const dist = Math.abs(row) / rows;
+                    const intensity = (1 - dist) * 0.42 * (bar.volume ? Math.min(1, bar.volume / 350) : 0.6);
+                    if (intensity < 0.05) continue;
+
+                    const idx = Math.min(255, Math.max(0, Math.floor(intensity * 255)));
+                    ctx.fillStyle = LUT_DARK[idx]!;
+                    ctx.fillRect(xLeft, topY, barW, h);
                 }
             }
         }
+
+        // Live resting order book depth extending to right margin
+        if (liveLevels && liveLevels.length > 0 && bars.length > 0) {
+            const lastBarX = coords.logicalToX(bars.length - 1);
+            const liveW = Math.max(40, plotW - lastBarX + 80);
+
+            for (const lvl of liveLevels) {
+                const y = coords.priceToY(lvl.price, scale, bounds);
+                const yTop = coords.priceToY(lvl.price + step, scale, bounds);
+                const h = Math.max(1.2, Math.abs(yTop - y));
+                const topY = Math.min(y, yTop);
+
+                if (topY + h < bounds.top || topY > bounds.top + bounds.height) continue;
+
+                const s = (Math.log(Math.max(1, lvl.totalUsd)) - lo) / span;
+                if (s < 0.04) continue;
+
+                const idx = Math.min(255, Math.max(0, Math.floor(s * 255)));
+                ctx.fillStyle = LUT_DARK[idx]!;
+                ctx.fillRect(lastBarX, topY, liveW, h);
+            }
+        }
+
+        ctx.restore();
     }
 }
 
@@ -320,23 +515,26 @@ export class HeatmapBubblesLayer implements RendererLayerInstance {
         for (const liq of liquidations) {
             const x = coords.timeToX(liq.time);
             const y = coords.priceToY(liq.price, scale, bounds);
-            if (x < -30 || x > bounds.width + 30 || y < -30 || y > bounds.height + 30) continue;
 
-            const radius = Math.max(11, Math.min(26, Math.log10(liq.usd) * 3.5));
-            const isBuy = liq.side === 'buy';
-            const mainColor = isBuy ? '#2ebd85' : '#f6465d';
-            const glowColor = isBuy ? 'rgba(46, 189, 133, 0.45)' : 'rgba(246, 70, 93, 0.45)';
+            const plotW = Math.max(1, coords.width || (this.canvas.width / dpr));
+            if (x < -30 || x > plotW + 30 || y < bounds.top - 30 || y > bounds.top + bounds.height + 30) {
+                continue;
+            }
 
-            // Outer glow
+            const rad = Math.min(24, Math.max(8, Math.sqrt(liq.usd / 250_000) * 3));
+            const isSell = liq.side === 'sell';
+            const mainColor = isSell ? '#f6465d' : '#2ebd85';
+
+            // Outer pulse glow
             ctx.beginPath();
-            ctx.arc(x, y, radius + 4, 0, Math.PI * 2);
-            ctx.fillStyle = glowColor;
+            ctx.arc(x, y, rad + 4, 0, Math.PI * 2);
+            ctx.fillStyle = isSell ? 'rgba(246, 70, 93, 0.18)' : 'rgba(46, 189, 133, 0.18)';
             ctx.fill();
 
-            // Inner circle
+            // Main bubble
             ctx.beginPath();
-            ctx.arc(x, y, radius, 0, Math.PI * 2);
-            ctx.fillStyle = '#0c0c0e';
+            ctx.arc(x, y, rad, 0, Math.PI * 2);
+            ctx.fillStyle = isSell ? 'rgba(246, 70, 93, 0.55)' : 'rgba(46, 189, 133, 0.55)';
             ctx.fill();
             ctx.strokeStyle = mainColor;
             ctx.lineWidth = 1.6;
