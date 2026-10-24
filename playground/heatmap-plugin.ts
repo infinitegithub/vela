@@ -18,8 +18,9 @@ import {
 const HEATMAP_ICON = '<svg width="18" height="18" viewBox="0 0 18 18" fill="none" xmlns="http://www.w3.org/2000/svg"><rect x="2" y="2" width="14" height="14" rx="2" stroke="currentColor" stroke-width="1.2"/><line x1="2" y1="6" x2="16" y2="6" stroke="currentColor" stroke-opacity="0.4"/><line x1="2" y1="10" x2="16" y2="10" stroke="currentColor" stroke-opacity="0.6"/><line x1="2" y1="14" x2="16" y2="14" stroke="currentColor" stroke-opacity="0.4"/><circle cx="9" cy="9" r="3.5" fill="#f0883e" fill-opacity="0.8"/><circle cx="9" cy="9" r="6" stroke="#f0883e" stroke-width="1" stroke-dasharray="2 2" stroke-opacity="0.5"/></svg>';
 
 // ============================================================================
-// Authentic LiquidityMapper Dark Colormap Ramp (from src/app/heatmap/lut.ts)
+// Authentic LiquidityMapper Colormaps & WebGL2 Shaders
 // ============================================================================
+
 const DARK_STOPS: [number, string][] = [
     [0.0, '#050f1f'],
     [0.22, '#0a3a66'],
@@ -31,30 +32,268 @@ const DARK_STOPS: [number, string][] = [
     [1.00, '#e8281c']
 ];
 
+const LIGHT_STOPS: [number, string][] = [
+    [0.0, '#ffffff'],
+    [0.18, '#d6e6f7'],
+    [0.38, '#7db6e6'],
+    [0.58, '#2a78c4'],
+    [0.74, '#f6c244'],
+    [0.88, '#f0701f'],
+    [1.00, '#b0102a']
+];
+
 const hexToRgb = (h: string): [number, number, number] => {
     const n = parseInt(h.slice(1), 16);
     return [(n >> 16) & 255, (n >> 8) & 255, n & 255];
 };
 
-export const LUT_DARK: string[] = (() => {
-    const lut: string[] = [];
+export function buildLutBytes(dark: boolean = true): Uint8Array {
+    const stops = dark ? DARK_STOPS : LIGHT_STOPS;
+    const out = new Uint8Array(256 * 4);
     for (let i = 0; i < 256; i++) {
         const t = i / 255;
         let k = 1;
-        while (k < DARK_STOPS.length - 1 && DARK_STOPS[k]![0] < t) k++;
-        const [t0, c0] = DARK_STOPS[k - 1]!;
-        const [t1, c1] = DARK_STOPS[k]!;
+        while (k < stops.length - 1 && stops[k]![0] < t) k++;
+        const [t0, c0] = stops[k - 1]!;
+        const [t1, c1] = stops[k]!;
         const f = Math.min(1, Math.max(0, (t - t0) / (t1 - t0)));
         const a = hexToRgb(c0);
         const b = hexToRgb(c1);
-        const r = Math.round(a[0] + (b[0] - a[0]) * f);
-        const g = Math.round(a[1] + (b[1] - a[1]) * f);
-        const bl = Math.round(a[2] + (b[2] - a[2]) * f);
+        for (let c = 0; c < 3; c++) {
+            out[i * 4 + c] = Math.round(a[c]! + (b[c]! - a[c]!) * f);
+        }
+        out[i * 4 + 3] = 255;
+    }
+    return out;
+}
+
+export const LUT_DARK_CSS: string[] = (() => {
+    const bytes = buildLutBytes(true);
+    const lut: string[] = [];
+    for (let i = 0; i < 256; i++) {
+        const r = bytes[i * 4]!;
+        const g = bytes[i * 4 + 1]!;
+        const b = bytes[i * 4 + 2]!;
         const alpha = Math.min(0.92, 0.22 + 0.70 * (i / 255)).toFixed(2);
-        lut.push('rgba(' + r + ',' + g + ',' + bl + ',' + alpha + ')');
+        lut.push(`rgba(${r},${g},${b},${alpha})`);
     }
     return lut;
 })();
+
+const VERT_SHADER = `#version 300 es
+out vec2 uv;
+void main() {
+  vec2 p = vec2(float((gl_VertexID << 1) & 2), float(gl_VertexID & 2));
+  uv = p;
+  gl_Position = vec4(p * 2.0 - 1.0, 0.0, 1.0);
+}`;
+
+const FRAG_SHADER = `#version 300 es
+precision highp float;
+precision highp sampler2D;
+in vec2 uv;
+out vec4 color;
+uniform sampler2D grid;
+uniform sampler2D lut;
+uniform vec4 view;   // t0, t1, p0, p1 of the screen
+uniform vec4 tex;    // t0, t1, p0, p1 covered by the texture
+uniform vec4 range;  // min, max, opacity, mode (0 = size ramp, 1 = two hues)
+uniform vec3 bidC, bidS, askC, askS;
+uniform vec4 fill;   // boundary and sample time (ms from view origin), enabled, unused
+uniform vec3 fillRgb; // neutral backfilled grey
+
+void main() {
+  float t = mix(view.x, view.y, uv.x);
+  bool back = fill.z > 0.5 && t < fill.x;
+  if (back) t = fill.y;
+  float p = mix(view.z, view.w, uv.y);
+  vec2 q = vec2((t - tex.x) / (tex.y - tex.x), (p - tex.z) / (tex.w - tex.z));
+  if (q.x < 0.0 || q.x >= 1.0 || q.y < 0.0 || q.y >= 1.0) discard;
+  ivec2 size = textureSize(grid, 0);
+  vec2 v = texelFetch(grid, ivec2(q * vec2(size)), 0).rg;
+  float total = v.r + v.g;
+  if (total <= 0.0) discard;
+  if (range.w < 0.5) {
+    float lo = log(max(range.x, 1.0)), hi = log(max(range.y, range.x * 1.0001 + 1.0));
+    float s = (log(total) - lo) / max(hi - lo, 1e-6);
+    if (s <= 0.0) discard;
+    if (back) {
+      color = vec4(fillRgb, (0.16 + 0.74 * clamp(s, 0.0, 1.0)) * smoothstep(0.0, 0.06, s) * range.z);
+      return;
+    }
+    color = vec4(texture(lut, vec2(clamp(s, 0.0, 1.0), 0.5)).rgb, smoothstep(0.0, 0.06, s) * range.z);
+    return;
+  }
+  bool isAsk = v.g > v.r;
+  float a = clamp((max(v.r, v.g) - range.x) / max(range.y - range.x, 1e-6), 0.0, 1.0);
+  if (a <= 0.0) discard;
+  vec3 c = mix(isAsk ? askS : bidS, isAsk ? askC : bidC, a);
+  if (back) {
+    color = vec4(fillRgb, (0.16 + 0.74 * a) * range.z);
+    return;
+  }
+  color = vec4(c, pow(a, 0.75) * range.z);
+}`;
+
+/**
+ * 1D Vertical Gaussian Blur directly matching LiquidityMapper crates/hlm-kernels/src/lib.rs blur_vec.
+ * Eliminates blocky pixel stepped appearance, creating smooth liquid resting depth contours.
+ */
+function blurVec(v: Float32Array, sigma: number): void {
+    if (sigma < 0.34 || v.length < 3) return;
+    const radius = Math.ceil(3.0 * sigma);
+    const kLen = 2 * radius + 1;
+    const kernel = new Float32Array(kLen);
+    const twoSigmaSq = 2.0 * sigma * sigma;
+    let sum = 0;
+    for (let i = 0; i <= 2 * radius; i++) {
+        const x = i - radius;
+        const w = Math.exp(-x * x / twoSigmaSq);
+        kernel[i] = w;
+        sum += w;
+    }
+    for (let i = 0; i < kLen; i++) kernel[i] /= sum;
+    const temp = new Float32Array(v);
+    const len = temp.length;
+    for (let i = 0; i < len; i++) {
+        let acc = 0;
+        for (let k = 0; k < kLen; k++) {
+            const j = Math.max(0, Math.min(len - 1, i + k - radius));
+            acc += temp[j]! * kernel[k]!;
+        }
+        v[i] = acc;
+    }
+}
+
+export interface HeatStyle {
+    bid: [number, number, number];
+    bidSoft: [number, number, number];
+    ask: [number, number, number];
+    askSoft: [number, number, number];
+    min: number;
+    max: number;
+    opacity: number;
+    mode: 'size' | 'sides';
+}
+
+export class HeatGL {
+    readonly gl: WebGL2RenderingContext | null;
+    private program: WebGLProgram | null = null;
+    private texture: WebGLTexture | null = null;
+    private lut: WebGLTexture | null = null;
+    private loc: Record<string, WebGLUniformLocation | null> = {};
+    private bounds: { t0: number; t1: number; p0: number; p1: number } | null = null;
+    private size: [number, number] = [0, 0];
+
+    constructor(readonly canvas: HTMLCanvasElement) {
+        let gl: WebGL2RenderingContext | null = null;
+        try {
+            gl = canvas.getContext('webgl2', {
+                premultipliedAlpha: false,
+                alpha: true,
+                antialias: false,
+                preserveDrawingBuffer: true
+            });
+        } catch (_) {}
+        this.gl = gl;
+        if (!gl) return;
+
+        const compile = (type: number, source: string) => {
+            const shader = gl!.createShader(type)!;
+            gl!.shaderSource(shader, source);
+            gl!.compileShader(shader);
+            return shader;
+        };
+
+        const program = gl.createProgram()!;
+        gl.attachShader(program, compile(gl.VERTEX_SHADER, VERT_SHADER));
+        gl.attachShader(program, compile(gl.FRAGMENT_SHADER, FRAG_SHADER));
+        gl.linkProgram(program);
+        this.program = program;
+
+        for (const name of ['grid', 'lut', 'view', 'tex', 'range', 'bidC', 'bidS', 'askC', 'askS', 'fill', 'fillRgb']) {
+            this.loc[name] = gl.getUniformLocation(program, name);
+        }
+
+        this.texture = gl.createTexture()!;
+        gl.bindTexture(gl.TEXTURE_2D, this.texture);
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+
+        this.lut = gl.createTexture()!;
+        gl.bindTexture(gl.TEXTURE_2D, this.lut);
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+
+        this.setLut(buildLutBytes(true));
+
+        gl.enable(gl.BLEND);
+        gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
+    }
+
+    setLut(rgba: Uint8Array): void {
+        const { gl } = this;
+        if (!gl || !this.lut) return;
+        gl.bindTexture(gl.TEXTURE_2D, this.lut);
+        gl.pixelStorei(gl.UNPACK_ALIGNMENT, 4);
+        gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA8, 256, 1, 0, gl.RGBA, gl.UNSIGNED_BYTE, rgba);
+    }
+
+    upload(grid: Float32Array, w: number, h: number, bounds: { t0: number; t1: number; p0: number; p1: number }): void {
+        const { gl } = this;
+        if (!gl || !this.texture) return;
+        gl.bindTexture(gl.TEXTURE_2D, this.texture);
+        gl.pixelStorei(gl.UNPACK_ALIGNMENT, 4);
+        gl.texImage2D(gl.TEXTURE_2D, 0, gl.RG32F, w, h, 0, gl.RG, gl.FLOAT, grid);
+        this.bounds = bounds;
+        this.size = [w, h];
+    }
+
+    resize(width: number, height: number): void {
+        const w = Math.max(1, Math.round(width));
+        const h = Math.max(1, Math.round(height));
+        if (this.canvas.width !== w || this.canvas.height !== h) {
+            this.canvas.width = w;
+            this.canvas.height = h;
+        }
+    }
+
+    draw(view: { t0: number; t1: number; p0: number; p1: number }, style: HeatStyle, fill?: { boundary: number; sample: number; rgb: [number, number, number] } | null): void {
+        const { gl } = this;
+        if (!gl || !this.program || !this.bounds || this.size[0] === 0) return;
+        gl.viewport(0, 0, this.canvas.width, this.canvas.height);
+        gl.clearColor(0, 0, 0, 0);
+        gl.clear(gl.COLOR_BUFFER_BIT);
+
+        gl.useProgram(this.program);
+        gl.activeTexture(gl.TEXTURE1);
+        gl.bindTexture(gl.TEXTURE_2D, this.lut);
+        gl.activeTexture(gl.TEXTURE0);
+        gl.bindTexture(gl.TEXTURE_2D, this.texture);
+
+        const b = this.bounds, l = this.loc;
+        gl.uniform1i(l.grid!, 0);
+        gl.uniform1i(l.lut!, 1);
+        gl.uniform4f(l.view!, 0, view.t1 - view.t0, 0, view.p1 - view.p0);
+        gl.uniform4f(l.tex!, b.t0 - view.t0, b.t1 - view.t0, b.p0 - view.p0, b.p1 - view.p0);
+        gl.uniform4f(l.range!, style.min, style.max, style.opacity, style.mode === 'size' ? 0 : 1);
+        gl.uniform4f(l.fill!, fill ? fill.boundary - view.t0 : 0, fill ? fill.sample - view.t0 : 0, fill ? 1 : 0, 0);
+        gl.uniform3fv(l.fillRgb!, fill ? fill.rgb : [0.18, 0.22, 0.28]);
+        gl.uniform3fv(l.bidC!, style.bid);
+        gl.uniform3fv(l.bidS!, style.bidSoft);
+        gl.uniform3fv(l.askC!, style.ask);
+        gl.uniform3fv(l.askS!, style.askSoft);
+        gl.drawArrays(gl.TRIANGLES, 0, 3);
+    }
+}
+
+// ============================================================================
+// Data Engine & Types
+// ============================================================================
 
 export interface HeatmapBarLevel {
     price: number;
@@ -134,96 +373,81 @@ function decodeColumnsBinary(buffer: ArrayBuffer): {
         at += count;
     }
 
-    return { stepMs: Number(header.stepMs) || 60000, step: Number(inst.step) || 20, columns, maxUsd };
+    return { stepMs: inst.stepMs || 60000, step: inst.step, columns, maxUsd };
 }
 
 export class HeatmapDataEngine implements SeriesDataEngine {
     private host: SeriesDataEngineHost | null = null;
-    private active = false;
-    private refreshTimer: any = null;
-    private unsubscribeTick: any = null;
-    private unsubscribeLevels: any = null;
-    private unsubscribeTape: any = null;
-    private unsubscribeMarket: any = null;
     private barLevels = new Map<number, HeatmapBarLevel[]>();
     private liveLevels: HeatmapBarLevel[] = [];
     private liquidations: HeatmapLiquidation[] = [];
-    private step = 20;
-    private stepMs = 60_000;
-    private maxLevelUsd = 100_000;
+    private step: number = 20;
+    private stepMs: number = 60_000;
+    private maxLevelUsd: number = 100_000;
+    private active = false;
+    private unsubscribeLevels: (() => void) | null = null;
+    private unsubscribeLiqs: (() => void) | null = null;
+    private unsubscribeMarket: (() => void) | null = null;
 
     start(host: SeriesDataEngineHost): void {
         this.host = host;
         this.active = true;
-        this.pushCurrent();
         void this.loadData();
-
-        this.unsubscribeTick = LiquidityClient.get().onTick((price, time) => {
-            if (this.active) this.ingestTick(price, time);
-        });
 
         this.unsubscribeLevels = LiquidityClient.get().onLevels((frame) => {
             if (this.active) this.ingestLevels(frame);
         });
 
-        this.unsubscribeTape = LiquidityClient.get().onTape((batch) => {
-            if (this.active) this.ingestTape(batch);
+        this.unsubscribeLiqs = LiquidityClient.get().onLiquidations((liqs) => {
+            if (this.active) this.ingestLiqs(liqs);
         });
 
         this.unsubscribeMarket = LiquidityClient.get().onMarketSwitch(() => {
-            if (this.active) {
-                this.barLevels.clear();
-                this.liveLevels = [];
-                void this.loadData();
-            }
-        });
-
-        if (this.refreshTimer) clearInterval(this.refreshTimer);
-        this.refreshTimer = setInterval(() => {
             if (this.active) void this.loadData();
-        }, 15000);
+        });
     }
 
     suspend(): void {
         this.active = false;
-        if (this.refreshTimer) {
-            clearInterval(this.refreshTimer);
-            this.refreshTimer = null;
-        }
-        if (this.unsubscribeTick) {
-            this.unsubscribeTick();
-            this.unsubscribeTick = null;
-        }
-        if (this.unsubscribeLevels) {
-            this.unsubscribeLevels();
-            this.unsubscribeLevels = null;
-        }
-        if (this.unsubscribeTape) {
-            this.unsubscribeTape();
-            this.unsubscribeTape = null;
-        }
-        if (this.unsubscribeMarket) {
-            this.unsubscribeMarket();
-            this.unsubscribeMarket = null;
-        }
+        if (this.unsubscribeLevels) { this.unsubscribeLevels(); this.unsubscribeLevels = null; }
+        if (this.unsubscribeLiqs) { this.unsubscribeLiqs(); this.unsubscribeLiqs = null; }
+        if (this.unsubscribeMarket) { this.unsubscribeMarket(); this.unsubscribeMarket = null; }
     }
 
     resume(): void {
         this.active = true;
-        this.pushCurrent();
         void this.loadData();
+        this.unsubscribeLevels = LiquidityClient.get().onLevels((frame) => {
+            if (this.active) this.ingestLevels(frame);
+        });
+        this.unsubscribeLiqs = LiquidityClient.get().onLiquidations((liqs) => {
+            if (this.active) this.ingestLiqs(liqs);
+        });
+        this.unsubscribeMarket = LiquidityClient.get().onMarketSwitch(() => {
+            if (this.active) void this.loadData();
+        });
     }
 
     stop(): void {
-        this.suspend();
+        this.active = false;
+        if (this.unsubscribeLevels) { this.unsubscribeLevels(); this.unsubscribeLevels = null; }
+        if (this.unsubscribeLiqs) { this.unsubscribeLiqs(); this.unsubscribeLiqs = null; }
+        if (this.unsubscribeMarket) { this.unsubscribeMarket(); this.unsubscribeMarket = null; }
+        this.barLevels.clear();
+        this.liveLevels = [];
+        this.liquidations = [];
         this.host = null;
+    }
+
+    onBars(): void {
+        this.pushCurrent();
     }
 
     private async loadData(): Promise<void> {
         if (!this.host) return;
         const sym = this.host.symbol || 'BTCUSDT';
         let raw = sym.trim().toUpperCase();
-        if (raw.includes(':')) raw = raw.split(':')[1];
+        if (raw.includes(':')) raw = raw.split(':')[1] || raw;
         raw = raw.replace(/\.P$|-PERP$|_PERP$|-SWAP$|_SWAP$/i, '');
         const base = raw.replace(/USDT$|USD$|USDC$|BUSD$/i, '');
         const cleanSymbol = (base || 'BTC') + 'USDT';
@@ -304,37 +528,34 @@ export class HeatmapDataEngine implements SeriesDataEngine {
 
         if (levels.length > 0) {
             this.maxLevelUsd = maxLvl;
-            this.barLevels.set(barTime, levels);
             this.liveLevels = levels;
+            this.barLevels.set(barTime, levels);
             this.pushCurrent();
         }
     }
 
-    private ingestTape(batch: any): void {
-        if (!batch || !batch.usd) return;
-        for (let i = 0; i < batch.usd.length; i++) {
-            const usd = Math.abs(batch.usd[i] || 0);
-            if (usd >= 1_000_000) {
-                const venue = batch.ids ? (batch.ids[batch.inst[i]] || 'BIN').slice(0, 3).toUpperCase() : 'BIN';
-                this.liquidations.push({
-                    time: batch.t[i] || Date.now(),
-                    price: batch.price[i] || 0,
-                    usd,
-                    side: batch.usd[i] > 0 ? 'buy' : 'sell',
-                    venue
-                });
-                if (this.liquidations.length > 50) this.liquidations.shift();
-            }
+    private ingestLiqs(liqs: any[]): void {
+        if (!Array.isArray(liqs)) return;
+        for (const item of liqs) {
+            this.liquidations.push({
+                time: item.time || Date.now(),
+                price: item.price || 0,
+                usd: item.usd || 0,
+                side: item.side === 'long' ? 'buy' : 'sell',
+                venue: (item.inst || 'BIN').slice(0, 3).toUpperCase(),
+            });
         }
+        if (this.liquidations.length > 60) {
+            this.liquidations = this.liquidations.slice(-60);
+        }
+        this.pushCurrent();
     }
-
-    private ingestTick(_price: number, _time: number): void {}
 
     private pushCurrent(): void {
         if (!this.host) return;
         const payload: HeatmapPayload = {
             symbol: this.host.symbol || 'BTCUSDT',
-            timeframe: this.host.timeframe || '1h',
+            timeframe: normalizeTimeframe(this.host.timeframe || '1h'),
             step: this.step,
             stepMs: this.stepMs,
             maxLevelUsd: this.maxLevelUsd,
@@ -346,15 +567,30 @@ export class HeatmapDataEngine implements SeriesDataEngine {
     }
 }
 
+// ============================================================================
+// WebGL2 Interpolated Heatmap Renderer Layer
+// ============================================================================
+
 export class HeatmapRendererLayer implements RendererLayerInstance {
     private canvas: HTMLCanvasElement | null = null;
+    private offscreen: HTMLCanvasElement | null = null;
+    private heatGl: HeatGL | null = null;
+    private lastUploadedKey: string = '';
 
     mount(canvas: HTMLCanvasElement): void {
         this.canvas = canvas;
+        try {
+            this.offscreen = document.createElement('canvas');
+            this.heatGl = new HeatGL(this.offscreen);
+        } catch (e) {
+            console.warn('[HeatmapRendererLayer] Offscreen WebGL2 init warning:', e);
+        }
     }
 
     destroy(): void {
         this.canvas = null;
+        this.offscreen = null;
+        this.heatGl = null;
     }
 
     modulateBase(_args: RendererLayerArgs) {
@@ -378,12 +614,6 @@ export class HeatmapRendererLayer implements RendererLayerInstance {
 
         ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
 
-        ctx.save();
-        ctx.beginPath();
-        const plotW = Math.max(1, coords.width || (this.canvas.width / dpr));
-        ctx.rect(0, bounds.top, plotW, bounds.height);
-        ctx.clip();
-
         const payload = args.data as HeatmapPayload | undefined;
         const barLevels = payload?.barLevels;
         const liveLevels = payload?.liveLevels || [];
@@ -397,27 +627,144 @@ export class HeatmapRendererLayer implements RendererLayerInstance {
 
         const lo = Math.log(15_000);
         const hi = Math.log(Math.max(400_000, maxUsd));
-        // Dynamic contrast shift from LiquidityMapper:
         const shift = -((contrast - 50) / 50) * Math.log(hi / lo) * 0.75;
-        const winLo = lo * Math.exp(shift);
-        const winHi = hi * Math.exp(shift);
-        const winSpan = Math.max(0.1, winHi - winLo);
+        const winLo = Math.max(1000, Math.exp(lo + shift));
+        const winHi = Math.max(winLo * 1.05, Math.exp(hi + shift));
 
-        let minT = Infinity;
-        let maxT = -Infinity;
+        const plotW = Math.max(1, coords.width || (this.canvas.width / dpr));
+        const plotH = Math.max(1, bounds.height);
 
-        // 1. Time-continuous raster across all recorded 1-minute order book columns
+        // Calculate view coordinates in time & price
+        const timeRange = coords.visibleTimeRange();
+        const viewT0 = timeRange.from;
+        const viewT1 = timeRange.to;
+        const viewP0 = coords.yToPrice(bounds.top + bounds.height, scale, bounds);
+        const viewP1 = coords.yToPrice(bounds.top, scale, bounds);
+        const view = { t0: viewT0, t1: viewT1, p0: viewP0, p1: viewP1 };
+
+        const style: HeatStyle = {
+            bid: [0.18, 0.74, 0.52],
+            bidSoft: [0.08, 0.35, 0.25],
+            ask: [0.96, 0.27, 0.36],
+            askSoft: [0.45, 0.12, 0.18],
+            min: winLo,
+            max: winHi,
+            opacity: 0.92,
+            mode: styleMode === 'sides' ? 'sides' : 'size'
+        };
+
+        // Prepare or upload grid texture if WebGL2 is active
+        if (this.heatGl && this.heatGl.gl && this.offscreen && barLevels && barLevels.size > 0) {
+            const sortedTimes = [...barLevels.keys()].sort((a, b) => a - b);
+            const firstT = sortedTimes[0]!;
+            const lastT = sortedTimes[sortedTimes.length - 1]!;
+            const futureCols = 50; // Extend depth smoothly into the right price scale
+            const totalCols = sortedTimes.length + futureCols;
+
+            // Determine price span covering the visible window plus padding
+            let pMin = Math.min(viewP0, 80000);
+            let pMax = Math.max(viewP1, 85000);
+            for (const lvls of barLevels.values()) {
+                if (!lvls || lvls.length === 0) continue;
+                if (lvls[0]!.price < pMin) pMin = lvls[0]!.price;
+                if (lvls[lvls.length - 1]!.price > pMax) pMax = lvls[lvls.length - 1]!.price;
+            }
+            pMin = Math.floor(pMin / step) * step;
+            pMax = Math.ceil(pMax / step) * step;
+            const numRows = Math.max(10, Math.ceil((pMax - pMin) / step) + 1);
+
+            const uploadKey = `${firstT}-${lastT}-${pMin}-${pMax}-${numRows}-${totalCols}-${barLevels.size}-${liveLevels.length}`;
+            if (this.lastUploadedKey !== uploadKey) {
+                const grid = new Float32Array(totalCols * numRows * 2);
+
+                // 1. Fill recorded columns
+                for (let colIdx = 0; colIdx < sortedTimes.length; colIdx++) {
+                    const t = sortedTimes[colIdx]!;
+                    const lvls = barLevels.get(t);
+                    if (!lvls) continue;
+                    for (let k = 0; k < lvls.length; k++) {
+                        const lvl = lvls[k]!;
+                        const r = Math.round((lvl.price - pMin) / step);
+                        if (r >= 0 && r < numRows) {
+                            const offset = (r * totalCols + colIdx) * 2;
+                            grid[offset] = lvl.bidUsd;
+                            grid[offset + 1] = lvl.askUsd;
+                        }
+                    }
+                }
+
+                // 2. Fill live extending order book across future columns
+                if (liveLevels && liveLevels.length > 0) {
+                    for (let k = 0; k < liveLevels.length; k++) {
+                        const lvl = liveLevels[k]!;
+                        const r = Math.round((lvl.price - pMin) / step);
+                        if (r >= 0 && r < numRows) {
+                            for (let colIdx = sortedTimes.length; colIdx < totalCols; colIdx++) {
+                                const offset = (r * totalCols + colIdx) * 2;
+                                grid[offset] = lvl.bidUsd;
+                                grid[offset + 1] = lvl.askUsd;
+                            }
+                        }
+                    }
+                }
+
+                // 3. 1D Vertical Gaussian Blur matching LiquidityMapper
+                const colBids = new Float32Array(numRows);
+                const colAsks = new Float32Array(numRows);
+                for (let x = 0; x < totalCols; x++) {
+                    for (let r = 0; r < numRows; r++) {
+                        const offset = (r * totalCols + x) * 2;
+                        colBids[r] = grid[offset]!;
+                        colAsks[r] = grid[offset + 1]!;
+                    }
+                    blurVec(colBids, 3.5);
+                    blurVec(colAsks, 3.5);
+                    for (let r = 0; r < numRows; r++) {
+                        const offset = (r * totalCols + x) * 2;
+                        grid[offset] = colBids[r]!;
+                        grid[offset + 1] = colAsks[r]!;
+                    }
+                }
+
+                const texBounds = {
+                    t0: firstT,
+                    t1: firstT + totalCols * stepMs,
+                    p0: pMin,
+                    p1: pMax
+                };
+                this.heatGl.upload(grid, totalCols, numRows, texBounds);
+                this.lastUploadedKey = uploadKey;
+            }
+
+            // Draw WebGL2 onto offscreen canvas and blit to layer canvas
+            const offW = Math.round(plotW * dpr);
+            const offH = Math.round(plotH * dpr);
+            this.heatGl.resize(offW, offH);
+            this.heatGl.draw(view, style, { boundary: firstT, sample: firstT, rgb: [0.18, 0.22, 0.28] });
+
+            ctx.save();
+            ctx.beginPath();
+            ctx.rect(0, bounds.top, plotW, plotH);
+            ctx.clip();
+            ctx.drawImage(this.offscreen, 0, bounds.top, plotW, plotH);
+            ctx.restore();
+            return;
+        }
+
+        // ====================================================================
+        // Fallback High-Fidelity 2D Continuous Renderer (if WebGL2 unavailable)
+        // ====================================================================
+        ctx.save();
+        ctx.beginPath();
+        ctx.rect(0, bounds.top, plotW, plotH);
+        ctx.clip();
+
         if (barLevels && barLevels.size > 0) {
             for (const [colT, levels] of barLevels.entries()) {
-                if (colT < minT) minT = colT;
-                if (colT > maxT) maxT = colT;
-
                 const x0 = coords.timeToX(colT);
                 const x1 = coords.timeToX(colT + stepMs);
                 const colW = Math.max(1.5, Math.ceil(x1 - x0));
-
-                if (x1 < -20 || x0 > plotW + 20) continue;
-                if (!levels || levels.length === 0) continue;
+                if (x1 < -20 || x0 > plotW + 20 || !levels || levels.length === 0) continue;
 
                 for (let k = 0; k < levels.length; k++) {
                     const lvl = levels[k]!;
@@ -429,130 +776,21 @@ export class HeatmapRendererLayer implements RendererLayerInstance {
                     if (topY + h < bounds.top || topY > bounds.top + bounds.height) continue;
 
                     if (styleMode === 'sides') {
-                        // Two hues: Bids (cyan/green) and Asks (orange/red)
                         const isAsk = lvl.askUsd > lvl.bidUsd;
                         const val = Math.max(lvl.bidUsd, lvl.askUsd);
-                        const a = Math.min(1, Math.max(0, (val - 15000) / (maxUsd * 0.7)));
+                        const a = Math.min(1, Math.max(0, (val - winLo) / (winHi - winLo)));
                         if (a < 0.03) continue;
-                        const alphaStr = Math.min(0.92, 0.18 + 0.74 * a).toFixed(2);
                         ctx.fillStyle = isAsk
-                            ? 'rgba(232, 40, 28, ' + alphaStr + ')'
-                            : 'rgba(46, 189, 133, ' + alphaStr + ')';
+                            ? `rgba(232, 40, 28, ${Math.min(0.92, 0.18 + 0.74 * a).toFixed(2)})`
+                            : `rgba(46, 189, 133, ${Math.min(0.92, 0.18 + 0.74 * a).toFixed(2)})`;
                     } else {
-                        const s = (Math.log(Math.max(1, lvl.totalUsd)) - winLo) / winSpan;
+                        const s = (Math.log(Math.max(1, lvl.totalUsd)) - Math.log(winLo)) / Math.max(0.01, Math.log(winHi) - Math.log(winLo));
                         if (s < 0.02) continue;
                         const idx = Math.min(255, Math.max(0, Math.floor(s * 255)));
-                        ctx.fillStyle = LUT_DARK[idx]!;
+                        ctx.fillStyle = LUT_DARK_CSS[idx]!;
                     }
-
                     ctx.fillRect(x0, topY, colW + 0.5, h);
                 }
-            }
-        }
-
-        // 2. Pre-recording subtle steel-blue baseline fill (left of oldest recorded column)
-        const r = coords.visibleLogicalRange();
-        const i0 = Math.max(0, Math.floor(r.from));
-        const i1 = Math.min(bars.length - 1, Math.ceil(r.to));
-
-        if (minT < Infinity && bars.length > 0) {
-            const oldestX = coords.timeToX(minT);
-            if (oldestX > 0) {
-                for (let i = i0; i <= i1; i++) {
-                    const bar = bars[i]!;
-                    const x = coords.logicalToX(i);
-                    if (x >= oldestX) continue;
-                    const barW = Math.max(2, coords.bodySpacing());
-                    const xLeft = x - barW / 2;
-
-                    const spread = Math.max(step * 8, (bar.high - bar.low) * 1.5);
-                    const rows = 10;
-                    const rowStep = spread / rows;
-                    const centerPrice = (bar.high + bar.low) / 2;
-
-                    for (let row = -rows; row <= rows; row++) {
-                        const p = centerPrice + row * rowStep;
-                        const y = coords.priceToY(p, scale, bounds);
-                        const yTop = coords.priceToY(p + rowStep, scale, bounds);
-                        const h = Math.max(1.2, Math.abs(yTop - y));
-                        const topY = Math.min(y, yTop);
-
-                        if (topY + h < bounds.top || topY > bounds.top + bounds.height) continue;
-
-                        const dist = Math.abs(row) / rows;
-                        const alpha = (1 - dist) * 0.18;
-                        if (alpha < 0.03) continue;
-
-                        ctx.fillStyle = 'rgba(18, 42, 70, ' + alpha.toFixed(2) + ')';
-                        ctx.fillRect(xLeft, topY, barW, h);
-                    }
-                }
-            }
-        }
-
-        // Fallback smooth density if barLevels is not yet loaded
-        if (!barLevels || barLevels.size === 0) {
-            for (let i = i0; i <= i1; i++) {
-                const bar = bars[i]!;
-                const x = coords.logicalToX(i);
-                const barW = Math.max(2, coords.bodySpacing());
-                const xLeft = x - barW / 2;
-                const spread = Math.max(step * 6, (bar.high - bar.low) * 1.8);
-                const rows = 12;
-                const rowStep = spread / rows;
-                const centerPrice = (bar.high + bar.low) / 2;
-
-                for (let row = -rows; row <= rows; row++) {
-                    const p = centerPrice + row * rowStep;
-                    const y = coords.priceToY(p, scale, bounds);
-                    const yTop = coords.priceToY(p + rowStep, scale, bounds);
-                    const h = Math.max(1.2, Math.abs(yTop - y));
-                    const topY = Math.min(y, yTop);
-
-                    if (topY + h < bounds.top || topY > bounds.top + bounds.height) continue;
-
-                    const dist = Math.abs(row) / rows;
-                    const intensity = (1 - dist) * 0.42 * (bar.volume ? Math.min(1, bar.volume / 350) : 0.6);
-                    if (intensity < 0.05) continue;
-
-                    const idx = Math.min(255, Math.max(0, Math.floor(intensity * 255)));
-                    ctx.fillStyle = LUT_DARK[idx]!;
-                    ctx.fillRect(xLeft, topY, barW, h);
-                }
-            }
-        }
-
-        // 3. Live resting order book depth extending across right margin to price scale
-        if (liveLevels && liveLevels.length > 0) {
-            const liveStartX = maxT > -Infinity ? Math.max(0, coords.timeToX(maxT + stepMs)) : (bars.length > 0 ? coords.logicalToX(bars.length - 1) : 0);
-            const liveW = Math.max(40, plotW - liveStartX + 80);
-
-            for (let k = 0; k < liveLevels.length; k++) {
-                const lvl = liveLevels[k]!;
-                const y = coords.priceToY(lvl.price, scale, bounds);
-                const yTop = coords.priceToY(lvl.price + step, scale, bounds);
-                const h = Math.max(1.2, Math.abs(yTop - y));
-                const topY = Math.min(y, yTop);
-
-                if (topY + h < bounds.top || topY > bounds.top + bounds.height) continue;
-
-                if (styleMode === 'sides') {
-                    const isAsk = lvl.askUsd > lvl.bidUsd;
-                    const val = Math.max(lvl.bidUsd, lvl.askUsd);
-                    const a = Math.min(1, Math.max(0, (val - 15000) / (maxUsd * 0.7)));
-                    if (a < 0.03) continue;
-                    const alphaStr = Math.min(0.95, 0.2 + 0.75 * a).toFixed(2);
-                    ctx.fillStyle = isAsk
-                        ? 'rgba(232, 40, 28, ' + alphaStr + ')'
-                        : 'rgba(46, 189, 133, ' + alphaStr + ')';
-                } else {
-                    const s = (Math.log(Math.max(1, lvl.totalUsd)) - winLo) / winSpan;
-                    if (s < 0.03) continue;
-                    const idx = Math.min(255, Math.max(0, Math.floor(s * 255)));
-                    ctx.fillStyle = LUT_DARK[idx]!;
-                }
-
-                ctx.fillRect(liveStartX, topY, liveW, h);
             }
         }
 

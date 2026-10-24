@@ -11,7 +11,6 @@ import {
     normalizeTimeframe,
     timeframeToMs,
     gridStepFor,
-    barFraction,
     formatVol,
     type TapeBatch,
     type ParsedFootprintBar,
@@ -59,7 +58,7 @@ export class FootprintDataEngine implements SeriesDataEngine {
             if (this.active) this.ingestTick(price, time);
         });
 
-        this.unsubscribeMarket = LiquidityClient.get().onMarketSwitch((_sym) => {
+        this.unsubscribeMarket = LiquidityClient.get().onMarketSwitch(() => {
             if (this.active) {
                 this.loadedSymbol = '';
                 void this.loadData();
@@ -69,7 +68,7 @@ export class FootprintDataEngine implements SeriesDataEngine {
         if (this.refreshTimer) clearInterval(this.refreshTimer);
         this.refreshTimer = setInterval(() => {
             if (this.active) void this.loadData();
-        }, 25000);
+        }, 15000);
     }
 
     suspend(): void {
@@ -78,18 +77,9 @@ export class FootprintDataEngine implements SeriesDataEngine {
             clearInterval(this.refreshTimer);
             this.refreshTimer = null;
         }
-        if (this.unsubscribeTape) {
-            this.unsubscribeTape();
-            this.unsubscribeTape = null;
-        }
-        if (this.unsubscribeTick) {
-            this.unsubscribeTick();
-            this.unsubscribeTick = null;
-        }
-        if (this.unsubscribeMarket) {
-            this.unsubscribeMarket();
-            this.unsubscribeMarket = null;
-        }
+        if (this.unsubscribeTape) { this.unsubscribeTape(); this.unsubscribeTape = null; }
+        if (this.unsubscribeTick) { this.unsubscribeTick(); this.unsubscribeTick = null; }
+        if (this.unsubscribeMarket) { this.unsubscribeMarket(); this.unsubscribeMarket = null; }
     }
 
     resume(): void {
@@ -101,11 +91,9 @@ export class FootprintDataEngine implements SeriesDataEngine {
         this.unsubscribeTape = LiquidityClient.get().onTape((batch) => {
             if (this.active) this.ingestTape(batch);
         });
-
         this.unsubscribeTick = LiquidityClient.get().onTick((price, time) => {
             if (this.active) this.ingestTick(price, time);
         });
-
         this.unsubscribeMarket = LiquidityClient.get().onMarketSwitch(() => {
             if (this.active) {
                 this.loadedSymbol = '';
@@ -116,7 +104,7 @@ export class FootprintDataEngine implements SeriesDataEngine {
         if (this.refreshTimer) clearInterval(this.refreshTimer);
         this.refreshTimer = setInterval(() => {
             if (this.active) void this.loadData();
-        }, 25000);
+        }, 15000);
     }
 
     stop(): void {
@@ -125,18 +113,9 @@ export class FootprintDataEngine implements SeriesDataEngine {
             clearInterval(this.refreshTimer);
             this.refreshTimer = null;
         }
-        if (this.unsubscribeTape) {
-            this.unsubscribeTape();
-            this.unsubscribeTape = null;
-        }
-        if (this.unsubscribeTick) {
-            this.unsubscribeTick();
-            this.unsubscribeTick = null;
-        }
-        if (this.unsubscribeMarket) {
-            this.unsubscribeMarket();
-            this.unsubscribeMarket = null;
-        }
+        if (this.unsubscribeTape) { this.unsubscribeTape(); this.unsubscribeTape = null; }
+        if (this.unsubscribeTick) { this.unsubscribeTick(); this.unsubscribeTick = null; }
+        if (this.unsubscribeMarket) { this.unsubscribeMarket(); this.unsubscribeMarket = null; }
         this.bars = [];
         this.loadedSymbol = '';
         this.loadedTimeframe = '';
@@ -148,121 +127,121 @@ export class FootprintDataEngine implements SeriesDataEngine {
         const currentSym = this.host.symbol || 'BTCUSDT';
         const currentTf = normalizeTimeframe(this.host.timeframe || '1h');
         if (this.bars.length === 0 || currentSym !== this.loadedSymbol || currentTf !== this.loadedTimeframe) {
-            this.loadedSymbol = currentSym;
-            this.loadedTimeframe = currentTf;
             void this.loadData();
-            return;
+        } else {
+            this.pushCurrent();
         }
-        this.pushCurrent();
     }
 
-    onViewport(_range: { from: number; to: number }): void {}
-
     private ingestTick(price: number, time: number): void {
-        if (!this.active || !this.host || this.bars.length === 0 || price <= 0) return;
-        const tfMs = timeframeToMs(this.loadedTimeframe);
-        const barTime = Math.floor(time / tfMs) * tfMs;
-        const bar = this.bars.find(b => b.time === barTime);
-        if (bar) {
-            bar.close = price;
-            if (price > bar.high) bar.high = price;
-            if (price < bar.low) bar.low = price;
-            this.schedulePush();
+        if (!this.host || this.bars.length === 0) return;
+        const currentTfMs = timeframeToMs(this.loadedTimeframe || '1h');
+        const activeBarTime = Math.floor(time / currentTfMs) * currentTfMs;
+
+        let activeBar = this.bars.find(b => b.time === activeBarTime);
+        if (!activeBar) {
+            activeBar = {
+                time: activeBarTime,
+                open: price,
+                high: price,
+                low: price,
+                close: price,
+                totalVolume: 0,
+                buyVolume: 0,
+                sellVolume: 0,
+                totalBuy: 0,
+                totalSell: 0,
+                maxDelta: 0,
+                minDelta: 0,
+                delta: 0,
+                pocPrice: price,
+                levels: []
+            };
+            this.bars.push(activeBar);
+            this.bars.sort((a, b) => a.time - b.time);
         }
+
+        activeBar.close = price;
+        if (price > activeBar.high) activeBar.high = price;
+        if (price < activeBar.low) activeBar.low = price;
+        this.schedulePush();
     }
 
     private ingestTape(batch: TapeBatch): void {
-        if (!this.active || !this.host || this.bars.length === 0) return;
-        const tfMs = timeframeToMs(this.loadedTimeframe);
-        const symbol = this.host.symbol || 'BTCUSDT';
-        const resolved = LiquidityClient.get().resolveCoin(symbol);
-        const targetBase = resolved.base.toUpperCase();
-
+        if (!this.host || this.bars.length === 0 || !batch || batch.price.length === 0) return;
+        const currentTfMs = timeframeToMs(this.loadedTimeframe || '1h');
         let changed = false;
 
         for (let i = 0; i < batch.price.length; i++) {
-            const instId = batch.ids[batch.inst[i]!] || '';
-            const instUpper = instId.toUpperCase();
-            if (!instUpper.includes(targetBase)) continue;
-
-            const t = batch.t[i]!;
-            const price = batch.price[i]!;
+            const t = batch.t[i] || Date.now();
+            const p = batch.price[i]!;
             const usd = batch.usd[i]!;
-            if (price <= 0 || !Number.isFinite(price) || usd === 0) continue;
+            const barTime = Math.floor(t / currentTfMs) * currentTfMs;
 
-            const barTime = Math.floor(t / tfMs) * tfMs;
             let bar = this.bars.find(b => b.time === barTime);
             if (!bar) {
-                const lastBar = this.bars[this.bars.length - 1];
-                if (!lastBar || barTime >= lastBar.time) {
-                    const step = this.step || 0.5;
-                    bar = {
-                        time: barTime,
-                        open: price,
-                        high: price,
-                        low: price,
-                        close: price,
-                        totalBuy: 0,
-                        totalSell: 0,
-                        totalVolume: 0,
-                        delta: 0,
-                        minDelta: 0,
-                        maxDelta: 0,
-                        poc: Math.floor(price / step) * step,
-                        levels: []
-                    };
-                    this.bars.push(bar);
-                    this.bars.sort((a, b) => a.time - b.time);
-                } else {
-                    continue;
-                }
+                bar = {
+                    time: barTime,
+                    open: p,
+                    high: p,
+                    low: p,
+                    close: p,
+                    totalVolume: 0,
+                    buyVolume: 0,
+                    sellVolume: 0,
+                    totalBuy: 0,
+                    totalSell: 0,
+                    maxDelta: 0,
+                    minDelta: 0,
+                    delta: 0,
+                    pocPrice: p,
+                    levels: []
+                };
+                this.bars.push(bar);
+                this.bars.sort((a, b) => a.time - b.time);
             }
 
-            bar.close = price;
-            if (price > bar.high) bar.high = price;
-            if (price < bar.low) bar.low = price;
+            bar.close = p;
+            if (p > bar.high) bar.high = p;
+            if (p < bar.low) bar.low = p;
 
-            const step = this.step || 0.5;
-            const lvlLow = Math.round((Math.floor(price / step) * step) * 1e8) / 1e8;
-            let level = bar.levels.find(l => Math.abs(l.low - lvlLow) < step * 0.05);
+            const lvlLow = Math.floor(p / this.step) * this.step;
+            let level = bar.levels.find(l => Math.abs(l.price - lvlLow) < 1e-4);
             if (!level) {
                 level = {
-                    low: lvlLow,
-                    buy: 0,
-                    sell: 0,
-                    total: 0,
-                    delta: 0,
-                    imbalanceBuy: false,
-                    imbalanceSell: false
+                    price: lvlLow,
+                    bidVolume: 0,
+                    askVolume: 0,
+                    totalVolume: 0,
+                    delta: 0
                 };
                 bar.levels.push(level);
-                bar.levels.sort((a, b) => a.low - b.low);
+                bar.levels.sort((a, b) => a.price - b.price);
             }
 
-            if (usd > 0) {
-                level.buy += usd;
-                bar.totalBuy += usd;
-            } else {
-                const absUsd = Math.abs(usd);
-                level.sell += absUsd;
-                bar.totalSell += absUsd;
-            }
-            level.total = level.buy + level.sell;
-            level.delta = level.buy - level.sell;
+            const buy = usd > 0 ? usd : 0;
+            const sell = usd < 0 ? Math.abs(usd) : 0;
+            level.askVolume += buy;
+            level.bidVolume += sell;
+            level.totalVolume = level.askVolume + level.bidVolume;
+            level.delta = level.askVolume - level.bidVolume;
 
-            bar.totalVolume = bar.totalBuy + bar.totalSell;
-            bar.delta = bar.totalBuy - bar.totalSell;
-            if (bar.delta > bar.maxDelta) bar.maxDelta = bar.delta;
-            if (bar.delta < bar.minDelta) bar.minDelta = bar.delta;
+            bar.buyVolume += buy;
+            bar.sellVolume += sell;
+            bar.totalBuy = bar.buyVolume;
+            bar.totalSell = bar.sellVolume;
+            bar.totalVolume = bar.buyVolume + bar.sellVolume;
+            bar.delta = bar.buyVolume - bar.sellVolume;
 
-            let maxVol = 0, poc = bar.poc;
+            let maxVol = 0;
+            let poc = bar.pocPrice;
             for (const l of bar.levels) {
-                if (l.total > maxVol) {
-                    maxVol = l.total;
-                    poc = l.low;
+                if (l.totalVolume > maxVol) {
+                    maxVol = l.totalVolume;
+                    poc = l.price;
                 }
             }
-            bar.poc = poc;
+            bar.pocPrice = poc;
             changed = true;
         }
 
@@ -282,59 +261,27 @@ export class FootprintDataEngine implements SeriesDataEngine {
 
     private async loadData(): Promise<void> {
         if (!this.host) return;
-        const symbol = this.host.symbol || 'BTCUSDT';
+        const sym = this.host.symbol || 'BTCUSDT';
+        let raw = sym.trim().toUpperCase();
+        if (raw.includes(':')) raw = raw.split(':')[1] || raw;
+        raw = raw.replace(/\.P$|-PERP$|_PERP$|-SWAP$|_SWAP$/i, '');
+        const base = raw.replace(/USDT$|USD$|USDC$|BUSD$/i, '');
+        const cleanSymbol = (base || 'BTC') + 'USDT';
         const timeframe = normalizeTimeframe(this.host.timeframe || '1h');
 
         try {
-            const result = await LiquidityClient.get().fetchFootprint(symbol, timeframe);
-            const currentTfMs = timeframeToMs(timeframe);
-            const now = Date.now();
-            const activeBarTime = Math.floor(now / currentTfMs) * currentTfMs;
-
-            if (this.loadedSymbol !== symbol || this.loadedTimeframe !== timeframe || this.bars.length === 0) {
+            const result = await LiquidityClient.get().fetchFootprint(cleanSymbol, timeframe);
+            if (result.bars.length > 0) {
                 this.bars = result.bars;
                 this.step = result.step;
                 this.stackedZones = result.stackedZones;
                 this.nakedPocs = result.nakedPocs;
-                this.loadedSymbol = symbol;
+                this.loadedSymbol = this.host.symbol || 'BTCUSDT';
                 this.loadedTimeframe = timeframe;
                 this.pushCurrent();
-                return;
             }
-
-            // Merge settled bars and preserve the active forming bar
-            const existingActiveBar = this.bars.find(b => b.time === activeBarTime);
-            const serverActiveBar = result.bars.find(b => b.time === activeBarTime);
-
-            const mergedBars: ParsedFootprintBar[] = [];
-            for (const b of result.bars) {
-                if (b.time < activeBarTime) {
-                    mergedBars.push(b);
-                }
-            }
-
-            if (existingActiveBar && serverActiveBar) {
-                serverActiveBar.close = existingActiveBar.close;
-                serverActiveBar.high = Math.max(serverActiveBar.high, existingActiveBar.high);
-                serverActiveBar.low = Math.min(serverActiveBar.low, existingActiveBar.low);
-                serverActiveBar.totalBuy = Math.max(serverActiveBar.totalBuy, existingActiveBar.totalBuy);
-                serverActiveBar.totalSell = Math.max(serverActiveBar.totalSell, existingActiveBar.totalSell);
-                serverActiveBar.totalVolume = serverActiveBar.totalBuy + serverActiveBar.totalSell;
-                serverActiveBar.delta = serverActiveBar.totalBuy - serverActiveBar.totalSell;
-                mergedBars.push(serverActiveBar);
-            } else if (existingActiveBar) {
-                mergedBars.push(existingActiveBar);
-            } else if (serverActiveBar) {
-                mergedBars.push(serverActiveBar);
-            }
-
-            this.bars = mergedBars;
-            this.step = result.step;
-            this.stackedZones = result.stackedZones;
-            this.nakedPocs = result.nakedPocs;
-            this.pushCurrent();
         } catch (err) {
-            console.error('[FootprintDataEngine] Failed to load data:', err);
+            console.error('[FootprintDataEngine] Failed to load footprint data:', err);
         }
     }
 
@@ -352,9 +299,12 @@ export class FootprintDataEngine implements SeriesDataEngine {
     }
 }
 
+// ============================================================================
+// Authentic Footprint Renderer Layer (1:1 with LiquidityMapper paintFootprint)
+// ============================================================================
+
 export class FootprintRendererLayer implements RendererLayerInstance {
     private canvas: HTMLCanvasElement | null = null;
-    private imbRatio = 3.0;
 
     mount(canvas: HTMLCanvasElement): void {
         this.canvas = canvas;
@@ -367,7 +317,7 @@ export class FootprintRendererLayer implements RendererLayerInstance {
     render(args: RendererLayerArgs): void {
         if (!this.canvas || args.priceStyle !== 'footprint') return;
 
-        const { coords, scale, bounds } = args;
+        const { coords, scale, bounds, bars } = args;
         const dpr = coords.dpr || 1;
         const ctx = this.canvas.getContext('2d');
         if (!ctx) return;
@@ -384,410 +334,301 @@ export class FootprintRendererLayer implements RendererLayerInstance {
         const stackedZones = payload?.stackedZones || [];
         const nakedPocs = payload?.nakedPocs || [];
 
-        // Estimate step dynamically if not in payload
-        const lastClose = args.bars.length > 0 ? args.bars[args.bars.length - 1]!.close : 80000;
+        const lastClose = bars.length > 0 ? bars[bars.length - 1]!.close : 80000;
         const step = (payload?.step && payload.step > 0) ? payload.step : gridStepFor(lastClose);
 
-        const barMap = new Map<number, ParsedFootprintBar>();
-        for (const b of fpBars) {
-            barMap.set(b.time, b);
-        }
+        const plotW = Math.max(1, coords.width || (this.canvas.width / dpr));
+        const statsTableHeight = 68;
+        const chartAreaHeight = Math.max(50, bounds.height - statsTableHeight);
+
+        // Map footprint bars by timestamp (and nearest within 1 timeframe slot)
+        const fpMap = new Map<number, ParsedFootprintBar>();
+        for (const b of fpBars) fpMap.set(b.time, b);
 
         const tfMs = timeframeToMs(payload?.timeframe || '1h');
-
-        // Pre-reconcile nearest footprint bars for chart candles
-        const chartBarFpMap = new Map<number, ParsedFootprintBar>();
-        for (let i = 0; i < args.bars.length; i++) {
-            const chartBar = args.bars[i]!;
-            let fpBar = barMap.get(chartBar.time);
-            if (!fpBar) {
-                for (const [t, b] of barMap.entries()) {
-                    if (Math.abs(t - chartBar.time) <= tfMs / 2) {
-                        fpBar = b;
-                        break;
-                    }
-                }
+        const getFpBar = (t: number): ParsedFootprintBar | undefined => {
+            if (fpMap.has(t)) return fpMap.get(t);
+            // Nearest within tfMs
+            for (const b of fpBars) {
+                if (Math.abs(b.time - t) < tfMs) return b;
             }
-            if (fpBar) chartBarFpMap.set(chartBar.time, fpBar);
+            return undefined;
+        };
+
+        const spacing = coords.bodySpacing();
+        const rawRowPx = Math.abs(coords.priceToY(lastClose, scale, bounds) - coords.priceToY(lastClose + step, scale, bounds));
+
+        // Dyadic Grouping: Keep rows roughly 12-18px tall so text is crisp and never overlaps
+        let groupLevel = 0;
+        while (groupLevel < 10 && rawRowPx * (2 ** groupLevel) < 13) {
+            groupLevel++;
+        }
+        const groupFactor = 2 ** groupLevel;
+        const groupedStep = step * groupFactor;
+        const groupedRowPx = rawRowPx * groupFactor;
+
+        // Group rows for visible bars
+        interface GroupedRow {
+            price: number;
+            buy: number;
+            sell: number;
+            total: number;
+            delta: number;
+            isDiagBuy?: boolean;
+            isDiagSell?: boolean;
         }
 
-        const statsTableHeight = 66;
-        const chartAreaHeight = Math.max(10, bounds.height - statsTableHeight);
+        interface GroupedBar {
+            bar: ParsedFootprintBar;
+            chartBar: typeof bars[0];
+            rows: GroupedRow[];
+            busiestInBar: number;
+        }
 
-        // busiestRowVol will be derived dynamically after dyadic row grouping
+        const groupedBars: GroupedBar[] = [];
+        let globalBusiest = 0;
 
-        // --- 1. RENDER STACKED IMBALANCE ZONES & NAKED POCS ---
+        for (let i = 0; i < bars.length; i++) {
+            const chartBar = bars[i]!;
+            const x = coords.timeToX(chartBar.time);
+            if (x < -100 || x > plotW + 100) continue;
+
+            const fpBar = getFpBar(chartBar.time);
+            if (!fpBar || !fpBar.levels || fpBar.levels.length === 0) continue;
+
+            const rowMap = new Map<number, { buy: number; sell: number }>();
+            for (const lvl of fpBar.levels) {
+                const bin = Math.floor(lvl.price / groupedStep) * groupedStep;
+                const cur = rowMap.get(bin) || { buy: 0, sell: 0 };
+                cur.buy += lvl.askVolume;
+                cur.sell += lvl.bidVolume;
+                rowMap.set(bin, cur);
+            }
+
+            const sortedBins = [...rowMap.keys()].sort((a, b) => a - b);
+            let barBusiest = 0;
+            const rows: GroupedRow[] = [];
+
+            for (const p of sortedBins) {
+                const c = rowMap.get(p)!;
+                const tot = c.buy + c.sell;
+                if (tot > barBusiest) barBusiest = tot;
+                if (tot > globalBusiest) globalBusiest = tot;
+
+                // Check diagonal imbalance against adjacent rows
+                const up = rowMap.get(p + groupedStep);
+                const down = rowMap.get(p - groupedStep);
+                const isDiagSell = c.sell > 0 && (!up || up.buy === 0 || c.sell >= up.buy * 3.0);
+                const isDiagBuy = c.buy > 0 && (!down || down.sell === 0 || c.buy >= down.sell * 3.0);
+
+                rows.push({
+                    price: p,
+                    buy: c.buy,
+                    sell: c.sell,
+                    total: tot,
+                    delta: c.buy - c.sell,
+                    isDiagBuy,
+                    isDiagSell,
+                });
+            }
+
+            groupedBars.push({
+                bar: fpBar,
+                chartBar,
+                rows,
+                busiestInBar: barBusiest,
+            });
+        }
+
         ctx.save();
         ctx.beginPath();
-        ctx.rect(0, bounds.top, coords.width, chartAreaHeight);
+        ctx.rect(0, bounds.top, plotW, chartAreaHeight);
         ctx.clip();
 
-        const bodySpacing = coords.bodySpacing();
-        const barWidth = Math.max(6, Math.min(240, bodySpacing * 0.90));
-
-        // Dynamically compute zone mitigation against all chart bars
+        // 1. Stacked Imbalance Zones
         for (const zone of stackedZones) {
-            if (zone.endTime !== null) continue;
-            for (let i = 0; i < args.bars.length; i++) {
-                const cb = args.bars[i]!;
-                if (cb.time <= zone.startTime) continue;
-                if (zone.side === 'buy' && cb.low <= zone.topPrice) {
-                    zone.endTime = cb.time;
-                    break;
-                } else if (zone.side === 'sell' && cb.high >= zone.bottomPrice) {
-                    zone.endTime = cb.time;
-                    break;
-                }
-            }
+            const y0 = coords.priceToY(zone.topPrice, scale, bounds);
+            const y1 = coords.priceToY(zone.bottomPrice, scale, bounds);
+            const x0 = coords.timeToX(zone.startTime);
+            const x1 = zone.endTime ? coords.timeToX(zone.endTime) : plotW;
+            if (x1 < 0 || x0 > plotW) continue;
+
+            const h = Math.abs(y1 - y0);
+            const top = Math.min(y0, y1);
+            const isBuy = zone.side === 'buy';
+            ctx.fillStyle = isBuy ? 'rgba(46, 189, 133, 0.12)' : 'rgba(246, 70, 93, 0.12)';
+            ctx.fillRect(Math.max(0, x0), top, x1 - Math.max(0, x0), h);
+
+            ctx.strokeStyle = isBuy ? 'rgba(46, 189, 133, 0.45)' : 'rgba(246, 70, 93, 0.45)';
+            ctx.lineWidth = 1;
+            ctx.strokeRect(Math.max(0, x0), top, x1 - Math.max(0, x0), h);
         }
 
-        // Dynamically compute nPOC mitigation against all chart bars
-        for (const np of nakedPocs) {
-            if (np.mitigatedTime !== null) continue;
-            for (let i = 0; i < args.bars.length; i++) {
-                const cb = args.bars[i]!;
-                if (cb.time <= np.startTime) continue;
-                if (cb.low <= np.price && cb.high >= np.price) {
-                    np.mitigatedTime = cb.time;
-                    break;
-                }
-            }
+        // 2. Naked POC Rays
+        for (const poc of nakedPocs) {
+            const y = coords.priceToY(poc.price, scale, bounds);
+            const x0 = coords.timeToX(poc.startTime);
+            const x1 = poc.mitigatedTime ? coords.timeToX(poc.mitigatedTime) : plotW;
+            if (x1 < 0 || x0 > plotW || y < bounds.top || y > bounds.top + chartAreaHeight) continue;
+
+            ctx.strokeStyle = '#f0b90b';
+            ctx.lineWidth = 1.2;
+            ctx.setLineDash([4, 4]);
+            ctx.beginPath();
+            ctx.moveTo(Math.max(0, x0), y);
+            ctx.lineTo(x1, y);
+            ctx.stroke();
+            ctx.setLineDash([]);
         }
 
-        // Only draw zones and POC rays when zoomed in enough (barWidth >= 28)
-        // Zoomed out charts remain clean without horizontal wireframe strips
-        if (barWidth >= 28) {
-            // A. Draw Stacked Imbalance Zones (most recent 10 active/visible zones)
-            const activeZones = stackedZones
-                .filter(z => z.endTime === null || coords.timeToX(z.endTime) > 0)
-                .slice(-10);
+        // 3. Render Each Footprint Candle
+        for (const item of groupedBars) {
+            const { bar: fpBar, chartBar, rows, busiestInBar } = item;
+            const xCenter = coords.timeToX(chartBar.time);
+            const slot = Math.max(spacing, 18);
+            const slotLeft = xCenter - slot / 2;
 
-            for (const zone of activeZones) {
-                const startX = coords.timeToX(zone.startTime);
-                const endX = zone.endTime ? coords.timeToX(zone.endTime) : coords.width + 4;
-                if (endX < 0 || startX > coords.width || endX <= startX) continue;
-
-                const yTop = coords.priceToY(zone.topPrice, scale, bounds);
-                const yBottom = coords.priceToY(zone.bottomPrice, scale, bounds);
-                const zoneY = Math.min(yTop, yBottom);
-                const zoneH = Math.max(2, Math.abs(yBottom - yTop));
-                const zoneW = Math.max(4, endX - startX);
-
-                const isBuy = zone.side === 'buy';
-                const color = isBuy ? '#2ebd85' : '#f6465d';
-
-                ctx.fillStyle = isBuy ? 'rgba(46, 189, 133, 0.14)' : 'rgba(246, 70, 93, 0.14)';
-                ctx.fillRect(startX, zoneY, zoneW, zoneH);
-
-                ctx.strokeStyle = isBuy ? 'rgba(46, 189, 133, 0.60)' : 'rgba(246, 70, 93, 0.60)';
-                ctx.lineWidth = 1;
-                ctx.setLineDash([]);
-                ctx.beginPath();
-                ctx.moveTo(startX, Math.round(zoneY) + 0.5);
-                ctx.lineTo(startX + zoneW, Math.round(zoneY) + 0.5);
-                ctx.moveTo(startX, Math.round(zoneY + zoneH) - 0.5);
-                ctx.lineTo(startX + zoneW, Math.round(zoneY + zoneH) - 0.5);
-                ctx.stroke();
-            }
-
-            // B. Draw Naked Points of Control (most recent 8 active POC rays)
-            const activePocs = nakedPocs
-                .filter(np => np.mitigatedTime === null || coords.timeToX(np.mitigatedTime) > 0)
-                .slice(-8);
-
-            for (const np of activePocs) {
-                const startX = coords.timeToX(np.startTime);
-                const endX = np.mitigatedTime ? coords.timeToX(np.mitigatedTime) : coords.width;
-                if (endX < 0 || startX > coords.width || endX <= startX) continue;
-
-                const y = Math.round(coords.priceToY(np.price, scale, bounds)) + 0.5;
-                ctx.strokeStyle = np.mitigatedTime ? 'rgba(224, 180, 0, 0.25)' : '#e0b400';
-                ctx.lineWidth = 1.2;
-                ctx.setLineDash([3, 3]);
-                ctx.beginPath();
-                ctx.moveTo(startX, y);
-                ctx.lineTo(endX, y);
-                ctx.stroke();
-                ctx.setLineDash([]);
-
-                if (!np.mitigatedTime && endX - startX > 45) {
-                    ctx.fillStyle = '#e0b400';
-                    ctx.font = '9px monospace';
-                    ctx.textAlign = 'right';
-                    ctx.fillText(`nPOC ${np.price.toFixed(1)}`, endX - 6, y - 3);
-                }
-            }
-        }
-
-        // --- 2. RENDER FOOTPRINT BARS ---
-        // Dynamic Dyadic Row Grouping (1:1 with LiquidityMapper FootprintLod)
-        const y0 = coords.priceToY(0, scale, bounds);
-        const yStep = coords.priceToY(step, scale, bounds);
-        const fineRowPx = Math.abs(yStep - y0);
-
-        let multiplier = 1;
-        if (fineRowPx > 0) {
-            while (fineRowPx * multiplier < 13 && multiplier < 4096) {
-                multiplier *= 2;
-            }
-        }
-        const effectiveStep = step * multiplier;
-
-        interface GroupedLevel {
-            price: number;
-            askVolume: number;
-            bidVolume: number;
-            totalVolume: number;
-        }
-
-        interface GroupedBarData {
-            levels: GroupedLevel[];
-            pocPrice: number;
-        }
-
-        const groupedBars = new Map<number, GroupedBarData>();
-        let busiestRowVol = 0;
-
-        for (const [time, fp] of chartBarFpMap.entries()) {
-            const grpMap = new Map<number, GroupedLevel>();
-            for (const lvl of fp.levels) {
-                const k = Math.floor(lvl.price / effectiveStep);
-                const bPrice = k * effectiveStep;
-                let g = grpMap.get(k);
-                if (!g) {
-                    g = { price: bPrice, askVolume: 0, bidVolume: 0, totalVolume: 0 };
-                    grpMap.set(k, g);
-                }
-                g.askVolume += lvl.askVolume;
-                g.bidVolume += lvl.bidVolume;
-                g.totalVolume += lvl.totalVolume;
-            }
-            const levels = Array.from(grpMap.values()).sort((a, b) => a.price - b.price);
-            let pocPrice = levels[0]?.price ?? 0;
-            let maxV = 0;
-            for (const g of levels) {
-                if (g.totalVolume > maxV) {
-                    maxV = g.totalVolume;
-                    pocPrice = g.price;
-                }
-                if (g.totalVolume > busiestRowVol) {
-                    busiestRowVol = g.totalVolume;
-                }
-            }
-            groupedBars.set(time, { levels, pocPrice });
-        }
-        if (busiestRowVol <= 0) busiestRowVol = 1;
-
-        // Progressive Level of Detail:
-        // Tier 1: barWidth < 22 -> Render clean candlesticks (no horizontal wireframe ladders!)
-        if (barWidth < 22) {
-            for (let i = 0; i < args.bars.length; i++) {
-                const chartBar = args.bars[i]!;
-                const x = coords.timeToX(chartBar.time);
-                if (x + barWidth < 0 || x - barWidth > coords.width) continue;
-
-                const yHigh = coords.priceToY(chartBar.high, scale, bounds);
-                const yLow = coords.priceToY(chartBar.low, scale, bounds);
+            if (slot < 26) {
+                // Compact View: Left candle with mini volume profile
                 const yOpen = coords.priceToY(chartBar.open, scale, bounds);
                 const yClose = coords.priceToY(chartBar.close, scale, bounds);
-
-                const isUp = chartBar.close >= chartBar.open;
-                const candleColor = isUp ? '#2ebd85' : '#f6465d';
-
-                // Wick
-                ctx.strokeStyle = candleColor;
-                ctx.lineWidth = 1;
-                ctx.beginPath();
-                ctx.moveTo(x, yHigh);
-                ctx.lineTo(x, yLow);
-                ctx.stroke();
-
-                // Candle Body
-                const bodyY = Math.min(yOpen, yClose);
-                const bodyH = Math.max(2, Math.abs(yClose - yOpen));
-                ctx.fillStyle = candleColor;
-                ctx.fillRect(x - barWidth / 2, bodyY, barWidth, bodyH);
-            }
-        } else {
-            // Tier 2 & 3 & 4: barWidth >= 22 -> Footprint volume ladder
-            const showTwoColumnNumbers = barWidth >= 82;
-            const showSingleDelta = barWidth >= 36 && barWidth < 82;
-
-            for (let i = 0; i < args.bars.length; i++) {
-                const chartBar = args.bars[i]!;
-                const x = coords.timeToX(chartBar.time);
-                if (x + barWidth < 0 || x - barWidth > coords.width) continue;
-
-                const fpBar = chartBarFpMap.get(chartBar.time);
-                const grpData = groupedBars.get(chartBar.time);
-
-                if (!fpBar || !grpData || grpData.levels.length === 0) {
-                    // Fallback ghost candle
-                    const yHigh = coords.priceToY(chartBar.high, scale, bounds);
-                    const yLow = coords.priceToY(chartBar.low, scale, bounds);
-                    const yOpen = coords.priceToY(chartBar.open, scale, bounds);
-                    const yClose = coords.priceToY(chartBar.close, scale, bounds);
-
-                    ctx.strokeStyle = 'rgba(117, 120, 130, 0.3)';
-                    ctx.lineWidth = 1;
-                    ctx.beginPath();
-                    ctx.moveTo(x, yHigh);
-                    ctx.lineTo(x, yLow);
-                    ctx.stroke();
-
-                    const bodyY = Math.min(yOpen, yClose);
-                    const bodyH = Math.max(2, Math.abs(yClose - yOpen));
-                    ctx.fillStyle = 'rgba(255, 255, 255, 0.04)';
-                    ctx.fillRect(x - barWidth / 2, bodyY, barWidth, bodyH);
-                    continue;
-                }
-
-                const left = x - barWidth / 2;
-                const halfWidth = barWidth / 2;
-
-                const groupIndexMap = new Map<number, GroupedLevel>();
-                for (const g of grpData.levels) {
-                    groupIndexMap.set(Math.round(g.price / effectiveStep), g);
-                }
-
-                for (const lvl of grpData.levels) {
-                    const yTop = coords.priceToY(lvl.price + effectiveStep, scale, bounds);
-                    const yBottom = coords.priceToY(lvl.price, scale, bounds);
-                    const cellY = Math.min(yTop, yBottom);
-                    const cellH = Math.max(2, Math.abs(yBottom - yTop));
-
-                    const isPoc = (lvl.price === grpData.pocPrice);
-                    const k = Math.round(lvl.price / effectiveStep);
-
-                    // Diagonal Imbalance
-                    const lvlBelow = groupIndexMap.get(k - 1);
-                    const buyImbalance = Boolean(
-                        lvlBelow &&
-                        lvl.askVolume > 0 &&
-                        (lvlBelow.bidVolume === 0 || lvl.askVolume >= lvlBelow.bidVolume * this.imbRatio)
-                    );
-
-                    const lvlAbove = groupIndexMap.get(k + 1);
-                    const sellImbalance = Boolean(
-                        lvlAbove &&
-                        lvl.bidVolume > 0 &&
-                        (lvlAbove.askVolume === 0 || lvl.bidVolume >= lvlAbove.askVolume * this.imbRatio)
-                    );
-
-                    // Row volume bar: proportional sqrt width behind cell text
-                    const frac = barFraction(lvl.totalVolume, busiestRowVol, 'sqrt');
-                    if (frac > 0) {
-                        const rowBarW = Math.max(2, Math.min(barWidth, barWidth * frac));
-                        if (lvl.askVolume >= 1.15 * lvl.bidVolume) {
-                            ctx.fillStyle = 'rgba(46, 189, 133, 0.24)';
-                        } else if (lvl.bidVolume >= 1.15 * lvl.askVolume) {
-                            ctx.fillStyle = 'rgba(246, 70, 93, 0.24)';
-                        } else {
-                            ctx.fillStyle = 'rgba(255, 255, 255, 0.06)';
-                        }
-                        ctx.fillRect(left, cellY, rowBarW, cellH);
-                    }
-
-                    // Diagonal Imbalance Outline Rectangles
-                    if (cellH >= 3) {
-                        if (sellImbalance) {
-                            ctx.strokeStyle = '#f6465d';
-                            ctx.lineWidth = cellH >= 8 ? 1.5 : 1;
-                            ctx.strokeRect(left + 0.75, cellY + 0.75, halfWidth - 1.5, cellH - 1.5);
-                        }
-                        if (buyImbalance) {
-                            ctx.strokeStyle = '#2ebd85';
-                            ctx.lineWidth = cellH >= 8 ? 1.5 : 1;
-                            ctx.strokeRect(left + halfWidth + 0.75, cellY + 0.75, halfWidth - 1.5, cellH - 1.5);
-                        }
-                    }
-
-                    // POC Highlight border on candle
-                    if (isPoc) {
-                        ctx.strokeStyle = '#e0b400';
-                        ctx.lineWidth = 1.5;
-                        ctx.strokeRect(left + 0.5, cellY + 0.5, barWidth - 1, cellH - 1);
-                    }
-
-                    // Volume text
-                    if (cellH >= 10) {
-                        const yText = cellY + cellH / 2;
-
-                        if (showTwoColumnNumbers) {
-                            // Two columns strictly clipped to their half - NO OVERLAP!
-                            ctx.save();
-                            ctx.beginPath();
-                            ctx.rect(left, cellY, halfWidth, cellH);
-                            ctx.clip();
-                            ctx.textBaseline = 'middle';
-                            ctx.textAlign = 'right';
-                            ctx.font = sellImbalance ? 'bold 10px monospace' : '10px monospace';
-                            ctx.fillStyle = sellImbalance ? '#ff6675' : '#d1d4dc';
-                            ctx.fillText(formatVol(lvl.bidVolume), left + halfWidth - 3, yText);
-                            ctx.restore();
-
-                            ctx.save();
-                            ctx.beginPath();
-                            ctx.rect(left + halfWidth, cellY, halfWidth, cellH);
-                            ctx.clip();
-                            ctx.textBaseline = 'middle';
-                            ctx.textAlign = 'left';
-                            ctx.font = buyImbalance ? 'bold 10px monospace' : '10px monospace';
-                            ctx.fillStyle = buyImbalance ? '#32e09b' : '#d1d4dc';
-                            ctx.fillText(formatVol(lvl.askVolume), left + halfWidth + 3, yText);
-                            ctx.restore();
-                        } else if (showSingleDelta) {
-                            // Single centered Delta in candle
-                            const rowDelta = lvl.askVolume - lvl.bidVolume;
-                            ctx.textBaseline = 'middle';
-                            ctx.textAlign = 'center';
-                            ctx.font = 'bold 9px monospace';
-                            ctx.fillStyle = rowDelta >= 0 ? '#2ebd85' : '#f6465d';
-                            const sign = rowDelta > 0 ? '+' : '';
-                            ctx.fillText(`${sign}${formatVol(rowDelta)}`, left + halfWidth, yText);
-                        }
-                    }
-                }
-
-                // Wicks
                 const yHigh = coords.priceToY(chartBar.high, scale, bounds);
                 const yLow = coords.priceToY(chartBar.low, scale, bounds);
-                const grpPrices = grpData.levels.map(l => coords.priceToY(l.price, scale, bounds));
-                const topLevelY = Math.min(...grpPrices);
-                const btmLevelY = Math.max(...grpPrices);
-                ctx.strokeStyle = fpBar.delta >= 0 ? '#2ebd85' : '#f6465d';
+                const isUp = chartBar.close >= chartBar.open;
+
+                ctx.strokeStyle = isUp ? '#2ebd85' : '#f6465d';
                 ctx.lineWidth = 1;
                 ctx.beginPath();
-                ctx.moveTo(x, yHigh);
-                ctx.lineTo(x, Math.min(yHigh, topLevelY));
-                ctx.moveTo(x, Math.max(yLow, btmLevelY));
-                ctx.lineTo(x, yLow);
+                ctx.moveTo(xCenter, yHigh);
+                ctx.lineTo(xCenter, yLow);
                 ctx.stroke();
+
+                ctx.fillStyle = isUp ? '#2ebd85' : '#f6465d';
+                ctx.fillRect(xCenter - 3, Math.min(yOpen, yClose), 6, Math.max(2, Math.abs(yClose - yOpen)));
+                continue;
+            }
+
+            // Authentic LiquidityMapper Footprint Layout
+            const gap = slot * 0.02;
+            const candleWidth = Math.min(slot * 0.20, 40);
+            const candleCenter = slotLeft + gap + candleWidth / 2;
+            const colLeft = slotLeft + gap + candleWidth + slot * 0.03;
+            const colWidth = Math.max(12, slot - (colLeft - slotLeft) - gap);
+
+            // A. Draw Left-Slid Candle Body & Wicks
+            const yOpen = coords.priceToY(chartBar.open, scale, bounds);
+            const yClose = coords.priceToY(chartBar.close, scale, bounds);
+            const yHigh = coords.priceToY(chartBar.high, scale, bounds);
+            const yLow = coords.priceToY(chartBar.low, scale, bounds);
+            const isUp = chartBar.close >= chartBar.open;
+            const candleColor = isUp ? '#2ebd85' : '#f6465d';
+
+            // Wick
+            ctx.strokeStyle = candleColor;
+            ctx.lineWidth = 1;
+            ctx.beginPath();
+            ctx.moveTo(candleCenter, yHigh);
+            ctx.lineTo(candleCenter, yLow);
+            ctx.stroke();
+
+            // Body
+            ctx.fillStyle = candleColor;
+            const bodyTop = Math.min(yOpen, yClose);
+            const bodyH = Math.max(2, Math.abs(yClose - yOpen));
+            ctx.fillRect(candleCenter - candleWidth / 2, bodyTop, candleWidth, bodyH);
+
+            // B. Draw Footprint Column Rows
+            const split = colLeft + colWidth / 2;
+            const printText = slot >= 50 && groupedRowPx >= 10;
+
+            for (const r of rows) {
+                const y0 = coords.priceToY(r.price, scale, bounds);
+                const y1 = coords.priceToY(r.price + groupedStep, scale, bounds);
+                const topY = Math.min(y0, y1);
+                const h = Math.max(1, Math.abs(y1 - y0) - 1);
+
+                if (topY + h < bounds.top || topY > bounds.top + chartAreaHeight) continue;
+
+                // 1. Horizontal Volume Fraction Bar
+                const fraction = Math.sqrt(r.total / Math.max(1, globalBusiest));
+                const barW = Math.max(2, colWidth * fraction);
+
+                const isBuyDom = r.buy >= r.sell * 1.15;
+                const isSellDom = r.sell >= r.buy * 1.15;
+                ctx.fillStyle = isBuyDom
+                    ? 'rgba(46, 189, 133, 0.72)'
+                    : isSellDom
+                    ? 'rgba(246, 70, 93, 0.72)'
+                    : 'rgba(255, 255, 255, 0.10)';
+                ctx.fillRect(colLeft, topY, barW, h);
+
+                // Subtle split divider
+                ctx.strokeStyle = 'rgba(255, 255, 255, 0.08)';
+                ctx.beginPath();
+                ctx.moveTo(split, topY);
+                ctx.lineTo(split, topY + h);
+                ctx.stroke();
+
+                // 2. Diagonal Imbalance Outlines
+                if (r.isDiagSell && h >= 4) {
+                    ctx.strokeStyle = '#f6465d';
+                    ctx.lineWidth = 1.2;
+                    ctx.strokeRect(colLeft + 0.5, topY + 0.5, split - colLeft - 1, h - 1);
+                }
+                if (r.isDiagBuy && h >= 4) {
+                    ctx.strokeStyle = '#2ebd85';
+                    ctx.lineWidth = 1.2;
+                    ctx.strokeRect(split + 0.5, topY + 0.5, colWidth - (split - colLeft) - 1, h - 1);
+                }
+
+                // 3. Point of Control (POC) Golden Border
+                if (r.total >= busiestInBar && busiestInBar > 0) {
+                    ctx.strokeStyle = '#f0b90b';
+                    ctx.lineWidth = 1.5;
+                    ctx.strokeRect(colLeft + 0.5, topY + 0.5, colWidth - 1, h - 1);
+                }
+
+                // 4. Split Text (Sell x Buy)
+                if (printText) {
+                    const textY = topY + h / 2;
+                    ctx.textBaseline = 'middle';
+                    ctx.font = r.isDiagSell || r.isDiagBuy ? 'bold 9.5px monospace' : '9px monospace';
+
+                    // Sell (Left)
+                    ctx.textAlign = 'right';
+                    ctx.fillStyle = r.isDiagSell ? '#f6465d' : '#f0f0f0';
+                    ctx.fillText(formatVol(r.sell), split - 3, textY);
+
+                    // Buy (Right)
+                    ctx.textAlign = 'left';
+                    ctx.fillStyle = r.isDiagBuy ? '#2ebd85' : '#f0f0f0';
+                    ctx.fillText(formatVol(r.buy), split + 3, textY);
+                }
             }
         }
         ctx.restore();
 
-        // --- 3. DOCKED FOOTPRINT BAR STATS FOOTER ---
+        // ====================================================================
+        // 4. Docked Footprint Bar Stats Footer (Delta, Cum Delta, Volume)
+        // ====================================================================
         const tableTop = bounds.top + chartAreaHeight;
         ctx.fillStyle = '#14151a';
-        ctx.fillRect(0, tableTop, coords.width, statsTableHeight);
+        ctx.fillRect(0, tableTop, plotW, statsTableHeight);
         ctx.strokeStyle = 'rgba(255, 255, 255, 0.08)';
         ctx.lineWidth = 1;
         ctx.beginPath();
         ctx.moveTo(0, tableTop);
-        ctx.lineTo(coords.width, tableTop);
+        ctx.lineTo(plotW, tableTop);
         ctx.stroke();
 
-        // Row divider lines
         ctx.strokeStyle = 'rgba(255, 255, 255, 0.04)';
         ctx.beginPath();
         ctx.moveTo(0, tableTop + 22);
-        ctx.lineTo(coords.width, tableTop + 22);
+        ctx.lineTo(plotW, tableTop + 22);
         ctx.moveTo(0, tableTop + 44);
-        ctx.lineTo(coords.width, tableTop + 44);
+        ctx.lineTo(plotW, tableTop + 44);
         ctx.stroke();
 
-        // Labels column (left sticky)
         ctx.font = '10px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
         ctx.textAlign = 'left';
         ctx.textBaseline = 'middle';
@@ -797,12 +638,12 @@ export class FootprintRendererLayer implements RendererLayerInstance {
         ctx.fillText('Volume', 12, tableTop + 55);
 
         let runningCumDelta = 0;
-        for (let i = 0; i < args.bars.length; i++) {
-            const chartBar = args.bars[i]!;
+        for (let i = 0; i < bars.length; i++) {
+            const chartBar = bars[i]!;
             const x = coords.timeToX(chartBar.time);
-            if (x < 70 || x > coords.width) continue;
+            if (x < 70 || x > plotW) continue;
 
-            const fpBar = chartBarFpMap.get(chartBar.time);
+            const fpBar = getFpBar(chartBar.time);
             const delta = fpBar ? fpBar.delta : 0;
             const volume = fpBar ? fpBar.totalVolume : chartBar.volume || 0;
             runningCumDelta += delta;

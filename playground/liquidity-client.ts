@@ -91,6 +91,10 @@ export interface ParsedFootprintBar {
     totalVolume: number;
     buyVolume: number;
     sellVolume: number;
+    totalBuy?: number;
+    totalSell?: number;
+    maxDelta?: number;
+    minDelta?: number;
     delta: number;
     pocPrice: number;
     levels: ParsedFootprintLevel[];
@@ -201,68 +205,52 @@ export function barFraction(val: number, busiest: number, mode: 'sqrt' | 'linear
 }
 
 /**
- * Dominant side check for cell volume bar tinting.
- */
-export function imbalance(buy: number, sell: number, ratio = 1.15): 'buy' | 'sell' | null {
-    if (buy >= ratio * sell && buy > 0) return 'buy';
-    if (sell >= ratio * buy && sell > 0) return 'sell';
-    return null;
-}
-
-/**
- * Format numbers compactly matching LiquidityMapper (e.g. 1.2M, 450k, 12.5).
+ * Formatting for large numerical volumes ($12.4M, $450k, etc.)
  */
 export function formatVol(val: number): string {
-    if (val === 0) return '0';
     const abs = Math.abs(val);
-    if (abs >= 1_000_000_000) return (val / 1_000_000_000).toFixed(2) + 'B';
-    if (abs >= 1_000_000) return (val / 1_000_000).toFixed(2) + 'M';
-    if (abs >= 1_000) return (val / 1_000).toFixed(1) + 'k';
-    if (abs < 0.1) return val.toFixed(3);
-    if (abs < 1) return val.toFixed(2);
-    return val.toFixed(1);
+    if (abs >= 1e9) return (val / 1e9).toFixed(1) + 'B';
+    if (abs >= 1e6) return (val / 1e6).toFixed(1) + 'M';
+    if (abs >= 1e3) return (val / 1e3).toFixed(1) + 'k';
+    return val.toFixed(0);
 }
 
-/**
- * Diagonal Imbalance Detection (1:1 with LiquidityMapper bar-stats.ts).
- */
 export interface RawImbalance {
     low: number;
     side: 'buy' | 'sell';
     ratio: number;
 }
 
+/**
+ * Diagonal Imbalance detection matching LiquidityMapper src/app/panes/footprint.ts
+ */
 export function diagonalImbalances(
-    rows: [price: number, buyUsd: number, sellUsd: number][],
+    rows: readonly [price: number, buy: number, sell: number][],
     step: number,
-    options: { imbRatio: number; imbMinUsd: number; imbZeros: boolean } = { imbRatio: 3.0, imbMinUsd: 0, imbZeros: true }
+    settings: { imbRatio: number; imbMinUsd: number; imbZeros: boolean } = { imbRatio: 3.0, imbMinUsd: 0, imbZeros: true }
 ): RawImbalance[] {
-    const at = new Map<number, [number, number]>();
-    let lowest = Infinity, highest = -Infinity;
-    for (const [low, buy, sell] of rows) {
-        const index = Math.round(low / step);
-        at.set(index, [buy, sell]);
-        lowest = Math.min(lowest, index);
-        highest = Math.max(highest, index);
-    }
+    const byLow = new Map<number, { buy: number; sell: number }>();
+    for (const r of rows) byLow.set(r[0], { buy: r[1], sell: r[2] });
+
     const found: RawImbalance[] = [];
-    const min = options.imbMinUsd;
+    for (const [low, cell] of byLow.entries()) {
+        const up = byLow.get(low + step);
+        const sellRatio = cell.sell > 0 && (!up || up.buy === 0)
+            ? (settings.imbZeros ? Infinity : null)
+            : up && up.buy > 0 ? cell.sell / up.buy : null;
 
-    const opposite = (index: number, side: 0 | 1): number | null =>
-        index < lowest || index > highest ? null : at.get(index)?.[side] ?? 0;
+        if (sellRatio !== null && sellRatio >= settings.imbRatio && cell.sell >= settings.imbMinUsd) {
+            found.push({ low, side: 'sell', ratio: sellRatio });
+        }
 
-    const flag = (own: number, other: number | null): number | null => {
-        if (other === null || !(own > 0) || own < min) return null;
-        if (other > 0) return own >= options.imbRatio * other ? own / other : null;
-        return options.imbZeros ? Infinity : null;
-    };
+        const down = byLow.get(low - step);
+        const buyRatio = cell.buy > 0 && (!down || down.sell === 0)
+            ? (settings.imbZeros ? Infinity : null)
+            : down && down.sell > 0 ? cell.buy / down.sell : null;
 
-    for (const [low, buy, sell] of rows) {
-        const index = Math.round(low / step);
-        const sellRatio = flag(sell, opposite(index + 1, 0));
-        const buyRatio = flag(buy, opposite(index - 1, 1));
-        if (sellRatio !== null) found.push({ low, side: 'sell', ratio: sellRatio });
-        if (buyRatio !== null) found.push({ low, side: 'buy', ratio: buyRatio });
+        if (buyRatio !== null && buyRatio >= settings.imbRatio && cell.buy >= settings.imbMinUsd) {
+            found.push({ low, side: 'buy', ratio: buyRatio });
+        }
     }
     return found;
 }
@@ -604,8 +592,13 @@ export class LiquidityClient {
         const tfParam = normalizeTimeframe(tf);
 
         try {
-            const url = `/api/v2/footprint?inst=${encodeURIComponent(resolved.multiVenueInst)}&tf=${tfParam}`;
-            const res = await fetch(url);
+            let url = `/api/v2/footprint?inst=${encodeURIComponent(resolved.multiVenueInst)}&tf=${tfParam}`;
+            let res = await fetch(url);
+            if (!res.ok) {
+                // Fallback to binance direct instrument
+                url = `/api/v2/footprint?inst=${encodeURIComponent(resolved.binanceInst)}&tf=${tfParam}`;
+                res = await fetch(url);
+            }
             if (!res.ok) {
                 console.warn('[LiquidityClient] Footprint responded with:', res.status, res.statusText);
                 return { bars: [], step: 1.0, stackedZones: [], nakedPocs: [] };
@@ -680,6 +673,10 @@ export class LiquidityClient {
                     totalVolume: b.buyUsd + b.sellUsd,
                     buyVolume: b.buyUsd,
                     sellVolume: b.sellUsd,
+                    totalBuy: b.buyUsd,
+                    totalSell: b.sellUsd,
+                    maxDelta: b.buyUsd - b.sellUsd,
+                    minDelta: b.buyUsd - b.sellUsd,
                     delta: b.buyUsd - b.sellUsd,
                     pocPrice: poc,
                     levels
@@ -785,19 +782,17 @@ export class LiquidityClient {
         }
     }
 
-    async fetchLiquidations(symbol: string = 'BTCUSDT'): Promise<LiquidationItem[]> {
-        await this.loadCoinsCatalogue();
+    async fetchLiquidations(symbol: string): Promise<LiquidationItem[]> {
         const resolved = this.resolveCoin(symbol);
         try {
-            const url = `/api/v2/liquidations?inst=${encodeURIComponent(resolved.binanceInst)}`;
+            const url = `/api/v2/liquidations?inst=${encodeURIComponent(resolved.binanceInst)}&limit=100`;
             const res = await fetch(url);
             if (!res.ok) return [];
-            const data = await res.json() as { liquidations: [time: number, inst: string, side: 'long'|'short', px: number, usd: number, markPx: number, type: string][] };
-            if (!Array.isArray(data.liquidations)) return [];
-            return data.liquidations.map(l => ({
+            const data = await res.json() as { items: [time: number, inst: string, side: number, price: number, usd: number][] };
+            return (data.items || []).map(l => ({
                 time: l[0],
                 inst: l[1],
-                side: l[2],
+                side: l[2] === 1 ? 'long' : 'short',
                 price: l[3],
                 usd: l[4]
             }));
