@@ -278,6 +278,7 @@ export class FootprintDataEngine implements SeriesDataEngine {
                 this.nakedPocs = result.nakedPocs;
                 this.loadedSymbol = this.host.symbol || 'BTCUSDT';
                 this.loadedTimeframe = timeframe;
+                console.log(`[FootprintDataEngine] Ingested ${this.bars.length} bars for ${cleanSymbol}`);
                 this.pushCurrent();
             }
         } catch (err) {
@@ -348,9 +349,16 @@ export class FootprintRendererLayer implements RendererLayerInstance {
         const tfMs = timeframeToMs(payload?.timeframe || '1h');
         const getFpBar = (t: number): ParsedFootprintBar | undefined => {
             if (fpMap.has(t)) return fpMap.get(t);
-            // Nearest within tfMs
             for (const b of fpBars) {
                 if (Math.abs(b.time - t) < tfMs) return b;
+            }
+            if (fpBars.length > 0 && bars.length > 0) {
+                const latestChartT = bars[bars.length - 1]!.time;
+                const latestFpT = fpBars[fpBars.length - 1]!.time;
+                const offset = latestChartT - latestFpT;
+                for (const b of fpBars) {
+                    if (Math.abs((b.time + offset) - t) < tfMs) return b;
+                }
             }
             return undefined;
         };
@@ -488,32 +496,12 @@ export class FootprintRendererLayer implements RendererLayerInstance {
             const slot = Math.max(spacing, 18);
             const slotLeft = xCenter - slot / 2;
 
-            if (slot < 26) {
-                // Compact View: Left candle with mini volume profile
-                const yOpen = coords.priceToY(chartBar.open, scale, bounds);
-                const yClose = coords.priceToY(chartBar.close, scale, bounds);
-                const yHigh = coords.priceToY(chartBar.high, scale, bounds);
-                const yLow = coords.priceToY(chartBar.low, scale, bounds);
-                const isUp = chartBar.close >= chartBar.open;
-
-                ctx.strokeStyle = isUp ? '#2ebd85' : '#f6465d';
-                ctx.lineWidth = 1;
-                ctx.beginPath();
-                ctx.moveTo(xCenter, yHigh);
-                ctx.lineTo(xCenter, yLow);
-                ctx.stroke();
-
-                ctx.fillStyle = isUp ? '#2ebd85' : '#f6465d';
-                ctx.fillRect(xCenter - 3, Math.min(yOpen, yClose), 6, Math.max(2, Math.abs(yClose - yOpen)));
-                continue;
-            }
-
-            // Authentic LiquidityMapper Footprint Layout
-            const gap = slot * 0.02;
-            const candleWidth = Math.min(slot * 0.20, 40);
-            const candleCenter = slotLeft + gap + candleWidth / 2;
-            const colLeft = slotLeft + gap + candleWidth + slot * 0.03;
-            const colWidth = Math.max(12, slot - (colLeft - slotLeft) - gap);
+            // Authentic LiquidityMapper Footprint Layout (Always full fidelity)
+            const candleWidth = Math.min(Math.max(slot * 0.18, 6), 22);
+            const candleCenter = slotLeft + candleWidth / 2;
+            const colLeft = slotLeft + candleWidth + 4;
+            const colWidth = Math.max(16, slot - candleWidth - 6);
+            const split = colLeft + colWidth / 2;
 
             // A. Draw Left-Slid Candle Body & Wicks
             const yOpen = coords.priceToY(chartBar.open, scale, bounds);
@@ -538,14 +526,13 @@ export class FootprintRendererLayer implements RendererLayerInstance {
             ctx.fillRect(candleCenter - candleWidth / 2, bodyTop, candleWidth, bodyH);
 
             // B. Draw Footprint Column Rows
-            const split = colLeft + colWidth / 2;
-            const printText = slot >= 50 && groupedRowPx >= 10;
+            const printText = colWidth >= 22 && groupedRowPx >= 8;
 
             for (const r of rows) {
                 const y0 = coords.priceToY(r.price, scale, bounds);
                 const y1 = coords.priceToY(r.price + groupedStep, scale, bounds);
                 const topY = Math.min(y0, y1);
-                const h = Math.max(1, Math.abs(y1 - y0) - 1);
+                const h = Math.max(1.2, Math.abs(y1 - y0) - 0.8);
 
                 if (topY + h < bounds.top || topY > bounds.top + chartAreaHeight) continue;
 

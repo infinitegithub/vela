@@ -47,7 +47,9 @@ export interface CoinsCatalogue {
 export interface ResolvedCoinInfo {
     base: string;
     multiVenueInst: string;
+    spotMultiVenueInst: string;
     binanceInst: string;
+    binanceFuturesInst: string;
     bybitInst: string;
     okxInst: string;
     unit: number;
@@ -508,10 +510,17 @@ export class LiquidityClient {
             if (m.bitget?.symbol) venues.push(`bitget:${m.bitget.symbol}`);
             if (m.hyperliquid?.symbol) venues.push(`hyperliquid:${m.hyperliquid.symbol}-PERP`);
 
+            const spotVenues = [
+                `binancespot:${bSym}`,
+                `bitgetspot:${bSym}`,
+                `okxspot:${okSym}`
+            ];
             return {
                 base: coinEntry.coin,
                 multiVenueInst: venues.join(','),
-                binanceInst: `binance:${bSym}`,
+                spotMultiVenueInst: spotVenues.join(','),
+                binanceInst: `binancespot:${bSym}`,
+                binanceFuturesInst: `binance:${bSym}`,
                 bybitInst: `bybit:${bySym}`,
                 okxInst: `okx:${okSym}`,
                 unit: m.binance?.unit || 1,
@@ -525,8 +534,10 @@ export class LiquidityClient {
         const fallbackOkx = clean.includes('-') ? clean : `${base}-USDT-SWAP`;
         return {
             base,
-            multiVenueInst: `binance:${fallbackBinance},bybit:${fallbackBinance},okx:${fallbackOkx}`,
-            binanceInst: `binance:${fallbackBinance}`,
+            multiVenueInst: `binancespot:${fallbackBinance},bitgetspot:${fallbackBinance},okxspot:${fallbackOkx}`,
+            spotMultiVenueInst: `binancespot:${fallbackBinance},bitgetspot:${fallbackBinance},okxspot:${fallbackOkx}`,
+            binanceInst: `binancespot:${fallbackBinance}`,
+            binanceFuturesInst: `binance:${fallbackBinance}`,
             bybitInst: `bybit:${fallbackBinance}`,
             okxInst: `okx:${fallbackOkx}`,
             unit: 1,
@@ -592,11 +603,14 @@ export class LiquidityClient {
         const tfParam = normalizeTimeframe(tf);
 
         try {
-            let url = `/api/v2/footprint?inst=${encodeURIComponent(resolved.multiVenueInst)}&tf=${tfParam}`;
+            let url = `/api/v2/footprint?inst=${encodeURIComponent(resolved.spotMultiVenueInst || resolved.binanceInst)}&tf=${tfParam}`;
             let res = await fetch(url);
             if (!res.ok) {
-                // Fallback to binance direct instrument
                 url = `/api/v2/footprint?inst=${encodeURIComponent(resolved.binanceInst)}&tf=${tfParam}`;
+                res = await fetch(url);
+            }
+            if (!res.ok) {
+                url = `/api/v2/footprint?inst=${encodeURIComponent(resolved.binanceFuturesInst || resolved.multiVenueInst)}&tf=${tfParam}`;
                 res = await fetch(url);
             }
             if (!res.ok) {

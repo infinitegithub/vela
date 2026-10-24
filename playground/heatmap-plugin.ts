@@ -211,6 +211,11 @@ export class HeatGL {
         gl.linkProgram(program);
         this.program = program;
 
+        try {
+            const vao = gl.createVertexArray();
+            gl.bindVertexArray(vao);
+        } catch (_) {}
+
         for (const name of ['grid', 'lut', 'view', 'tex', 'range', 'bidC', 'bidS', 'askC', 'askS', 'fill', 'fillRgb']) {
             this.loc[name] = gl.getUniformLocation(program, name);
         }
@@ -455,19 +460,25 @@ export class HeatmapDataEngine implements SeriesDataEngine {
         const tfMs = timeframeToMs(tf);
 
         try {
-            // 1. Fetch real historical resting columns
-            const colResp = await fetch('/api/v2/columns?inst=binance:' + cleanSymbol);
-            if (colResp.ok) {
-                const buf = await colResp.arrayBuffer();
-                const decoded = decodeColumnsBinary(buf);
-                if (decoded.columns.size > 0) {
-                    this.step = decoded.step;
-                    this.stepMs = decoded.stepMs;
-                    this.maxLevelUsd = Math.max(this.maxLevelUsd, decoded.maxUsd);
-                    for (const [t, lvls] of decoded.columns.entries()) {
-                        this.barLevels.set(t, lvls);
-                    }
+            // 1. Fetch real historical resting columns (spot recorder is actively recording columns)
+            let colResp = await fetch('/api/v2/columns?inst=binancespot:' + cleanSymbol);
+            let buf = colResp.ok ? await colResp.arrayBuffer() : null;
+            let decoded = buf ? decodeColumnsBinary(buf) : null;
+            if (!decoded || decoded.columns.size === 0) {
+                colResp = await fetch('/api/v2/columns?inst=binance:' + cleanSymbol);
+                if (colResp.ok) {
+                    buf = await colResp.arrayBuffer();
+                    decoded = decodeColumnsBinary(buf);
                 }
+            }
+            if (decoded && decoded.columns.size > 0) {
+                this.step = decoded.step;
+                this.stepMs = decoded.stepMs;
+                this.maxLevelUsd = Math.max(this.maxLevelUsd, decoded.maxUsd);
+                for (const [t, lvls] of decoded.columns.entries()) {
+                    this.barLevels.set(t, lvls);
+                }
+                console.log(`[HeatmapDataEngine] Successfully ingested ${this.barLevels.size} orderbook columns`);
             }
 
             // 2. Initial state & step

@@ -1018,12 +1018,11 @@ export class ChartCell {
             native.scheduler.invalidate(2);
         }
         if (resolved === 'footprint') {
-            const native: any = (this.inner?.renderer as any)?.renderer;
+            const native: any = (this.inner?.renderer as any)?.renderer ?? this.inner?.renderer;
             if (native && typeof native.applyViewport === 'function') {
-                const curSpacing = native.coords?.getViewport?.()?.barSpacing ?? native.targetBarSpacing ?? 8;
-                if (curSpacing < 70) {
-                    native.applyViewport({ barSpacing: 95, rightOffset: 5 });
-                }
+                native.applyViewport({ barSpacing: 80, rightOffset: 6 });
+            } else if (this.inner && typeof this.inner.setVisibleRangePreset === 'function') {
+                this.inner.setVisibleRangePreset('1D');
             }
         }
         this.syncStatuslineColors(); // the OHLC ink follows the newly active style's colors
