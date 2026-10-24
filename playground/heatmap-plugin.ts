@@ -75,6 +75,7 @@ export interface HeatmapPayload {
     symbol: string;
     timeframe: string;
     step: number;
+    stepMs: number;
     maxLevelUsd: number;
     barLevels: Map<number, HeatmapBarLevel[]>;
     liveLevels: HeatmapBarLevel[];
@@ -148,6 +149,7 @@ export class HeatmapDataEngine implements SeriesDataEngine {
     private liveLevels: HeatmapBarLevel[] = [];
     private liquidations: HeatmapLiquidation[] = [];
     private step = 20;
+    private stepMs = 60_000;
     private maxLevelUsd = 100_000;
 
     start(host: SeriesDataEngineHost): void {
@@ -236,6 +238,7 @@ export class HeatmapDataEngine implements SeriesDataEngine {
                 const decoded = decodeColumnsBinary(buf);
                 if (decoded.columns.size > 0) {
                     this.step = decoded.step;
+                    this.stepMs = decoded.stepMs;
                     this.maxLevelUsd = Math.max(this.maxLevelUsd, decoded.maxUsd);
                     for (const [t, lvls] of decoded.columns.entries()) {
                         this.barLevels.set(t, lvls);
@@ -261,9 +264,8 @@ export class HeatmapDataEngine implements SeriesDataEngine {
             }
 
             this.pushCurrent();
-        } catch (e) {
-            console.warn('[HeatmapDataEngine] loadData warning:', e);
-            this.pushCurrent();
+        } catch (err) {
+            console.warn('[HeatmapDataEngine] loadData error:', err);
         }
     }
 
@@ -334,6 +336,7 @@ export class HeatmapDataEngine implements SeriesDataEngine {
             symbol: this.host.symbol || 'BTCUSDT',
             timeframe: this.host.timeframe || '1h',
             step: this.step,
+            stepMs: this.stepMs,
             maxLevelUsd: this.maxLevelUsd,
             barLevels: this.barLevels,
             liveLevels: this.liveLevels,
@@ -387,36 +390,37 @@ export class HeatmapRendererLayer implements RendererLayerInstance {
         const maxUsd = Math.max(100_000, payload?.maxLevelUsd || 1_000_000);
         const lastClose = bars.length > 0 ? bars[bars.length - 1]!.close : 80000;
         const step = payload?.step || gridStepFor(lastClose);
+        const stepMs = payload?.stepMs || 60_000;
 
-        const r = coords.visibleLogicalRange();
-        const i0 = Math.max(0, Math.floor(r.from));
-        const i1 = Math.min(bars.length - 1, Math.ceil(r.to));
+        const contrast = (window as any).__heatmapContrast ?? 50;
+        const styleMode = (window as any).__heatmapStyle ?? 'size';
 
-        const lo = Math.log(20_000);
+        const lo = Math.log(15_000);
         const hi = Math.log(Math.max(400_000, maxUsd));
-        const span = Math.max(0.1, hi - lo);
+        // Dynamic contrast shift from LiquidityMapper:
+        const shift = -((contrast - 50) / 50) * Math.log(hi / lo) * 0.75;
+        const winLo = lo * Math.exp(shift);
+        const winHi = hi * Math.exp(shift);
+        const winSpan = Math.max(0.1, winHi - winLo);
 
-        for (let i = i0; i <= i1; i++) {
-            const bar = bars[i]!;
-            const x = coords.logicalToX(i);
-            const barW = Math.max(2, coords.bodySpacing());
-            const xLeft = x - barW / 2;
+        let minT = Infinity;
+        let maxT = -Infinity;
 
-            // Try exact bar.time or closest recorded column within bar window
-            let levels = barLevels?.get(bar.time);
-            if (!levels || levels.length === 0) {
-                if (barLevels && barLevels.size > 0) {
-                    for (const [colT, colLvls] of barLevels.entries()) {
-                        if (Math.abs(colT - bar.time) <= 1800_000 && colLvls.length > 0) {
-                            levels = colLvls;
-                            break;
-                        }
-                    }
-                }
-            }
+        // 1. Time-continuous raster across all recorded 1-minute order book columns
+        if (barLevels && barLevels.size > 0) {
+            for (const [colT, levels] of barLevels.entries()) {
+                if (colT < minT) minT = colT;
+                if (colT > maxT) maxT = colT;
 
-            if (levels && levels.length > 0) {
-                for (const lvl of levels) {
+                const x0 = coords.timeToX(colT);
+                const x1 = coords.timeToX(colT + stepMs);
+                const colW = Math.max(1.5, Math.ceil(x1 - x0));
+
+                if (x1 < -20 || x0 > plotW + 20) continue;
+                if (!levels || levels.length === 0) continue;
+
+                for (let k = 0; k < levels.length; k++) {
+                    const lvl = levels[k]!;
                     const y = coords.priceToY(lvl.price, scale, bounds);
                     const yTop = coords.priceToY(lvl.price + step, scale, bounds);
                     const h = Math.max(1.2, Math.abs(yTop - y));
@@ -424,15 +428,75 @@ export class HeatmapRendererLayer implements RendererLayerInstance {
 
                     if (topY + h < bounds.top || topY > bounds.top + bounds.height) continue;
 
-                    const s = (Math.log(Math.max(1, lvl.totalUsd)) - lo) / span;
-                    if (s < 0.02) continue;
+                    if (styleMode === 'sides') {
+                        // Two hues: Bids (cyan/green) and Asks (orange/red)
+                        const isAsk = lvl.askUsd > lvl.bidUsd;
+                        const val = Math.max(lvl.bidUsd, lvl.askUsd);
+                        const a = Math.min(1, Math.max(0, (val - 15000) / (maxUsd * 0.7)));
+                        if (a < 0.03) continue;
+                        const alphaStr = Math.min(0.92, 0.18 + 0.74 * a).toFixed(2);
+                        ctx.fillStyle = isAsk
+                            ? 'rgba(232, 40, 28, ' + alphaStr + ')'
+                            : 'rgba(46, 189, 133, ' + alphaStr + ')';
+                    } else {
+                        const s = (Math.log(Math.max(1, lvl.totalUsd)) - winLo) / winSpan;
+                        if (s < 0.02) continue;
+                        const idx = Math.min(255, Math.max(0, Math.floor(s * 255)));
+                        ctx.fillStyle = LUT_DARK[idx]!;
+                    }
 
-                    const idx = Math.min(255, Math.max(0, Math.floor(s * 255)));
-                    ctx.fillStyle = LUT_DARK[idx]!;
-                    ctx.fillRect(xLeft, topY, barW, h);
+                    ctx.fillRect(x0, topY, colW + 0.5, h);
                 }
-            } else {
-                // Shader-style smooth density backfill around bar price
+            }
+        }
+
+        // 2. Pre-recording subtle steel-blue baseline fill (left of oldest recorded column)
+        const r = coords.visibleLogicalRange();
+        const i0 = Math.max(0, Math.floor(r.from));
+        const i1 = Math.min(bars.length - 1, Math.ceil(r.to));
+
+        if (minT < Infinity && bars.length > 0) {
+            const oldestX = coords.timeToX(minT);
+            if (oldestX > 0) {
+                for (let i = i0; i <= i1; i++) {
+                    const bar = bars[i]!;
+                    const x = coords.logicalToX(i);
+                    if (x >= oldestX) continue;
+                    const barW = Math.max(2, coords.bodySpacing());
+                    const xLeft = x - barW / 2;
+
+                    const spread = Math.max(step * 8, (bar.high - bar.low) * 1.5);
+                    const rows = 10;
+                    const rowStep = spread / rows;
+                    const centerPrice = (bar.high + bar.low) / 2;
+
+                    for (let row = -rows; row <= rows; row++) {
+                        const p = centerPrice + row * rowStep;
+                        const y = coords.priceToY(p, scale, bounds);
+                        const yTop = coords.priceToY(p + rowStep, scale, bounds);
+                        const h = Math.max(1.2, Math.abs(yTop - y));
+                        const topY = Math.min(y, yTop);
+
+                        if (topY + h < bounds.top || topY > bounds.top + bounds.height) continue;
+
+                        const dist = Math.abs(row) / rows;
+                        const alpha = (1 - dist) * 0.18;
+                        if (alpha < 0.03) continue;
+
+                        ctx.fillStyle = 'rgba(18, 42, 70, ' + alpha.toFixed(2) + ')';
+                        ctx.fillRect(xLeft, topY, barW, h);
+                    }
+                }
+            }
+        }
+
+        // Fallback smooth density if barLevels is not yet loaded
+        if (!barLevels || barLevels.size === 0) {
+            for (let i = i0; i <= i1; i++) {
+                const bar = bars[i]!;
+                const x = coords.logicalToX(i);
+                const barW = Math.max(2, coords.bodySpacing());
+                const xLeft = x - barW / 2;
                 const spread = Math.max(step * 6, (bar.high - bar.low) * 1.8);
                 const rows = 12;
                 const rowStep = spread / rows;
@@ -458,12 +522,13 @@ export class HeatmapRendererLayer implements RendererLayerInstance {
             }
         }
 
-        // Live resting order book depth extending to right margin
-        if (liveLevels && liveLevels.length > 0 && bars.length > 0) {
-            const lastBarX = coords.logicalToX(bars.length - 1);
-            const liveW = Math.max(40, plotW - lastBarX + 80);
+        // 3. Live resting order book depth extending across right margin to price scale
+        if (liveLevels && liveLevels.length > 0) {
+            const liveStartX = maxT > -Infinity ? Math.max(0, coords.timeToX(maxT + stepMs)) : (bars.length > 0 ? coords.logicalToX(bars.length - 1) : 0);
+            const liveW = Math.max(40, plotW - liveStartX + 80);
 
-            for (const lvl of liveLevels) {
+            for (let k = 0; k < liveLevels.length; k++) {
+                const lvl = liveLevels[k]!;
                 const y = coords.priceToY(lvl.price, scale, bounds);
                 const yTop = coords.priceToY(lvl.price + step, scale, bounds);
                 const h = Math.max(1.2, Math.abs(yTop - y));
@@ -471,12 +536,23 @@ export class HeatmapRendererLayer implements RendererLayerInstance {
 
                 if (topY + h < bounds.top || topY > bounds.top + bounds.height) continue;
 
-                const s = (Math.log(Math.max(1, lvl.totalUsd)) - lo) / span;
-                if (s < 0.04) continue;
+                if (styleMode === 'sides') {
+                    const isAsk = lvl.askUsd > lvl.bidUsd;
+                    const val = Math.max(lvl.bidUsd, lvl.askUsd);
+                    const a = Math.min(1, Math.max(0, (val - 15000) / (maxUsd * 0.7)));
+                    if (a < 0.03) continue;
+                    const alphaStr = Math.min(0.95, 0.2 + 0.75 * a).toFixed(2);
+                    ctx.fillStyle = isAsk
+                        ? 'rgba(232, 40, 28, ' + alphaStr + ')'
+                        : 'rgba(46, 189, 133, ' + alphaStr + ')';
+                } else {
+                    const s = (Math.log(Math.max(1, lvl.totalUsd)) - winLo) / winSpan;
+                    if (s < 0.03) continue;
+                    const idx = Math.min(255, Math.max(0, Math.floor(s * 255)));
+                    ctx.fillStyle = LUT_DARK[idx]!;
+                }
 
-                const idx = Math.min(255, Math.max(0, Math.floor(s * 255)));
-                ctx.fillStyle = LUT_DARK[idx]!;
-                ctx.fillRect(lastBarX, topY, liveW, h);
+                ctx.fillRect(liveStartX, topY, liveW, h);
             }
         }
 

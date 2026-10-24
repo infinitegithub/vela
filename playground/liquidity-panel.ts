@@ -58,7 +58,6 @@ export function registerLiquiditySidePanel(): void {
         resizable: true,
         button: true,
         mount: (ctx: WidgetContext, body: HTMLElement, header: SidePanelHeader): SidePanelHandle => {
-            const doc = body.ownerDocument;
             body.style.cssText = 'display: flex; flex-direction: column; height: 100%; overflow-y: auto; background: var(--vela-bg-panel, #111315); color: var(--vela-fg, #d9e2df); font-family: ui-sans-serif, system-ui, sans-serif; font-size: 12px; padding: 12px; gap: 14px; box-sizing: border-box;';
 
             // Clean custom header
@@ -84,6 +83,8 @@ export function registerLiquiditySidePanel(): void {
             // Container content
             const activeSym = ctx.symbol || 'BTCUSDT';
             const baseCoin = activeSym.replace(/USDT$|USD$|USDC$/i, '').toUpperCase();
+            const currentContrast = (window as any).__heatmapContrast ?? 50;
+            const currentStyle = (window as any).__heatmapStyle ?? 'size';
 
             body.innerHTML = `
                 <!-- 1. Coin Switcher -->
@@ -100,7 +101,7 @@ export function registerLiquiditySidePanel(): void {
                 <div style="display: flex; flex-direction: column; gap: 6px; background: rgba(255,255,255,0.02); border: 1px solid #252b2c; border-radius: 6px; padding: 10px;">
                     <div style="font-size: 11px; font-weight: 700; text-transform: uppercase; color: #7d8785;">Active Cell Chart Style</div>
                     <div style="display: flex; gap: 6px;">
-                        <button type="button" id="btn-set-heatmap" style="flex: 1; all: unset; cursor: pointer; background: #e8590c; color: #fff; font-size: 11px; font-weight: 700; text-align: center; padding: 7px 10px; border-radius: 4px; transition: filter 0.15s;">🔥 Liquidity Heatmap</button>
+                        <button type="button" id="btn-set-heatmap" style="flex: 1; all: unset; cursor: pointer; background: #e8590c; color: #fff; font-size: 11px; font-weight: 700; text-align: center; padding: 7px 10px; border-radius: 4px; transition: filter 0.15s; box-shadow: 0 0 10px rgba(232, 89, 12, 0.4);">🔥 Liquidity Heatmap</button>
                         <button type="button" id="btn-set-candles" style="flex: 1; all: unset; cursor: pointer; background: #252b2c; color: #d9e2df; font-size: 11px; font-weight: 600; text-align: center; padding: 7px 10px; border-radius: 4px; transition: background 0.15s;">🕯 Candlesticks</button>
                     </div>
                     <div style="display: flex; gap: 6px; margin-top: 4px;">
@@ -108,7 +109,27 @@ export function registerLiquiditySidePanel(): void {
                     </div>
                 </div>
 
-                <!-- 3. Venues Multi-Select -->
+                <!-- 3. Heatmap Appearance & Contrast Controls (Matching LiquidityMapper) -->
+                <div style="display: flex; flex-direction: column; gap: 8px; background: rgba(255,255,255,0.02); border: 1px solid #252b2c; border-radius: 6px; padding: 10px;">
+                    <div style="display: flex; align-items: center; justify-content: space-between;">
+                        <span style="font-size: 11px; font-weight: 700; text-transform: uppercase; color: #7d8785;">Heatmap Contrast</span>
+                        <div style="display: flex; align-items: center; gap: 6px;">
+                            <span id="lq-contrast-val" style="font-family: monospace; font-size: 10px; color: #5b9bff;">${currentContrast}</span>
+                            <button type="button" id="lq-contrast-auto" style="all: unset; cursor: pointer; font-size: 9px; font-weight: 700; background: #252b2c; color: #36d27c; padding: 2px 6px; border-radius: 3px;">AUTO</button>
+                        </div>
+                    </div>
+                    <input type="range" id="lq-contrast-slider" min="-100" max="100" value="${currentContrast}" style="width: 100%; accent-color: #5b9bff; cursor: pointer; height: 5px;"/>
+                    
+                    <div style="display: flex; align-items: center; justify-content: space-between; margin-top: 4px;">
+                        <span style="font-size: 11px; font-weight: 700; text-transform: uppercase; color: #7d8785;">Colormap Mode</span>
+                    </div>
+                    <div style="display: flex; gap: 6px;">
+                        <button type="button" id="lq-style-size" style="flex: 1; all: unset; cursor: pointer; font-size: 10px; font-weight: 700; text-align: center; padding: 5px 8px; border-radius: 4px; background: ${currentStyle === 'size' ? '#5b9bff' : '#1c1f24'}; color: ${currentStyle === 'size' ? '#fff' : '#c5c8c6'}; border: 1px solid ${currentStyle === 'size' ? '#5b9bff' : '#2b313a'};">Size (Log Scale)</button>
+                        <button type="button" id="lq-style-sides" style="flex: 1; all: unset; cursor: pointer; font-size: 10px; font-weight: 600; text-align: center; padding: 5px 8px; border-radius: 4px; background: ${currentStyle === 'sides' ? '#5b9bff' : '#1c1f24'}; color: ${currentStyle === 'sides' ? '#fff' : '#c5c8c6'}; border: 1px solid ${currentStyle === 'sides' ? '#5b9bff' : '#2b313a'};">Sides (Bids / Asks)</button>
+                    </div>
+                </div>
+
+                <!-- 4. Exchange Feeds (11 Venues Multi-Select) -->
                 <div style="display: flex; flex-direction: column; gap: 6px;">
                     <div style="font-size: 11px; font-weight: 700; text-transform: uppercase; color: #7d8785; letter-spacing: 0.5px;">Exchange Feeds (11 Venues)</div>
                     <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 6px;">
@@ -121,7 +142,7 @@ export function registerLiquiditySidePanel(): void {
                     </div>
                 </div>
 
-                <!-- 4. Quick Add Indicators -->
+                <!-- 5. Quick Add Indicators to Active Cell -->
                 <div style="display: flex; flex-direction: column; gap: 8px; background: rgba(91, 155, 255, 0.04); border: 1px solid rgba(91, 155, 255, 0.2); border-radius: 6px; padding: 10px;">
                     <div style="display: flex; align-items: center; justify-content: space-between;">
                         <span style="font-size: 11px; font-weight: 700; text-transform: uppercase; color: #5b9bff;">Add Indicator to Active Cell</span>
@@ -137,7 +158,7 @@ export function registerLiquiditySidePanel(): void {
                     </div>
                 </div>
 
-                <!-- 5. Order Book Ladder (Live DOM) -->
+                <!-- 6. Order Book Ladder (Live DOM) -->
                 <div style="display: flex; flex-direction: column; gap: 6px; flex: 1 1 auto; min-height: 220px; border-top: 1px solid #252b2c; padding-top: 10px;">
                     <div style="display: flex; align-items: center; justify-content: space-between;">
                         <span style="font-size: 11px; font-weight: 700; text-transform: uppercase; color: #7d8785;">Order Book Ladder (Live)</span>
@@ -153,6 +174,14 @@ export function registerLiquiditySidePanel(): void {
             const getActiveCell = () => {
                 if (!wsInstance) return null;
                 return typeof (wsInstance as any).active === 'function' ? (wsInstance as any).active() : (wsInstance as any).active;
+            };
+
+            const invalidateActiveCell = () => {
+                const cell = getActiveCell();
+                const native: any = (cell?.inner?.renderer as any)?.renderer ?? cell?.inner?.renderer;
+                if (native?.scheduler?.invalidate) {
+                    native.scheduler.invalidate(2);
+                }
             };
 
             // Switch Coin
@@ -179,25 +208,97 @@ export function registerLiquiditySidePanel(): void {
             });
 
             // Switch Chart Styles
-            body.querySelector('#btn-set-heatmap')?.addEventListener('click', () => {
+            const btnHeatmap = body.querySelector('#btn-set-heatmap') as HTMLElement | null;
+            const btnCandles = body.querySelector('#btn-set-candles') as HTMLElement | null;
+            const btnFootprint = body.querySelector('#btn-set-footprint') as HTMLElement | null;
+
+            btnHeatmap?.addEventListener('click', () => {
                 const cell = getActiveCell();
                 if (cell && typeof cell.setPriceStyle === 'function') {
                     cell.setPriceStyle('heatmap');
                 }
+                if (btnHeatmap) {
+                    btnHeatmap.style.background = '#e8590c';
+                    btnHeatmap.style.boxShadow = '0 0 10px rgba(232, 89, 12, 0.4)';
+                }
+                if (btnCandles) {
+                    btnCandles.style.background = '#252b2c';
+                }
+                invalidateActiveCell();
             });
 
-            body.querySelector('#btn-set-candles')?.addEventListener('click', () => {
+            btnCandles?.addEventListener('click', () => {
                 const cell = getActiveCell();
                 if (cell && typeof cell.setPriceStyle === 'function') {
                     cell.setPriceStyle('candles');
                 }
+                if (btnHeatmap) {
+                    btnHeatmap.style.background = '#252b2c';
+                    btnHeatmap.style.boxShadow = 'none';
+                }
+                if (btnCandles) {
+                    btnCandles.style.background = '#5b9bff';
+                }
+                invalidateActiveCell();
             });
 
-            body.querySelector('#btn-set-footprint')?.addEventListener('click', () => {
+            btnFootprint?.addEventListener('click', () => {
                 const cell = getActiveCell();
                 if (cell && typeof cell.setPriceStyle === 'function') {
                     cell.setPriceStyle('footprint');
                 }
+                invalidateActiveCell();
+            });
+
+            // Contrast Slider & Mode Handlers
+            const contrastSlider = body.querySelector('#lq-contrast-slider') as HTMLInputElement | null;
+            const contrastVal = body.querySelector('#lq-contrast-val') as HTMLElement | null;
+            const contrastAuto = body.querySelector('#lq-contrast-auto') as HTMLElement | null;
+            const btnSize = body.querySelector('#lq-style-size') as HTMLElement | null;
+            const btnSides = body.querySelector('#lq-style-sides') as HTMLElement | null;
+
+            contrastSlider?.addEventListener('input', (e) => {
+                const val = Number((e.target as HTMLInputElement).value);
+                (window as any).__heatmapContrast = val;
+                if (contrastVal) contrastVal.textContent = String(val);
+                invalidateActiveCell();
+            });
+
+            contrastAuto?.addEventListener('click', () => {
+                if (contrastSlider) contrastSlider.value = '50';
+                (window as any).__heatmapContrast = 50;
+                if (contrastVal) contrastVal.textContent = '50';
+                invalidateActiveCell();
+            });
+
+            btnSize?.addEventListener('click', () => {
+                (window as any).__heatmapStyle = 'size';
+                if (btnSize) {
+                    btnSize.style.background = '#5b9bff';
+                    btnSize.style.color = '#fff';
+                    btnSize.style.borderColor = '#5b9bff';
+                }
+                if (btnSides) {
+                    btnSides.style.background = '#1c1f24';
+                    btnSides.style.color = '#c5c8c6';
+                    btnSides.style.borderColor = '#2b313a';
+                }
+                invalidateActiveCell();
+            });
+
+            btnSides?.addEventListener('click', () => {
+                (window as any).__heatmapStyle = 'sides';
+                if (btnSides) {
+                    btnSides.style.background = '#5b9bff';
+                    btnSides.style.color = '#fff';
+                    btnSides.style.borderColor = '#5b9bff';
+                }
+                if (btnSize) {
+                    btnSize.style.background = '#1c1f24';
+                    btnSize.style.color = '#c5c8c6';
+                    btnSize.style.borderColor = '#2b313a';
+                }
+                invalidateActiveCell();
             });
 
             // Quick Add Indicators
@@ -253,8 +354,8 @@ export function registerLiquiditySidePanel(): void {
                         }
                     }
 
-                    aggregatedAsks.sort((a, b) => a.price - b.price);
                     aggregatedBids.sort((a, b) => b.price - a.price);
+                    aggregatedAsks.sort((a, b) => a.price - b.price);
 
                     const asks = aggregatedAsks.slice(0, 8).reverse();
                     const bids = aggregatedBids.slice(0, 8);
