@@ -696,9 +696,12 @@ const ICONS = {
     wyckoff: svg('<path d="M8 2.5l5.5 2.8-5.5 2.8-5.5-2.8z"/><path d="M2.5 8.5l5.5 2.8 5.5-2.8"/><path d="M2.5 11.5l5.5 2.8 5.5-2.8"/>'),
     elliott: svg('<polygon points="8 2.5 14 13.5 2 13.5"/>'),
     shuffle: svg('<path d="M11 2.5h3.5v3.5M14 2.5l-4.5 4.5M2 13.5l4-4M11 13.5h3.5V10M14 13.5l-8.5-8.5M2 2.5l3.5 3.5"/>', '0 0 16 16', 13, 13),
+    onchart: svg('<rect x="2" y="2" width="12" height="12" rx="2"/><path d="M4 11l3-4 2.5 2.5L12 6"/>'),
+    trash: svg('<path d="M3 4.5h10M5.5 4.5v8a1 1 0 001 1h3a1 1 0 001-1v-8M6.5 2.5h3"/>'),
 };
 
 const CATEGORIES = [
+    { group: 'YOURS', id: 'onchart', label: 'On this chart', icon: ICONS.onchart, count: 0 },
     { group: 'YOURS', id: 'favorites', label: 'Favorites', icon: ICONS.favorites, count: 0 },
     { group: 'YOURS', id: 'myscripts', label: 'My scripts', icon: ICONS.myscripts, count: 0 },
     { group: 'BUILT-IN', id: 'basic', label: 'Basic', icon: ICONS.basic, count: 79 },
@@ -729,6 +732,33 @@ let selectedIndicator: CatalogIndicator | null = null;
 let isLoaded = false;
 let displayedCards: CatalogIndicator[] = [];
 let selectedCardIndex = 0;
+
+
+export interface ActiveChartIndicatorInfo {
+    id: string;
+    name: string;
+    handle: any;
+    isNative?: boolean;
+}
+
+function getActiveChartIndicators(): ActiveChartIndicatorInfo[] {
+    const ws = wsInstance || (typeof window !== 'undefined' ? (window as any).__ws : null);
+    if (!ws) return [];
+    const activeCell = (typeof ws.active === 'function' ? ws.active() : ws.active)
+        || (typeof ws.cells === 'function' ? ws.cells()[0] : null);
+    if (!activeCell || !activeCell.chart || typeof activeCell.chart.indicators !== 'function') return [];
+
+    try {
+        return activeCell.chart.indicators().map((h: any) => ({
+            id: h.id,
+            name: h.title || (h.nativeType ? h.nativeType.toUpperCase() : 'Indicator'),
+            handle: h,
+            isNative: !!h.nativeType,
+        }));
+    } catch {
+        return [];
+    }
+}
 
 export function setExplorerWorkspaceInstance(ws: VelaWorkspace) {
     wsInstance = ws;
@@ -885,11 +915,165 @@ const BUILTIN_NATIVES: CatalogIndicator[] = [
         name: 'Visible Range Volume Profile (VPVR)',
         family: 'orderflow',
         description: 'Horizontal volume profile by price for the visible candlestick range.',
-        tags: ['volume', 'vpvr', 'profile', 'orderflow'],
+        tags: ['volume', 'vpvr', 'profile', 'orderflow', 'vrvp'],
         image_url: 'https://luxalgo-production.s3.amazonaws.com/library/iclsbsi3h5dhcll7rxy1ayod.png',
         url: '',
         isNative: true,
         nativeType: 'vpvr',
+        isSaved: false,
+        date_displayed: 'Built-in',
+        isNew: false,
+    },
+    {
+        slug: 'native-moving-average',
+        name: 'Moving Average (SMA / EMA)',
+        family: 'trend',
+        description: 'Native core-computed Moving Average supporting Simple (SMA), Exponential (EMA), Smoothed (RMA), and Weighted (WMA) calculations with customizable periods and source.',
+        tags: ['moving average', 'ma', 'ema', 'sma', 'trend', 'native'],
+        image_url: 'https://luxalgo-production.s3.amazonaws.com/library/iclsbsi3h5dhcll7rxy1ayod.png',
+        url: '',
+        isNative: true,
+        nativeType: 'moving-average',
+        isSaved: false,
+        date_displayed: 'Built-in',
+        isNew: false,
+    },
+    {
+        slug: 'native-rsi',
+        name: 'Relative Strength Index (RSI)',
+        family: 'momentum',
+        description: 'Classic Relative Strength Index momentum oscillator with upper/lower bounds, overbought/oversold levels, and smoothed baseline.',
+        tags: ['rsi', 'relative strength index', 'momentum', 'oscillator', 'native'],
+        image_url: 'https://luxalgo-production.s3.amazonaws.com/library/iclsbsi3h5dhcll7rxy1ayod.png',
+        url: '',
+        isNative: true,
+        nativeType: 'rsi',
+        isSaved: false,
+        date_displayed: 'Built-in',
+        isNew: false,
+    },
+    {
+        slug: 'native-macd',
+        name: 'MACD (Moving Average Convergence Divergence)',
+        family: 'momentum',
+        description: 'Moving Average Convergence Divergence with fast line, slow signal line, and color-coded momentum histogram.',
+        tags: ['macd', 'momentum', 'oscillator', 'moving average', 'native'],
+        image_url: 'https://luxalgo-production.s3.amazonaws.com/library/iclsbsi3h5dhcll7rxy1ayod.png',
+        url: '',
+        isNative: true,
+        nativeType: 'macd',
+        isSaved: false,
+        date_displayed: 'Built-in',
+        isNew: false,
+    },
+    {
+        slug: 'native-bollinger',
+        name: 'Bollinger Bands (BB)',
+        family: 'volatility',
+        description: 'Standard deviation volatility bands centered on a simple moving average baseline with customizable multiplier.',
+        tags: ['bollinger bands', 'bb', 'volatility', 'bands', 'native'],
+        image_url: 'https://luxalgo-production.s3.amazonaws.com/library/iclsbsi3h5dhcll7rxy1ayod.png',
+        url: '',
+        isNative: true,
+        nativeType: 'bollinger-bands',
+        isSaved: false,
+        date_displayed: 'Built-in',
+        isNew: false,
+    },
+    {
+        slug: 'native-supertrend',
+        name: 'SuperTrend',
+        family: 'trend',
+        description: 'ATR-based volatility trailing stop line with directional color coding and breakout trend signals.',
+        tags: ['supertrend', 'super trend', 'trend', 'atr', 'trailing stop', 'native'],
+        image_url: 'https://luxalgo-production.s3.amazonaws.com/library/iclsbsi3h5dhcll7rxy1ayod.png',
+        url: '',
+        isNative: true,
+        nativeType: 'supertrend',
+        isSaved: false,
+        date_displayed: 'Built-in',
+        isNew: false,
+    },
+    {
+        slug: 'native-vwap',
+        name: 'VWAP (Volume Weighted Average Price)',
+        family: 'trend',
+        description: 'Volume Weighted Average Price overlay benchmark with optional standard deviation bands.',
+        tags: ['vwap', 'volume weighted average price', 'volume', 'trend', 'native'],
+        image_url: 'https://luxalgo-production.s3.amazonaws.com/library/iclsbsi3h5dhcll7rxy1ayod.png',
+        url: '',
+        isNative: true,
+        nativeType: 'vwap',
+        isSaved: false,
+        date_displayed: 'Built-in',
+        isNew: false,
+    },
+    {
+        slug: 'native-atr',
+        name: 'Average True Range (ATR)',
+        family: 'volatility',
+        description: 'Measures market volatility by decomposing the entire range of an asset for that period.',
+        tags: ['atr', 'average true range', 'volatility', 'native'],
+        image_url: 'https://luxalgo-production.s3.amazonaws.com/library/iclsbsi3h5dhcll7rxy1ayod.png',
+        url: '',
+        isNative: true,
+        nativeType: 'average-true-range',
+        isSaved: false,
+        date_displayed: 'Built-in',
+        isNew: false,
+    },
+    {
+        slug: 'native-obv',
+        name: 'On Balance Volume (OBV)',
+        family: 'volumeflow',
+        description: 'Cumulative volume momentum indicator relating price change to total volume flow.',
+        tags: ['obv', 'on balance volume', 'volume', 'flow', 'native'],
+        image_url: 'https://luxalgo-production.s3.amazonaws.com/library/iclsbsi3h5dhcll7rxy1ayod.png',
+        url: '',
+        isNative: true,
+        nativeType: 'on-balance-volume',
+        isSaved: false,
+        date_displayed: 'Built-in',
+        isNew: false,
+    },
+    {
+        slug: 'native-stochastic',
+        name: 'Stochastic Oscillator',
+        family: 'momentum',
+        description: 'Compares a particular closing price of a security to a range of its prices over a certain period of time.',
+        tags: ['stochastic', 'stoch', 'momentum', 'oscillator', 'native'],
+        image_url: 'https://luxalgo-production.s3.amazonaws.com/library/iclsbsi3h5dhcll7rxy1ayod.png',
+        url: '',
+        isNative: true,
+        nativeType: 'stochastic',
+        isSaved: false,
+        date_displayed: 'Built-in',
+        isNew: false,
+    },
+    {
+        slug: 'native-keltner',
+        name: 'Keltner Channels',
+        family: 'volatility',
+        description: 'Volatility-based envelopes set above and below an exponential moving average baseline using ATR.',
+        tags: ['keltner channels', 'kc', 'volatility', 'channels', 'native'],
+        image_url: 'https://luxalgo-production.s3.amazonaws.com/library/iclsbsi3h5dhcll7rxy1ayod.png',
+        url: '',
+        isNative: true,
+        nativeType: 'keltner-channels',
+        isSaved: false,
+        date_displayed: 'Built-in',
+        isNew: false,
+    },
+    {
+        slug: 'native-parabolic-sar',
+        name: 'Parabolic SAR',
+        family: 'trend',
+        description: 'Trailing stop-and-reverse price points used to identify potential reversals in the market price direction.',
+        tags: ['parabolic sar', 'sar', 'trend', 'native'],
+        image_url: 'https://luxalgo-production.s3.amazonaws.com/library/iclsbsi3h5dhcll7rxy1ayod.png',
+        url: '',
+        isNative: true,
+        nativeType: 'parabolic-sar',
         isSaved: false,
         date_displayed: 'Built-in',
         isNew: false,
@@ -1063,55 +1247,201 @@ export async function openIndicatorExplorer() {
         if (e.target === modalContainer) closeModal();
     };
 
+
+const SEARCH_ALIASES: Record<string, string[]> = {
+    'ema': ['exponential moving average', 'ema', 'moving average'],
+    'sma': ['simple moving average', 'sma', 'moving average'],
+    'ma': ['moving average', 'sma', 'ema'],
+    'wma': ['weighted moving average'],
+    'hma': ['hull moving average'],
+    'rsi': ['relative strength index', 'rsi'],
+    'macd': ['moving average convergence divergence', 'macd'],
+    'bb': ['bollinger bands', 'bollinger'],
+    'kc': ['keltner channels', 'keltner'],
+    'atr': ['average true range', 'atr'],
+    'vwap': ['volume weighted average price', 'vwap'],
+    'vrvp': ['visible range volume profile', 'volume profile', 'vpvr', 'vrvp'],
+    'vpvr': ['visible range volume profile', 'volume profile', 'vrvp', 'vpvr'],
+    'vp': ['volume profile', 'vpvr', 'vrvp', 'volume'],
+    'vol': ['volume'],
+    'smc': ['smart money concepts', 'smc'],
+    'ict': ['inner circle trader', 'ict', 'smc'],
+    'ob': ['order block', 'order blocks', 'orderblock'],
+    'fvg': ['fair value gap', 'fvg', 'imbalance'],
+    'bos': ['break of structure', 'bos'],
+    'choch': ['change of character', 'choch'],
+    'div': ['divergence', 'divergences'],
+    'fib': ['fibonacci'],
+    'stoch': ['stochastic'],
+    'supertrend': ['super trend', 'supertrend'],
+};
+
+function escapeRegex(s: string): string {
+    return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+function isWordMatch(pattern: string, text: string): boolean {
+    if (!text || !pattern) return false;
+    const re = new RegExp(`(?:^|[\\s-_(/[\\]])${escapeRegex(pattern)}(?:[\\s-_)/\\]]|$)`, 'i');
+    return re.test(text);
+}
+
+function rankIndicators(pool: CatalogIndicator[], q: string): CatalogIndicator[] {
+    const rawTokens = q.split(/\s+/).filter(Boolean);
+    const isShort = q.length <= 3;
+    const expansions = SEARCH_ALIASES[q] || [];
+
+    const scored: Array<{ ind: CatalogIndicator; score: number }> = [];
+
+    for (const ind of pool) {
+        const name = (ind.name || '').toLowerCase();
+        const slug = (ind.slug || '').toLowerCase();
+        const desc = (ind.description || '').toLowerCase();
+        const tags = (ind.tags || []).map(t => (t || '').toLowerCase());
+        const family = (ind.family || '').toLowerCase();
+
+        let score = 0;
+
+        // 1. Exact Name Match
+        if (name === q) {
+            score += 10000;
+        } else if (name.startsWith(q + ' ') || name.startsWith(q + '-')) {
+            score += 6000;
+        }
+
+        // 2. Word boundary match in name
+        if (isWordMatch(q, name)) {
+            score += 4500;
+        } else if (!isShort && name.includes(q)) {
+            score += 2000;
+        }
+
+        // 3. Multi-token match in name (e.g. "lux smc")
+        if (rawTokens.length > 1 && rawTokens.every(t => name.includes(t))) {
+            score += 3500;
+        }
+
+        // 4. Alias expansions matching name
+        for (const exp of expansions) {
+            if (exp === name) {
+                score += 9000;
+            } else if (name.startsWith(exp)) {
+                score += 5500;
+            } else if (isWordMatch(exp, name)) {
+                score += 4000;
+            } else if (exp.length > 3 && name.includes(exp)) {
+                score += 2000;
+            }
+        }
+
+        // 5. Slug match
+        if (slug === q || expansions.some(exp => exp.replace(/\s+/g, '-') === slug)) {
+            score += 4500;
+        } else if (slug.startsWith(q + '-')) {
+            score += 2500;
+        } else if (isWordMatch(q, slug)) {
+            score += 1500;
+        }
+
+        // 6. Tag matches
+        for (const t of tags) {
+            if (t === q || expansions.some(exp => exp === t)) {
+                score += 2000;
+            } else if (isWordMatch(q, t)) {
+                score += 1000;
+            } else if (!isShort && t.includes(q)) {
+                score += 400;
+            }
+        }
+
+        // 7. Family match
+        if (family === q) {
+            score += 800;
+        }
+
+        // 8. Native built-in bonus for core terms
+        if (ind.isNative && score > 0) {
+            score += 500;
+        }
+
+        // 9. Whole-word description matching ONLY
+        if (isWordMatch(q, desc)) {
+            score += 80;
+        }
+        for (const exp of expansions) {
+            if (isWordMatch(exp, desc)) {
+                score += 120;
+            }
+        }
+
+        if (score > 0) {
+            scored.push({ ind, score });
+        }
+    }
+
+    scored.sort((a, b) => b.score - a.score);
+    return scored.map(s => s.ind);
+}
+
     // ── Filter & Search Logic ───────────────────────────────────────────
     function getIndicatorsForCurrentView(): CatalogIndicator[] {
         const q = searchQuery.trim().toLowerCase();
+        
+        if (currentTab === 'onchart' && !q) {
+            return []; // onchart view handles its own active list rendering
+        }
+
         let pool: CatalogIndicator[] = [];
 
+        // If search is active (q is non-empty):
+        // Global search across all catalog indicators, built-in natives, and saved scripts!
+        if (q) {
+            if (currentTab === 'favorites') {
+                pool = [...cachedCatalog, ...savedIndicators].filter(i => favoritesSet.has(i.slug));
+            } else if (currentTab === 'myscripts') {
+                pool = [...savedIndicators];
+            } else {
+                pool = [...cachedCatalog, ...savedIndicators];
+            }
+
+            return rankIndicators(pool, q);
+        }
+
+        // When no search is active, filter by category tab:
         if (currentTab === 'favorites') {
             pool = [...cachedCatalog, ...savedIndicators].filter(i => favoritesSet.has(i.slug));
         } else if (currentTab === 'myscripts') {
             pool = [...savedIndicators];
         } else if (currentTab === 'basic') {
-            pool = cachedCatalog.filter(i => i.family === 'trend' || i.family === 'basic');
+            pool = cachedCatalog.filter(i => i.isNative || i.family === 'trend' || i.family === 'basic');
         } else if (currentTab === 'orderflow') {
-            pool = cachedCatalog.filter(i => i.family.includes('orderflow') || i.family.includes('volume') || i.tags?.includes('orderflow'));
+            pool = cachedCatalog.filter(i => (i.family || '').includes('orderflow') || (i.family || '').includes('volume') || (i.tags || []).includes('orderflow'));
         } else if (currentTab === 'allscripts') {
             pool = [...cachedCatalog, ...savedIndicators];
         } else if (currentTab === 'concepts') {
-            pool = cachedCatalog.filter(i => i.family.includes('smc') || i.tags?.includes('concept') || i.family.includes('structure'));
+            pool = cachedCatalog.filter(i => (i.family || '').includes('smc') || (i.tags || []).includes('concept') || (i.family || '').includes('structure'));
         } else if (currentTab === 'trend') {
-            pool = cachedCatalog.filter(i => i.family === 'trend');
+            pool = cachedCatalog.filter(i => (i.family || '') === 'trend');
         } else if (currentTab === 'momentum') {
-            pool = cachedCatalog.filter(i => i.family === 'momentum');
+            pool = cachedCatalog.filter(i => (i.family || '') === 'momentum');
         } else if (currentTab === 'volatility') {
-            pool = cachedCatalog.filter(i => i.family === 'volatility');
+            pool = cachedCatalog.filter(i => (i.family || '') === 'volatility');
         } else if (currentTab === 'volumeflow') {
-            pool = cachedCatalog.filter(i => i.family.includes('volume') || i.family.includes('orderflow'));
+            pool = cachedCatalog.filter(i => (i.family || '').includes('volume') || (i.family || '').includes('orderflow'));
         } else if (currentTab === 'structure') {
-            pool = cachedCatalog.filter(i => i.family.includes('structure'));
+            pool = cachedCatalog.filter(i => (i.family || '').includes('structure'));
         } else if (currentTab === 'smcict') {
-            pool = cachedCatalog.filter(i => i.family.includes('smc') || i.family.includes('ict'));
+            pool = cachedCatalog.filter(i => (i.family || '').includes('smc') || (i.family || '').includes('ict'));
         } else if (currentTab === 'wyckoff') {
-            pool = cachedCatalog.filter(i => i.family.includes('wyckoff'));
+            pool = cachedCatalog.filter(i => (i.family || '').includes('wyckoff'));
         } else if (currentTab === 'elliott') {
-            pool = cachedCatalog.filter(i => i.family.includes('elliott') || i.family.includes('patterns'));
+            pool = cachedCatalog.filter(i => (i.family || '').includes('elliott') || (i.family || '').includes('patterns'));
         } else {
             // Discover
             pool = cachedCatalog;
         }
 
-        if (!q) return pool;
-
-        return pool.filter(ind => {
-            return (
-                ind.name.toLowerCase().includes(q) ||
-                ind.description.toLowerCase().includes(q) ||
-                ind.slug.toLowerCase().includes(q) ||
-                ind.family.toLowerCase().includes(q) ||
-                (ind.tags && ind.tags.some(t => t.toLowerCase().includes(q)))
-            );
-        });
+        return pool;
     }
 
     // ── Render Rail ─────────────────────────────────────────────────────
@@ -1144,8 +1474,9 @@ export async function openIndicatorExplorer() {
             btn.appendChild(iconSpan);
             btn.appendChild(labelSpan);
 
-            // Dynamic count for favorites & myscripts: only show if > 0
+            // Dynamic count for onchart, favorites & myscripts: only show if > 0
             let countVal = cat.count;
+            if (cat.id === 'onchart') countVal = getActiveChartIndicators().length;
             if (cat.id === 'favorites') countVal = favoritesSet.size;
             if (cat.id === 'myscripts') countVal = savedIndicators.length;
 
@@ -1233,6 +1564,118 @@ export async function openIndicatorExplorer() {
     // ── Render Content Area ─────────────────────────────────────────────
     function renderContent() {
         content.replaceChildren();
+
+        // ── On This Chart View ──────────────────────────────────────────
+        if (currentTab === 'onchart' && !searchQuery.trim()) {
+            const activeList = getActiveChartIndicators();
+            displayedCards = [];
+            if (activeList.length === 0) {
+                content.innerHTML = `
+                    <div class="vlx-il-empty">
+                        <div style="font-size: 32px; opacity: 0.6;">📊</div>
+                        <div style="font-weight: 600; font-size: 15px; color: var(--vela-fg-bright, #f0f0f4);">No indicators on active chart</div>
+                        <div style="font-size: 13px; color: var(--vela-fg-muted, #757882); max-width: 320px; line-height: 1.5;">
+                            Select any indicator from the library or built-ins to add it to your chart.
+                        </div>
+                    </div>
+                `;
+                selectedIndicator = null;
+                renderInspector();
+                return;
+            }
+
+            const wrapper = document.createElement('div');
+            wrapper.className = 'vlx-il-onchart-list';
+            wrapper.style.cssText = 'padding: 16px 20px; display: flex; flex-direction: column; gap: 10px; width: 100%; box-sizing: border-box;';
+
+            const heading = document.createElement('div');
+            heading.style.cssText = 'font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.08em; color: var(--vela-fg-muted, #757882); margin-bottom: 4px;';
+            heading.textContent = `Active Indicators on Chart (${activeList.length})`;
+            wrapper.appendChild(heading);
+
+            for (const item of activeList) {
+                const row = document.createElement('div');
+                row.className = 'vlx-il-onchart-row';
+                row.style.cssText = `
+                    display: flex;
+                    align-items: center;
+                    justify-content: space-between;
+                    padding: 12px 16px;
+                    background: var(--vela-surface-elev, #1a1b20);
+                    border: 1px solid var(--vela-border, #262629);
+                    border-radius: 8px;
+                    transition: border-color 0.15s ease, background 0.15s ease;
+                `;
+
+                const info = document.createElement('div');
+                info.style.cssText = 'display: flex; align-items: center; gap: 10px;';
+                
+                const title = document.createElement('span');
+                title.style.cssText = 'font-weight: 600; font-size: 14px; color: var(--vela-fg-bright, #f0f0f4);';
+                title.textContent = item.name;
+
+                const badge = document.createElement('span');
+                badge.style.cssText = 'font-size: 10px; font-weight: 700; text-transform: uppercase; padding: 2px 7px; border-radius: 4px; background: rgba(255,255,255,0.06); color: var(--vela-fg-muted, #a0a5b2); letter-spacing: 0.05em;';
+                badge.textContent = item.isNative ? 'Native' : 'Pine Script';
+
+                const idBadge = document.createElement('span');
+                idBadge.style.cssText = 'font-size: 11px; font-family: monospace; color: var(--vela-fg-muted, #757882);';
+                idBadge.textContent = `#${item.id}`;
+
+                info.appendChild(title);
+                info.appendChild(badge);
+                info.appendChild(idBadge);
+
+                const removeBtn = document.createElement('button');
+                removeBtn.type = 'button';
+                removeBtn.title = 'Remove indicator from chart';
+                removeBtn.style.cssText = `
+                    display: flex;
+                    align-items: center;
+                    gap: 6px;
+                    padding: 6px 14px;
+                    background: rgba(175, 104, 112, 0.15);
+                    border: 1px solid rgba(175, 104, 112, 0.3);
+                    border-radius: 6px;
+                    color: var(--vela-down, #af6870);
+                    font-size: 12px;
+                    font-weight: 600;
+                    cursor: pointer;
+                    transition: all 0.15s ease;
+                `;
+                removeBtn.innerHTML = `${ICONS.close} <span>Remove</span>`;
+                removeBtn.onmouseenter = () => {
+                    removeBtn.style.background = 'rgba(175, 104, 112, 0.25)';
+                    removeBtn.style.borderColor = 'rgba(175, 104, 112, 0.5)';
+                };
+                removeBtn.onmouseleave = () => {
+                    removeBtn.style.background = 'rgba(175, 104, 112, 0.15)';
+                    removeBtn.style.borderColor = 'rgba(175, 104, 112, 0.3)';
+                };
+                removeBtn.onclick = (e) => {
+                    e.stopPropagation();
+                    try {
+                        item.handle.remove();
+                        showToast(`Removed "${item.name}" from chart`);
+                        renderRail();
+                        renderContent();
+                        renderInspector();
+                    } catch (err: any) {
+                        showToast(`Failed to remove: ${err.message}`, true);
+                    }
+                };
+
+                row.appendChild(info);
+                row.appendChild(removeBtn);
+                wrapper.appendChild(row);
+            }
+
+            content.appendChild(wrapper);
+            selectedIndicator = null;
+            renderInspector();
+            return;
+        }
+
         const items = getIndicatorsForCurrentView();
         displayedCards = items;
 
@@ -1331,6 +1774,20 @@ export async function openIndicatorExplorer() {
     function renderInspector() {
         inspector.replaceChildren();
 
+        if (currentTab === 'onchart') {
+            const activeList = getActiveChartIndicators();
+            inspector.innerHTML = `
+                <div style="flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center; color: var(--vela-fg-muted, #757882); gap: 12px; padding: 24px;">
+                    <div style="font-size: 32px; opacity: 0.8;">📊</div>
+                    <div style="font-size: 14px; font-weight: 600; color: var(--vela-fg-bright, #f0f0f4);">Active Chart Indicators</div>
+                    <div style="font-size: 12px; line-height: 1.5; max-width: 260px;">
+                        ${activeList.length} indicator${activeList.length === 1 ? '' : 's'} running on the active chart. You can remove any instance using the Remove button.
+                    </div>
+                </div>
+            `;
+            return;
+        }
+
         if (!selectedIndicator) {
             inspector.innerHTML = `
                 <div style="flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center; color: var(--vela-fg-muted, #757882); gap: 10px;">
@@ -1392,6 +1849,66 @@ export async function openIndicatorExplorer() {
         actions.appendChild(addBtn);
         actions.appendChild(favBtn);
 
+        // If this indicator has matching live instances on the active chart, show Remove from chart
+        const liveMatches = getActiveChartIndicators().filter(h => 
+            h.name.toLowerCase() === ind.name.toLowerCase() ||
+            (ind.isNative && ind.nativeType && h.handle?.nativeType === ind.nativeType)
+        );
+        if (liveMatches.length > 0) {
+            const remBtn = document.createElement('button');
+            remBtn.type = 'button';
+            remBtn.className = 'vlx-il-btn-sec';
+            remBtn.style.color = 'var(--vela-down, #af6870)';
+            remBtn.style.borderColor = 'rgba(175, 104, 112, 0.35)';
+            remBtn.innerHTML = `${ICONS.close} <span>Remove (${liveMatches.length})</span>`;
+            remBtn.title = `Remove one instance of ${ind.name} from chart`;
+            remBtn.onclick = () => {
+                const last = liveMatches[liveMatches.length - 1];
+                if (last) {
+                    try {
+                        last.handle.remove();
+                        showToast(`Removed "${last.name}" from chart`);
+                        renderRail();
+                        renderContent();
+                        renderInspector();
+                    } catch (err: any) {
+                        showToast(`Failed to remove: ${err.message}`, true);
+                    }
+                }
+            };
+            actions.appendChild(remBtn);
+        }
+
+        // If this is a user-saved script, offer delete permanently
+        if (ind.isSaved) {
+            const delBtn = document.createElement('button');
+            delBtn.type = 'button';
+            delBtn.className = 'vlx-il-btn-sec';
+            delBtn.style.color = 'var(--vela-down, #af6870)';
+            delBtn.style.borderColor = 'rgba(175, 104, 112, 0.35)';
+            delBtn.innerHTML = `${ICONS.trash} <span>Delete script</span>`;
+            delBtn.title = `Delete "${ind.name}" permanently`;
+            delBtn.onclick = async () => {
+                if (!confirm(`Delete custom script "${ind.name}"?`)) return;
+                try {
+                    const res = await fetch(`/api/indicators/${encodeURIComponent(ind.slug)}`, { method: 'DELETE' });
+                    if (res.ok) {
+                        savedIndicators = savedIndicators.filter(i => i.slug !== ind.slug);
+                        showToast(`Deleted custom script "${ind.name}"`);
+                        selectedIndicator = null;
+                        renderRail();
+                        renderContent();
+                        renderInspector();
+                    } else {
+                        showToast('Failed to delete script', true);
+                    }
+                } catch (e: any) {
+                    showToast(`Error: ${e.message}`, true);
+                }
+            };
+            actions.appendChild(delBtn);
+        }
+
         inspector.appendChild(media);
         inspector.appendChild(meta);
         inspector.appendChild(title);
@@ -1404,6 +1921,7 @@ export async function openIndicatorExplorer() {
     searchInput.oninput = () => {
         searchQuery = searchInput.value;
         clearBtn.style.display = searchQuery ? 'flex' : 'none';
+        renderRail();
         renderContent();
     };
 
@@ -1507,8 +2025,11 @@ async function applyIndicator(ind: CatalogIndicator, btnElement?: HTMLButtonElem
             activeCell.addNative(ind.nativeType);
             showToast("Added " + ind.name + " to chart");
             if (btnElement) {
-                btnElement.disabled = false;
-                btnElement.textContent = 'Added';
+                btnElement.textContent = '✓ Added to Chart';
+                setTimeout(() => {
+                    btnElement.disabled = false;
+                    btnElement.innerHTML = `Add to chart <span class="vlx-il-btn-kbd">↵</span>`;
+                }, 1800);
             }
             return;
         }
@@ -1542,7 +2063,6 @@ async function applyIndicator(ind: CatalogIndicator, btnElement?: HTMLButtonElem
         let success = false;
         if (ctx && typeof ctx.addIndicator === 'function') {
             await ctx.addIndicator({
-                id: ind.slug,
                 name: ind.name,
                 script,
                 language: 'pine',
@@ -1550,7 +2070,6 @@ async function applyIndicator(ind: CatalogIndicator, btnElement?: HTMLButtonElem
             success = true;
         } else if (activeCell && typeof activeCell.addExternalIndicator === 'function') {
             await activeCell.addExternalIndicator({
-                id: ind.slug,
                 name: ind.name,
                 script,
                 language: 'pine',
