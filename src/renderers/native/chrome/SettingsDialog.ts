@@ -66,12 +66,14 @@ export type HostSettingsRow =
     | { kind: 'heading'; label: string; id?: string }
     | { kind: 'toggle'; label: string; get: () => boolean; set: (v: boolean) => void; id?: string }
     | { kind: 'select'; label: string; options: readonly SettingsSelectOption[]; get: () => string; set: (v: string) => void; id?: string }
-    | { kind: 'color'; label: string; get: () => string; set: (v: string) => void; id?: string };
+    | { kind: 'color'; label: string; get: () => string; set: (v: string) => void; id?: string }
+    | { kind: 'custom'; render: (container: HTMLElement) => void; id?: string; label?: string };
 
 /** A host-contributed settings tab (see `RendererControl.setSettingsSections`). */
 export interface HostSettingsSection {
     title: string;
-    rows: readonly HostSettingsRow[];
+    rows?: readonly HostSettingsRow[];
+    customPane?: (container: HTMLElement) => void;
     /** Tab position: own tab after Symbol (default), end of the rail, or rows INSIDE
      *  the Symbol tab itself (`'symbol'` — e.g. the widget's watermark toggle). */
     placement?: 'after-symbol' | 'end' | 'symbol';
@@ -578,7 +580,21 @@ export class SettingsDialog {
                 // rows drop out, a hidden heading takes its group with it.
                 const scope = hostSectionId(hs);
                 if (settingsIdHidden(scope, this.hiddenSettings)) continue;
-                const rows = filterHiddenHostRows(hs.rows, scope, this.hiddenSettings);
+
+                if (hs.customPane) {
+                    const marker = placement === 'symbol' ? this.sectionTitle(hs.title) : this.section(hs.title);
+                    marker.dataset.sdCustom = 'true';
+                    body.append(marker);
+                    const paneWrap = document.createElement('div');
+                    paneWrap.className = 'vela-sd-custom-pane';
+                    paneWrap.dataset.sdNoGrid = 'true';
+                    paneWrap.style.cssText = 'width: 100%; height: 100%; min-height: 420px; display: flex; flex-direction: column;';
+                    hs.customPane(paneWrap);
+                    body.append(paneWrap);
+                    continue;
+                }
+
+                const rows = filterHiddenHostRows(hs.rows ?? [], scope, this.hiddenSettings);
                 if (rows.length === 0) continue;
                 // 'symbol' inlines rows into the CURRENT pane (a section title, no tab).
                 body.append(placement === 'symbol' ? this.sectionTitle(hs.title) : this.section(hs.title));
@@ -586,6 +602,14 @@ export class SettingsDialog {
                     if (hr.kind === 'heading') body.append(this.sectionTitle(hr.label));
                     else if (hr.kind === 'toggle') body.append(this.boolRow(hr.label, hr.get(), (v) => hr.set(v)));
                     else if (hr.kind === 'color') body.append(this.colorRow(hr.label, hr.get(), (v) => hr.set(v)));
+                    else if (hr.kind === 'custom') {
+                        const customEl = document.createElement('div');
+                        customEl.className = 'vela-field-span vela-settings-custom-row';
+                        customEl.dataset.sdNoGrid = 'true';
+                        customEl.style.cssText = 'grid-column: 1 / -1; width: 100%; height: 100%; min-height: 420px; display: flex; flex-direction: column;';
+                        hr.render(customEl);
+                        body.append(customEl);
+                    }
                     else body.append(this.selectRowLabeled(hr.label, hr.get(), normalizeSelectOptions(hr.options), (v) => hr.set(v)));
                 }
             }
@@ -728,7 +752,7 @@ export class SettingsDialog {
         const shell = document.createElement('div');
         shell.style.cssText = mobile
             ? 'display:flex;min-height:0;flex:1 1 auto;position:relative;overflow:hidden;'
-            : 'display:flex;min-height:360px;max-height:calc(70vh - 100px);flex:1 1 auto;';
+            : 'display:flex;min-height:420px;max-height:calc(80vh - 100px);flex:1 1 auto;';
         const rail = document.createElement('div');
         rail.className = 'vela-sd-rail';
         // Mobile: the class rules turn the rail into the slide-in sidebar; the inline
@@ -760,6 +784,9 @@ export class SettingsDialog {
             if (title !== undefined) {
                 const el = document.createElement('div');
                 el.style.display = 'none';
+                if (child.dataset.sdCustom === 'true') {
+                    el.dataset.sdCustom = 'true';
+                }
                 const tab = document.createElement('button');
                 tab.type = 'button';
                 tab.textContent = title;
@@ -791,7 +818,13 @@ export class SettingsDialog {
 
         const activate = (idx: number): void => {
             panes.forEach((p, i) => {
-                p.el.style.display = i === idx ? 'block' : 'none';
+                const isCustom = p.el.dataset.sdCustom === 'true';
+                p.el.style.display = i === idx ? (isCustom ? 'flex' : 'block') : 'none';
+                if (isCustom) {
+                    p.el.style.flexDirection = 'column';
+                    p.el.style.height = '100%';
+                    p.el.style.flex = '1 1 auto';
+                }
                 p.tab.classList.toggle('on', i === idx);
             });
             this.activeSection = panes[idx]?.title ?? null;
@@ -1253,6 +1286,7 @@ export class SettingsDialog {
     /** Wrap a pane (or a structured rows host) in the shared field grid. */
     private layoutSettingsGrids(pane: HTMLElement): void {
         if (pane.childElementCount === 0) return;
+        if (pane.dataset.sdCustom === 'true' || pane.querySelector('[data-sd-no-grid]')) return;
         const grid = fieldGrid({ variant: 'settings', mobile: this.mobileLayout });
         while (pane.firstChild) grid.appendChild(pane.firstChild);
         pane.appendChild(grid);

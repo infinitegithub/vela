@@ -48,6 +48,7 @@ import {
     setExplorerWorkspaceInstance,
 } from './indicator-explorer';
 import { registerIndicatorsPersistence } from './indicators-persistence';
+import { initSystemLogger, renderLogsUI } from './system-logs';
 import {
     registerWorkspaceLayoutPicker,
     createLocalWorkspaceSource,
@@ -149,7 +150,7 @@ const ws = new VelaWorkspace('#workspace', {
     autofocus: true,
     persist: true,
     storage: playgroundStorage(),
-    settings: { hidden: ['advanced'] },
+    settings: { hidden: [] },
     indicators: async () => {
         try {
             const res = await fetch('/api/indicators');
@@ -181,6 +182,17 @@ const ws = new VelaWorkspace('#workspace', {
 // 3. Bind workspace instances
 setWorkspaceInstance(ws);
 (window as any).ws = ws;
+initSystemLogger(ws);
+
+// Register System Logs tab directly inside Chart Settings
+ws.addSettingsSection({
+    title: 'System Logs',
+    id: 'system-logs',
+    placement: 'end',
+    customPane: (container: HTMLElement) => {
+        renderLogsUI(container);
+    },
+});
 setWatchlistWorkspaceInstance(ws);
 setAlertsWorkspaceInstance(ws);
 setThemeWorkspaceInstance(ws);

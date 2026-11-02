@@ -5,6 +5,7 @@ export { VelaWorkspace } from './VelaWorkspace';
 export type { VelaWorkspaceOptions, WorkspaceEventMap, WorkspaceScriptRun } from './VelaWorkspace';
 export { ChartCell } from './ChartCell';
 export type { CellSeed, CellBoot, CellChartDefaults, PooledCellState, CellNativeInfo } from './ChartCell';
+export type { HostSettingsSection, HostSettingsRow } from '../renderers/native/chrome/SettingsDialog';
 export type { WorkspaceWidgetContext } from './context';
 export { WorkspaceReplay, barClose, lastOpenClosedBy } from './WorkspaceReplay';
 export type { WorkspaceReplayEventMap, WorkspaceReplayStartOptions, WorkspaceReplayHost } from './WorkspaceReplay';

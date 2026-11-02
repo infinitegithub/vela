@@ -103,7 +103,7 @@ export function filterHiddenRows(
 /** The structural slice of a host row this module needs (no callbacks). */
 export interface HostRowIdSource {
     kind: string;
-    label: string;
+    label?: string;
     /** Explicit stable id — labels are display text; set this to survive renames. */
     id?: string;
 }
@@ -111,7 +111,7 @@ export interface HostRowIdSource {
 /** The structural slice of a host section this module needs. */
 export interface HostSectionIdSource {
     title: string;
-    rows: readonly HostRowIdSource[];
+    rows?: readonly HostRowIdSource[];
     id?: string;
 }
 
@@ -122,7 +122,7 @@ export function hostSectionId(s: HostSectionIdSource): string {
 
 /** A host row's leaf id: the explicit `id` when given, else the label's slug. */
 export function hostRowId(r: HostRowIdSource): string {
-    return r.id ?? settingsIdSlug(r.label);
+    return r.id ?? settingsIdSlug(r.label ?? 'custom');
 }
 
 /**
@@ -258,7 +258,7 @@ export function settingsIdCatalog(hostSections: readonly HostSectionIdSource[], 
     for (const hs of hostSections) {
         const scope = hostSectionId(hs);
         ids.add(scope);
-        for (const r of hs.rows) ids.add(`${scope}.${hostRowId(r)}`);
+        for (const r of hs.rows ?? []) ids.add(`${scope}.${hostRowId(r)}`);
     }
     return [...ids];
 }

@@ -74,8 +74,8 @@ export const DIALOG_CSS = `
 .vela-dialog--settings {
     width: fit-content;
     min-width: min(560px, 94vw);
-    max-width: min(720px, 94vw);
-    max-height: 70vh;
+    max-width: min(840px, 94vw);
+    max-height: 80vh;
     font-size: 13px;
     cursor: default;
 }

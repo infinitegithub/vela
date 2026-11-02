@@ -491,7 +491,7 @@ export interface IChartRenderer {
     onChartTypeSettingsChange?(cb: (typeId: string, values: Record<string, unknown>) => void): Unsubscribe;
     /** Host-app settings tabs (callback rows) shown by the renderer's settings dialog.
      *  `id` names a section for the visibility policy (defaults to the title's slug). */
-    setSettingsSections?(sections: ReadonlyArray<{ title: string; rows: readonly unknown[]; id?: string }>): void;
+    setSettingsSections?(sections: ReadonlyArray<{ title: string; rows?: readonly unknown[]; customPane?: (container: HTMLElement) => void; id?: string; placement?: string }>): void;
     /** Settings-dialog visibility policy: `hidden` lists setting ids to hide (a tab, a
      *  group, or a row — subtree semantics). Presentation-only: hidden values keep
      *  being stored and applied. Optional — a renderer without a settings dialog omits it. */

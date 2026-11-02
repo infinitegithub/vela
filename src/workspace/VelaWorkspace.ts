@@ -43,6 +43,7 @@ import { MoreDrawer } from '../widget/more-drawer';
 import { TimezoneDrawer } from '../widget/timezone-drawer';
 import { PriceScaleDrawer } from '../widget/price-scale-drawer';
 import { DrawingPill } from '../widget/drawing-pill';
+import type { HostSettingsSection } from '../renderers/native/chrome/SettingsDialog';
 import { priceStyleIds } from '../renderers/native/core/chartConfig';
 import { resolveIndicators, type IndicatorManifest, type ResolvedIndicator } from '../widget/indicators';
 import { DrawingToolbar } from '../renderers/native/drawings/DrawingToolbar';
@@ -783,6 +784,12 @@ export class VelaWorkspace {
     // ── access ──────────────────────────────────────────────────
     /** The cell with identity `id` (its declared name, or `c<N>` when undeclared), or
      *  undefined when no live cell holds it. */
+    /** Contribute a host settings section/tab to all chart cells in the workspace. */
+    addSettingsSection(section: HostSettingsSection): this {
+        ChartCell.registerSettingsSection(section);
+        return this;
+    }
+
     cell(id: string): ChartCell | undefined {
         return this.cellsById.get(id);
     }

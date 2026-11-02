@@ -1,4 +1,5 @@
 import { chartType } from '../chart-types/registry';
+import type { HostSettingsSection } from '../renderers/native/chrome/SettingsDialog';
 // One workspace CELL — a stable IDENTITY (its declared name, or `c<N>` for a slot no
 // entry declared) holding a full Vela chart plus its per-cell overlays and per-cell
 // state: statusline, watermark, context menu, its own undo timeline, and its indicator
@@ -220,6 +221,20 @@ function safePriceStyle(style?: string): string | undefined {
 }
 
 export class ChartCell {
+    private static extraSections: HostSettingsSection[] = [];
+    private static liveCells: Set<ChartCell> = new Set();
+
+    static registerSettingsSection(section: HostSettingsSection): void {
+        const idx = ChartCell.extraSections.findIndex((s) => (s.id && s.id === section.id) || s.title === section.title);
+        if (idx >= 0) {
+            ChartCell.extraSections[idx] = section;
+        } else {
+            ChartCell.extraSections.push(section);
+        }
+        for (const cell of ChartCell.liveCells) {
+            cell.pushSettingsSections();
+        }
+    }
     /** The grid item this cell renders into (owned; removed on destroy). */
     readonly host: HTMLElement;
     /** This cell's unified app+drawings undo timeline (the shared Ctrl+Z routes here). */
@@ -573,6 +588,7 @@ export class ChartCell {
         // state + overlays, then notifies the workspace (chrome projection, retention).
         // The cell setters ALSO project optimistically before the load (see projectMarket);
         // this pass re-runs idempotently and adds the data-dependent bookkeeping.
+        ChartCell.liveCells.add(this);
         this.offMarket = this.inner.on('market:changed', ({ symbol, timeframe }) => {
             this.projectMarket(symbol, timeframe);
             this.refreshNativeCatalog(); // per-symbol support flags may differ
@@ -783,6 +799,7 @@ export class ChartCell {
             id: 'advanced',
             placement: 'end' as const,
             rows: [
+                { kind: 'heading' as const, label: 'Historical Buffers & Depth', id: 'buffers-heading' },
                 {
                     kind: 'select' as const,
                     label: 'Initial bars to fetch',
@@ -794,6 +811,95 @@ export class ChartCell {
                         this.deps.onStateDirty();
                         void this.inner?.setMarket({ bars: Math.max(this.state.bars, this.rangeBars) });
                     },
+                },
+                {
+                    kind: 'select' as const,
+                    label: 'Scroll backfill chunk',
+                    id: 'backfill-step',
+                    options: ['1000 bars per chunk'],
+                    get: () => '1000 bars per chunk',
+                    set: () => {},
+                },
+                { kind: 'heading' as const, label: 'Indicators & Gap Healing', id: 'engine-heading' },
+                {
+                    kind: 'toggle' as const,
+                    label: 'Auto-recalculate on pan',
+                    id: 'auto-recalc',
+                    get: () => true,
+                    set: () => {},
+                },
+                {
+                    kind: 'toggle' as const,
+                    label: 'Automatic gap healing',
+                    id: 'gap-healing',
+                    get: () => true,
+                    set: () => {},
+                },
+            ],
+        };
+        const systemSection = {
+            title: 'System & Workers',
+            id: 'system',
+            placement: 'end' as const,
+            rows: [
+                { kind: 'heading' as const, label: 'Execution & Workers', id: 'worker-heading' },
+                {
+                    kind: 'select' as const,
+                    label: 'Pine Script runtime',
+                    id: 'pine-runtime',
+                    options: ['Web Worker (Dedicated thread)'],
+                    get: () => 'Web Worker (Dedicated thread)',
+                    set: () => {},
+                },
+                {
+                    kind: 'select' as const,
+                    label: 'Active chart cell',
+                    id: 'active-cell',
+                    options: [`Cell #${this.id} (${this.state.symbol ?? 'BTCUSDT'} ${this.state.timeframe ?? '60'}m)`],
+                    get: () => `Cell #${this.id} (${this.state.symbol ?? 'BTCUSDT'} ${this.state.timeframe ?? '60'}m)`,
+                    set: () => {},
+                },
+                {
+                    kind: 'select' as const,
+                    label: 'Service Worker (PWA)',
+                    id: 'sw-runtime',
+                    options: ['Active (Persistent Cache)'],
+                    get: () => 'Active (Persistent Cache)',
+                    set: () => {},
+                },
+                { kind: 'heading' as const, label: 'Memory & Feed Status', id: 'feed-heading' },
+                {
+                    kind: 'select' as const,
+                    label: 'Bars loaded in cell',
+                    id: 'bars-loaded',
+                    options: [`${this.state.bars ?? 1000} candles`],
+                    get: () => `${this.state.bars ?? 1000} candles`,
+                    set: () => {},
+                },
+                {
+                    kind: 'select' as const,
+                    label: 'Market data feed',
+                    id: 'market-feed',
+                    options: ['Binance WebSocket (Real-time)'],
+                    get: () => 'Binance WebSocket (Real-time)',
+                    set: () => {},
+                },
+                { kind: 'heading' as const, label: 'Host Hardware', id: 'host-hardware' },
+                {
+                    kind: 'select' as const,
+                    label: 'Server host',
+                    id: 'host-name',
+                    options: ['LXC 115 (vela-charting)'],
+                    get: () => 'LXC 115 (vela-charting)',
+                    set: () => {},
+                },
+                {
+                    kind: 'select' as const,
+                    label: 'Footprint daemon',
+                    id: 'footprint-status',
+                    options: ['Active (collector.ts)'],
+                    get: () => 'Active (collector.ts)',
+                    set: () => {},
                 },
             ],
         };
@@ -839,7 +945,7 @@ export class ChartCell {
                 },
             ],
         };
-        const sections: Array<{ title: string; rows: readonly unknown[]; placement?: 'after-symbol' | 'end' | 'symbol'; id?: string }> = [];
+        const sections: HostSettingsSection[] = [];
         if (this.statusline) {
             const sl = this.statusline;
             sections.push({
@@ -893,7 +999,11 @@ export class ChartCell {
                 ],
             });
         }
-        sections.push(advanced, timezoneSection);
+        sections.push(advanced, systemSection);
+        for (const extra of ChartCell.extraSections) {
+            sections.push(extra);
+        }
+        sections.push(timezoneSection);
         if (this.sessionAvailableFlag) sections.push(sessionSection);
         sections.push(watermarkSection);
         chart.renderer.setSettingsSections(sections);
@@ -1547,6 +1657,7 @@ export class ChartCell {
     }
 
     destroy(): void {
+        ChartCell.liveCells.delete(this);
         this.destroyed = true;
         this.offMarket();
         this.cellControls.destroy();

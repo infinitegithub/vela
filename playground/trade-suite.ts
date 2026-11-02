@@ -3,6 +3,15 @@ import type { WidgetContext } from '../src/widget/WidgetContext';
 import type { VelaWorkspace } from '../src/workspace';
 import { Dialog } from '../src/ui';
 import { timeframeToMs } from '../src/data/timeframe';
+import {
+    buildRoundTrips,
+    computeMetrics,
+    computeEdgeScore,
+    dailyStats,
+    type Execution,
+    type RoundTrip,
+    type DayStats
+} from '@luxalgo/journal-core';
 import { BINANCE_WHITE_ICON, BINANCE_YELLOW_ICON } from './binance-icons-data';
 
 registerIcon('trade', '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m16 3 4 4-4 4"/><path d="M20 7H4"/><path d="m8 21-4-4 4-4"/><path d="M4 17h16"/></svg>');
@@ -1681,6 +1690,23 @@ function updateJournalUI() {
         ? state.tradeHistory
         : state.tradeHistory.filter(t => t.symbol === journalSymbolFilter);
 
+    // Official LuxAlgo journal-core calculation
+    const executions: Execution[] = activeFills.map((f: any, idx: number) => ({
+        id: String(f.id || idx),
+        accountId: 'binance-futures',
+        symbol: String(f.symbol || 'UNKNOWN').toUpperCase(),
+        side: (String(f.side).toLowerCase() === 'buy' || f.buyer) ? 'buy' : 'sell',
+        quantity: Math.abs(Number(f.qty || 0)),
+        price: Number(f.price || 0),
+        fee: Math.abs(Number(f.commission || 0)),
+        executedAt: new Date(Number(f.time || Date.now())).toISOString()
+    })).filter((e: any) => e.quantity > 0 && e.price > 0);
+
+    const officialRoundTrips = buildRoundTrips(executions);
+    const metrics = computeMetrics(officialRoundTrips);
+    const edgeScore = computeEdgeScore(metrics);
+    const dailyData = dailyStats(officialRoundTrips);
+
     let totalGrossPnl = 0;
     let totalFees = 0;
     let winCount = 0;
@@ -1864,34 +1890,84 @@ function updateJournalUI() {
             </table>
         `;
     } else if (journalViewMode === 'daily') {
-        const byDay: Record<string, { pnl: number; wins: number; losses: number; count: number; fees: number }> = {};
-        for (const t of activeClosed) {
-            const dayKey = new Date(t.closeTime).toISOString().slice(0, 10);
-            if (!byDay[dayKey]) byDay[dayKey] = { pnl: 0, wins: 0, losses: 0, count: 0, fees: 0 };
-            byDay[dayKey].pnl += t.netPnl;
-            byDay[dayKey].fees += t.fee;
-            byDay[dayKey].count++;
-            if (t.netPnl > 0.0001) byDay[dayKey].wins++;
-            else if (t.netPnl < -0.0001) byDay[dayKey].losses++;
+        // Daily stats map from official journal-core
+        const dayMap: Record<string, any> = {};
+        for (const ds of dailyData) {
+            dayMap[ds.date] = ds;
         }
 
-        const days = Object.keys(byDay).sort().reverse();
-        let dayCardsHtml = '';
-        for (const d of days) {
-            const data = byDay[d];
-            const dColor = data.pnl >= 0 ? 'var(--vela-up, #a7be94)' : 'var(--vela-down, #af6870)';
-            const dWinRate = (data.wins + data.losses > 0) ? Math.round((data.wins / (data.wins + data.losses)) * 100) : 0;
-            dayCardsHtml += `
+        // Calendar calculation for current viewing month
+        const now = new Date();
+        const curYear = now.getFullYear();
+        const curMonth = now.getMonth();
+        const monthName = new Date(curYear, curMonth).toLocaleString('default', { month: 'long', year: 'numeric' });
+        const firstDayOfMonth = new Date(curYear, curMonth, 1).getDay();
+        const startOffset = (firstDayOfMonth === 0 ? 6 : firstDayOfMonth - 1);
+        const daysInMonth = new Date(curYear, curMonth + 1, 0).getDate();
+
+        let calendarCellsHtml = '';
+        for (let i = 0; i < startOffset; i++) {
+            calendarCellsHtml += `<div style="background: var(--vela-bg, #202126); border: 1px solid var(--vela-border, #262629); min-height: 48px; opacity: 0.25; border-radius: 3px;"></div>`;
+        }
+
+        let monthNetPnl = 0;
+        let monthTradingDays = 0;
+        let monthWinDays = 0;
+
+        for (let day = 1; day <= daysInMonth; day++) {
+            const dateStr = `${curYear}-${String(curMonth + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+            const stats = dayMap[dateStr];
+            if (stats) {
+                monthNetPnl += stats.netPnl;
+                monthTradingDays++;
+                if (stats.netPnl >= 0) monthWinDays++;
+
+                const isProfit = stats.netPnl >= 0;
+                const cellBg = isProfit ? 'rgba(167, 190, 148, 0.16)' : 'rgba(175, 104, 112, 0.16)';
+                const cellBorder = isProfit ? 'rgba(167, 190, 148, 0.4)' : 'rgba(175, 104, 112, 0.4)';
+                const pnlColor = isProfit ? 'var(--vela-up, #a7be94)' : 'var(--vela-down, #af6870)';
+                const pnlStr = (isProfit ? '+' : '') + '$' + stats.netPnl.toFixed(2);
+                const wr = stats.trades > 0 ? Math.round((stats.wins / stats.trades) * 100) : 0;
+
+                calendarCellsHtml += `
+                    <div style="background: ${cellBg}; border: 1px solid ${cellBorder}; min-height: 48px; border-radius: 4px; padding: 3px 6px; display: flex; flex-direction: column; justify-content: space-between;" title="${dateStr}: ${stats.trades} trades, ${stats.wins}W / ${stats.losses}L, Fees: $${stats.fees.toFixed(2)}">
+                        <div style="display: flex; justify-content: space-between; align-items: center;">
+                            <span style="font-size: 10px; font-weight: 700; color: var(--vela-text-primary, #eeeef1);">${day}</span>
+                            <span style="font-size: 8px; font-weight: 600; color: var(--vela-text-muted, #757882);">${stats.trades}t</span>
+                        </div>
+                        <div style="text-align: right;">
+                            <div style="font-size: 11px; font-weight: 800; color: ${pnlColor}; font-family: var(--vela-font-mono, monospace); font-variant-numeric: tabular-nums;">${pnlStr}</div>
+                            <div style="font-size: 8px; color: var(--vela-text-muted, #757882);">${wr}% WR</div>
+                        </div>
+                    </div>
+                `;
+            } else {
+                calendarCellsHtml += `
+                    <div style="background: var(--vela-bg-card, #202126); border: 1px solid var(--vela-border, #262629); min-height: 48px; border-radius: 3px; padding: 3px 6px; display: flex; flex-direction: column; opacity: 0.5;">
+                        <span style="font-size: 9.5px; font-weight: 600; color: var(--vela-text-muted, #757882);">${day}</span>
+                    </div>
+                `;
+            }
+        }
+
+        const dayWinRate = monthTradingDays > 0 ? Math.round((monthWinDays / monthTradingDays) * 100) : 0;
+
+        let dayListHtml = '';
+        for (const stats of dailyData) {
+            const isProfit = stats.netPnl >= 0;
+            const dColor = isProfit ? 'var(--vela-up, #a7be94)' : 'var(--vela-down, #af6870)';
+            const dWinRate = stats.trades > 0 ? Math.round((stats.wins / stats.trades) * 100) : 0;
+            dayListHtml += `
                 <div style="background: var(--vela-bg-card, #202126); border: 1px solid var(--vela-border, #262629); border-radius: 4px; padding: 6px 12px; display: flex; align-items: center; justify-content: space-between;">
                     <div>
-                        <div style="font-weight: 700; font-size: 11.5px; color: var(--vela-text-primary, #eeeef1);">${d}</div>
-                        <div style="font-size: 10px; color: var(--vela-text-muted, #757882); margin-top: 2px;">
-                            ${data.count} trades • ${data.wins}W / ${data.losses}L (${dWinRate}% Win Rate) • Fees: $${data.fees.toFixed(3)}
+                        <div style="font-weight: 700; font-size: 11px; color: var(--vela-text-primary, #eeeef1);">${stats.date}</div>
+                        <div style="font-size: 9.5px; color: var(--vela-text-muted, #757882); margin-top: 2px;">
+                            ${stats.trades} trades • ${stats.wins}W / ${stats.losses}L (${dWinRate}% Win Rate) • Fees: $${stats.fees.toFixed(3)}
                         </div>
                     </div>
                     <div style="text-align: right;">
-                        <div style="font-size: 13px; font-weight: 700; color: ${dColor}; font-family: var(--vela-font-mono, monospace); font-variant-numeric: tabular-nums;">
-                            ${data.pnl >= 0 ? '+' : ''}$${data.pnl.toFixed(2)} USDT
+                        <div style="font-size: 12.5px; font-weight: 700; color: ${dColor}; font-family: var(--vela-font-mono, monospace); font-variant-numeric: tabular-nums;">
+                            ${stats.netPnl >= 0 ? '+' : ''}$${stats.netPnl.toFixed(2)} USDT
                         </div>
                     </div>
                 </div>
@@ -1899,8 +1975,35 @@ function updateJournalUI() {
         }
 
         contentHtml = `
-            <div style="padding: 10px; display: flex; flex-direction: column; gap: 6px;">
-                ${dayCardsHtml || '<div style="color: var(--vela-text-muted, #757882); text-align: center; padding: 20px; font-size: 11px;">No daily data recorded yet.</div>'}
+            <div style="padding: 12px 16px; display: flex; flex-direction: column; gap: 14px;">
+                <!-- Heatmap Month Grid -->
+                <div style="background: var(--vela-bg-card, #202126); border: 1px solid var(--vela-border, #262629); border-radius: 6px; padding: 12px;">
+                    <div style="display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid var(--vela-border, #262629); padding-bottom: 8px; margin-bottom: 8px;">
+                        <div style="display: flex; align-items: center; gap: 8px;">
+                            <span style="font-size: 12.5px; font-weight: 800; color: var(--vela-text-primary, #eeeef1);">${monthName}</span>
+                            <span style="font-size: 10px; color: var(--vela-text-muted, #757882);">• LuxAlgo P&L Calendar</span>
+                        </div>
+                        <div style="display: flex; gap: 12px; font-size: 10.5px;">
+                            <div>Month Net: <strong style="color: ${monthNetPnl >= 0 ? 'var(--vela-up, #a7be94)' : 'var(--vela-down, #af6870)'}; font-family: var(--vela-font-mono, monospace);">${monthNetPnl >= 0 ? '+' : ''}$${monthNetPnl.toFixed(2)} USDT</strong></div>
+                            <div>Trading Days: <strong style="color: var(--vela-text-primary, #eeeef1);">${monthTradingDays}</strong></div>
+                            <div>Day Win Rate: <strong style="color: var(--vela-text-primary, #eeeef1);">${dayWinRate}%</strong></div>
+                        </div>
+                    </div>
+
+                    <div style="display: grid; grid-template-columns: repeat(7, 1fr); gap: 4px; text-align: center; font-size: 9px; font-weight: 700; color: var(--vela-text-muted, #757882); text-transform: uppercase; margin-bottom: 4px;">
+                        <div>Mon</div><div>Tue</div><div>Wed</div><div>Thu</div><div>Fri</div><div>Sat</div><div>Sun</div>
+                    </div>
+
+                    <div style="display: grid; grid-template-columns: repeat(7, 1fr); gap: 4px;">
+                        ${calendarCellsHtml}
+                    </div>
+                </div>
+
+                <!-- Daily Breakdown List -->
+                <div style="display: flex; flex-direction: column; gap: 6px;">
+                    <div style="font-size: 10px; font-weight: 700; color: var(--vela-text-muted, #757882); text-transform: uppercase; letter-spacing: 0.5px;">Daily Trade Log</div>
+                    ${dayListHtml || '<div style="color: var(--vela-text-muted, #757882); text-align: center; padding: 20px; font-size: 11px;">No daily data recorded yet.</div>'}
+                </div>
             </div>
         `;
     }
@@ -1937,6 +2040,41 @@ function updateJournalUI() {
                         <span style="font-size: 12px; font-weight: 700; color: var(--vela-text-primary, #eeeef1); font-family: var(--vela-font-mono, monospace);">${profitFactor}</span>
                     </div>
 
+                    <!-- LuxAlgo Edge Score v2 -->
+                    <div title="LuxAlgo Edge Score™ v2 (0-100) — Composite performance score: Win Rate (15%), Profit Factor (25%), Risk-Reward (20%), Drawdown (15%), Recovery (10%), Consistency (15%)" style="background: rgba(167,190,148,0.12); border: 1px solid rgba(167,190,148,0.3); border-radius: 4px; padding: 2px 8px; display: flex; flex-direction: column; cursor: help;">
+                        <span style="font-size: 8.5px; font-weight: 700; text-transform: uppercase; color: var(--vela-up, #a7be94); letter-spacing: 0.5px;">Edge Score™</span>
+                        <div style="display: flex; align-items: baseline; gap: 4px;">
+                            <span style="font-size: 12px; font-weight: 800; color: var(--vela-up, #a7be94); font-family: var(--vela-font-mono, monospace);">
+                                ${edgeScore.score !== null ? edgeScore.score : (officialRoundTrips.length >= 1 ? `${Math.round(Object.values(edgeScore.components).reduce((a, b) => a + b, 0) / 6)}*` : '—')}
+                            </span>
+                            <span style="font-size: 9px; color: var(--vela-text-muted, #757882);">${edgeScore.score !== null ? '/ 100' : (officialRoundTrips.length < 5 ? `(${officialRoundTrips.length}/5)` : '')}</span>
+                        </div>
+                    </div>
+
+                    <!-- Expectancy -->
+                    <div title="Per-trade expected value ($ EV)" style="background: var(--vela-bg-card, #202126); border: 1px solid var(--vela-border, #262629); border-radius: 4px; padding: 2px 8px; display: flex; flex-direction: column;">
+                        <span style="font-size: 8.5px; font-weight: 700; text-transform: uppercase; color: var(--vela-text-muted, #757882); letter-spacing: 0.5px;">Expectancy</span>
+                        <span style="font-size: 12px; font-weight: 700; color: ${metrics.expectancy !== null && metrics.expectancy >= 0 ? 'var(--vela-up, #a7be94)' : 'var(--vela-down, #af6870)'}; font-family: var(--vela-font-mono, monospace);">
+                            ${metrics.expectancy !== null ? `${metrics.expectancy >= 0 ? '+' : ''}$${metrics.expectancy.toFixed(2)}` : '—'}
+                        </span>
+                    </div>
+
+                    <!-- Max Drawdown -->
+                    <div title="Worst peak-to-trough drop in realized equity" style="background: var(--vela-bg-card, #202126); border: 1px solid var(--vela-border, #262629); border-radius: 4px; padding: 2px 8px; display: flex; flex-direction: column;">
+                        <span style="font-size: 8.5px; font-weight: 700; text-transform: uppercase; color: var(--vela-text-muted, #757882); letter-spacing: 0.5px;">Max DD</span>
+                        <span style="font-size: 12px; font-weight: 700; color: var(--vela-down, #af6870); font-family: var(--vela-font-mono, monospace);">
+                            -$${(metrics.maxDrawdown || 0).toFixed(2)}
+                        </span>
+                    </div>
+
+                    <!-- Streak -->
+                    <div title="Current streak and maximum winning streak" style="background: var(--vela-bg-card, #202126); border: 1px solid var(--vela-border, #262629); border-radius: 4px; padding: 2px 8px; display: flex; flex-direction: column;">
+                        <span style="font-size: 8.5px; font-weight: 700; text-transform: uppercase; color: var(--vela-text-muted, #757882); letter-spacing: 0.5px;">Streak</span>
+                        <span style="font-size: 12px; font-weight: 700; color: ${(metrics.currentStreak || 0) > 0 ? 'var(--vela-up, #a7be94)' : (metrics.currentStreak || 0) < 0 ? 'var(--vela-down, #af6870)' : 'var(--vela-text-primary, #eeeef1)'}; font-family: var(--vela-font-mono, monospace);">
+                            ${(metrics.currentStreak || 0) > 0 ? `${metrics.currentStreak}W` : (metrics.currentStreak || 0) < 0 ? `${Math.abs(metrics.currentStreak)}L` : '0'} <span style="font-size: 9px; color: var(--vela-text-muted, #757882);">(Max ${metrics.maxWinStreak}W)</span>
+                        </span>
+                    </div>
+
                     <!-- Close Breakdown -->
                     <div style="background: var(--vela-bg-card, #202126); border: 1px solid var(--vela-border, #262629); border-radius: 4px; padding: 2px 8px; display: flex; flex-direction: column;">
                         <span style="font-size: 8.5px; font-weight: 700; text-transform: uppercase; color: var(--vela-text-muted, #757882); letter-spacing: 0.5px;">Exit Breakdown</span>
@@ -1959,7 +2097,7 @@ function updateJournalUI() {
                     <div style="display: flex; background: var(--vela-bg-card, #202126); border: 1px solid var(--vela-border, #262629); border-radius: 3px; padding: 1px;">
                         <button id="view-mode-trades" style="background: ${journalViewMode === 'trades' ? 'var(--vela-bg-chip, #292a2f)' : 'transparent'}; color: ${journalViewMode === 'trades' ? 'var(--vela-text-primary, #eeeef1)' : 'var(--vela-text-secondary, #757882)'}; border: none; font-size: 10px; font-weight: 600; padding: 2px 7px; border-radius: 2px; cursor: pointer;">Trades (${activeClosed.length})</button>
                         <button id="view-mode-fills" style="background: ${journalViewMode === 'fills' ? 'var(--vela-bg-chip, #292a2f)' : 'transparent'}; color: ${journalViewMode === 'fills' ? 'var(--vela-text-primary, #eeeef1)' : 'var(--vela-text-secondary, #757882)'}; border: none; font-size: 10px; font-weight: 600; padding: 2px 7px; border-radius: 2px; cursor: pointer;">Fills (${activeFills.length})</button>
-                        <button id="view-mode-daily" style="background: ${journalViewMode === 'daily' ? 'var(--vela-bg-chip, #292a2f)' : 'transparent'}; color: ${journalViewMode === 'daily' ? 'var(--vela-text-primary, #eeeef1)' : 'var(--vela-text-secondary, #757882)'}; border: none; font-size: 10px; font-weight: 600; padding: 2px 7px; border-radius: 2px; cursor: pointer;">Daily PnL</button>
+                        <button id="view-mode-daily" style="background: ${journalViewMode === 'daily' ? 'var(--vela-bg-chip, #292a2f)' : 'transparent'}; color: ${journalViewMode === 'daily' ? 'var(--vela-text-primary, #eeeef1)' : 'var(--vela-text-secondary, #757882)'}; border: none; font-size: 10px; font-weight: 600; padding: 2px 7px; border-radius: 2px; cursor: pointer;">P&L Calendar</button>
                     </div>
 
                     <button id="journal-maximize-btn" title="${isJournalMaximized ? 'Dock to bottom' : 'Expand full height'}" style="background: var(--vela-bg-chip, #292a2f); border: 1px solid var(--vela-border, #262629); color: var(--vela-text-secondary, #757882); font-size: 10px; font-weight: 600; padding: 3px 6px; border-radius: 3px; cursor: pointer;">

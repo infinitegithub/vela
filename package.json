@@ -110,6 +110,7 @@
     "vitest": "^4.1.0"
   },
   "dependencies": {
+    "@luxalgo/journal-core": "^0.1.0",
     "@luxalgo/vela-pinets": "^0.2.15",
     "@zag-js/core": "^1.42.0",
     "@zag-js/dialog": "^1.42.0",
