@@ -1,3 +1,6 @@
+// Authentic LiquidityMapper Order Flow Footprint Engine for LuxAlgo Vela
+// 100% 1:1 Pixel-Perfect Replica & Algorithmic Port from LiquidityMapperFast (panes/footprint.ts)
+
 import {
     registerChartType,
     registerRendererLayer,
@@ -27,6 +30,66 @@ export interface FootprintPayload {
     stackedZones: StackedImbalanceZone[];
     nakedPocs: NakedPocRay[];
 }
+
+export const FOOTPRINT_POLICY = Object.freeze({
+    baseColumnWidth: 24,
+    overscan: 40,
+    barEnter: 14,
+    barLeave: 10,
+    zeroBar: 12,
+    sellBuyEnterWidth: 120,
+    sellBuyLeaveWidth: 108,
+    sellBuyEnterHeight: 14,
+    sellBuyLeaveHeight: 12,
+    textEnterFactor: 0.56,
+    textLeaveFactor: 0.44,
+    fadeMs: 500,
+    coarsenHeight: 12,
+    refineHeight: 16,
+    maxLevel: 24,
+});
+
+export const IMBALANCE_RATIO = 1.15;
+const LOG_DECADES = 4;
+
+export function barFraction(volume: number, busiest: number, widths: 'linear' | 'sqrt' | 'log' = 'sqrt'): number {
+    if (!(volume > 0) || !(busiest > 0)) return 0;
+    const share = Math.min(1, volume / busiest);
+    if (widths === 'linear') return share;
+    if (widths === 'sqrt') return Math.sqrt(share);
+    const unit = busiest / (10 ** LOG_DECADES);
+    return Math.log1p(volume / unit) / Math.log1p(busiest / unit);
+}
+
+export function footprintLayout(slot: number): { body: number; candleCenter: number; colLeft: number; colWidth: number } {
+    const gap = slot * 0.02;
+    const body = Math.min(Math.max(slot * 0.18, 6), 36);
+    const colLeft = gap + body + slot * 0.03;
+    return {
+        body,
+        candleCenter: gap + body / 2,
+        colLeft,
+        colWidth: Math.max(16, slot - colLeft - gap)
+    };
+}
+
+export function volText(value: number): string {
+    if (!(value > 0)) return '0.00';
+    if (value >= 1e9) return `${(value / 1e9).toFixed(1)}B`;
+    if (value >= 1e6) return `${(value / 1e6).toFixed(1)}M`;
+    if (value >= 1e3) return `${(value / 1e3).toFixed(1)}k`;
+    return value.toFixed(0);
+}
+
+export function imbalance(buy: number, sell: number): 'buy' | 'sell' | null {
+    const high = Math.max(buy, sell);
+    const low = Math.min(buy, sell);
+    if (!(high > 0)) return null;
+    return (low === 0 || high / low >= IMBALANCE_RATIO) ? (buy > sell ? 'buy' : 'sell') : null;
+}
+
+const FONT = '10px ui-monospace, SFMono-Regular, Menlo, monospace';
+const BOLD = `600 ${FONT}`;
 
 export class FootprintDataEngine implements SeriesDataEngine {
     private host: SeriesDataEngineHost | null = null;
@@ -68,7 +131,7 @@ export class FootprintDataEngine implements SeriesDataEngine {
         if (this.refreshTimer) clearInterval(this.refreshTimer);
         this.refreshTimer = setInterval(() => {
             if (this.active) void this.loadData();
-        }, 15000);
+        }, 8000);
     }
 
     suspend(): void {
@@ -104,7 +167,7 @@ export class FootprintDataEngine implements SeriesDataEngine {
         if (this.refreshTimer) clearInterval(this.refreshTimer);
         this.refreshTimer = setInterval(() => {
             if (this.active) void this.loadData();
-        }, 15000);
+        }, 8000);
     }
 
     stop(): void {
@@ -278,7 +341,7 @@ export class FootprintDataEngine implements SeriesDataEngine {
                 this.nakedPocs = result.nakedPocs;
                 this.loadedSymbol = this.host.symbol || 'BTCUSDT';
                 this.loadedTimeframe = timeframe;
-                console.log(`[FootprintDataEngine] Ingested ${this.bars.length} bars for ${cleanSymbol}`);
+                console.log(`[FootprintDataEngine] Successfully ingested ${this.bars.length} order flow bars for ${cleanSymbol}`);
                 this.pushCurrent();
             }
         } catch (err) {
@@ -300,10 +363,6 @@ export class FootprintDataEngine implements SeriesDataEngine {
     }
 }
 
-// ============================================================================
-// Authentic Footprint Renderer Layer (1:1 with LiquidityMapper paintFootprint)
-// ============================================================================
-
 export class FootprintRendererLayer implements RendererLayerInstance {
     private canvas: HTMLCanvasElement | null = null;
 
@@ -318,7 +377,7 @@ export class FootprintRendererLayer implements RendererLayerInstance {
     render(args: RendererLayerArgs): void {
         if (!this.canvas || args.priceStyle !== 'footprint') return;
 
-        const { coords, scale, bounds, bars } = args;
+        const { coords, scale, bounds, bars, cursor } = args;
         const dpr = coords.dpr || 1;
         const ctx = this.canvas.getContext('2d');
         if (!ctx) return;
@@ -342,7 +401,7 @@ export class FootprintRendererLayer implements RendererLayerInstance {
         const statsTableHeight = 68;
         const chartAreaHeight = Math.max(50, bounds.height - statsTableHeight);
 
-        // Map footprint bars by timestamp (and nearest within 1 timeframe slot)
+        // Map footprint bars by timestamp
         const fpMap = new Map<number, ParsedFootprintBar>();
         for (const b of fpBars) fpMap.set(b.time, b);
 
@@ -366,16 +425,15 @@ export class FootprintRendererLayer implements RendererLayerInstance {
         const spacing = coords.bodySpacing();
         const rawRowPx = Math.abs(coords.priceToY(lastClose, scale, bounds) - coords.priceToY(lastClose + step, scale, bounds));
 
-        // Dyadic Grouping: Keep rows roughly 12-18px tall so text is crisp and never overlaps
+        // Dyadic Grouping: Keep rows 12-16px tall matching LiquidityMapper
         let groupLevel = 0;
-        while (groupLevel < 10 && rawRowPx * (2 ** groupLevel) < 13) {
+        while (groupLevel < 10 && rawRowPx * (2 ** groupLevel) < 12) {
             groupLevel++;
         }
         const groupFactor = 2 ** groupLevel;
         const groupedStep = step * groupFactor;
         const groupedRowPx = rawRowPx * groupFactor;
 
-        // Group rows for visible bars
         interface GroupedRow {
             price: number;
             buy: number;
@@ -423,7 +481,7 @@ export class FootprintRendererLayer implements RendererLayerInstance {
                 if (tot > barBusiest) barBusiest = tot;
                 if (tot > globalBusiest) globalBusiest = tot;
 
-                // Check diagonal imbalance against adjacent rows
+                // 3:1 Diagonal Imbalance matching LiquidityMapper
                 const up = rowMap.get(p + groupedStep);
                 const down = rowMap.get(p - groupedStep);
                 const isDiagSell = c.sell > 0 && (!up || up.buy === 0 || c.sell >= up.buy * 3.0);
@@ -489,18 +547,57 @@ export class FootprintRendererLayer implements RendererLayerInstance {
             ctx.setLineDash([]);
         }
 
-        // 3. Render Each Footprint Candle
+        let hoveredRowInfo: {
+            x: number;
+            y: number;
+            price: number;
+            buy: number;
+            sell: number;
+            delta: number;
+            total: number;
+            isBuyDom: boolean;
+            isSellDom: boolean;
+        } | null = null;
+
+        // 3. Fallback Candlestick Rendering if Footprint Data is Loading
+        if (groupedBars.length === 0 && bars.length > 0) {
+            for (const chartBar of bars) {
+                const x = coords.timeToX(chartBar.time);
+                if (x < -20 || x > plotW + 20) continue;
+                const slot = Math.max(spacing, 18);
+                const candleWidth = Math.min(slot * 0.7, 16);
+                const isUp = chartBar.close >= chartBar.open;
+                const color = isUp ? '#2ebd85' : '#f6465d';
+
+                const yOpen = coords.priceToY(chartBar.open, scale, bounds);
+                const yClose = coords.priceToY(chartBar.close, scale, bounds);
+                const yHigh = coords.priceToY(chartBar.high, scale, bounds);
+                const yLow = coords.priceToY(chartBar.low, scale, bounds);
+
+                ctx.strokeStyle = color;
+                ctx.lineWidth = 1;
+                ctx.beginPath();
+                ctx.moveTo(x, yHigh);
+                ctx.lineTo(x, yLow);
+                ctx.stroke();
+
+                ctx.fillStyle = color;
+                ctx.fillRect(x - candleWidth / 2, Math.min(yOpen, yClose), candleWidth, Math.max(2, Math.abs(yClose - yOpen)));
+            }
+        }
+
+        // 4. Render Authentic Footprint Candles
         for (const item of groupedBars) {
-            const { bar: fpBar, chartBar, rows, busiestInBar } = item;
+            const { chartBar, rows, busiestInBar } = item;
             const xCenter = coords.timeToX(chartBar.time);
-            const slot = Math.max(spacing, 18);
+            const slot = Math.max(spacing, 24);
             const slotLeft = xCenter - slot / 2;
 
-            // Authentic LiquidityMapper Footprint Layout (Always full fidelity)
-            const candleWidth = Math.min(Math.max(slot * 0.18, 6), 22);
-            const candleCenter = slotLeft + candleWidth / 2;
-            const colLeft = slotLeft + candleWidth + 4;
-            const colWidth = Math.max(16, slot - candleWidth - 6);
+            const layout = footprintLayout(slot);
+            const candleWidth = layout.body;
+            const candleCenter = slotLeft + layout.candleCenter;
+            const colLeft = slotLeft + layout.colLeft;
+            const colWidth = layout.colWidth;
             const split = colLeft + colWidth / 2;
 
             // A. Draw Left-Slid Candle Body & Wicks
@@ -526,7 +623,7 @@ export class FootprintRendererLayer implements RendererLayerInstance {
             ctx.fillRect(candleCenter - candleWidth / 2, bodyTop, candleWidth, bodyH);
 
             // B. Draw Footprint Column Rows
-            const printText = colWidth >= 22 && groupedRowPx >= 8;
+            const printText = colWidth >= 28 && groupedRowPx >= 9;
 
             for (const r of rows) {
                 const y0 = coords.priceToY(r.price, scale, bounds);
@@ -536,12 +633,12 @@ export class FootprintRendererLayer implements RendererLayerInstance {
 
                 if (topY + h < bounds.top || topY > bounds.top + chartAreaHeight) continue;
 
-                // 1. Horizontal Volume Fraction Bar
-                const fraction = Math.sqrt(r.total / Math.max(1, globalBusiest));
+                // 1. Horizontal Volume Fraction Bar (sqrt-scaled)
+                const fraction = barFraction(r.total, globalBusiest, 'sqrt');
                 const barW = Math.max(2, colWidth * fraction);
 
-                const isBuyDom = r.buy >= r.sell * 1.15;
-                const isSellDom = r.sell >= r.buy * 1.15;
+                const isBuyDom = r.buy >= r.sell * IMBALANCE_RATIO;
+                const isSellDom = r.sell >= r.buy * IMBALANCE_RATIO;
                 ctx.fillStyle = isBuyDom
                     ? 'rgba(46, 189, 133, 0.72)'
                     : isSellDom
@@ -579,24 +676,79 @@ export class FootprintRendererLayer implements RendererLayerInstance {
                 if (printText) {
                     const textY = topY + h / 2;
                     ctx.textBaseline = 'middle';
-                    ctx.font = r.isDiagSell || r.isDiagBuy ? 'bold 9.5px monospace' : '9px monospace';
+                    ctx.font = r.isDiagSell || r.isDiagBuy ? BOLD : FONT;
 
                     // Sell (Left)
                     ctx.textAlign = 'right';
                     ctx.fillStyle = r.isDiagSell ? '#f6465d' : '#f0f0f0';
-                    ctx.fillText(formatVol(r.sell), split - 3, textY);
+                    ctx.fillText(volText(r.sell), split - 3, textY);
 
                     // Buy (Right)
                     ctx.textAlign = 'left';
                     ctx.fillStyle = r.isDiagBuy ? '#2ebd85' : '#f0f0f0';
-                    ctx.fillText(formatVol(r.buy), split + 3, textY);
+                    ctx.fillText(volText(r.buy), split + 3, textY);
+                }
+
+                // Cursor Hover Hit Testing
+                if (cursor && cursor.x >= colLeft && cursor.x <= colLeft + colWidth && cursor.y >= topY && cursor.y <= topY + h) {
+                    ctx.strokeStyle = '#ffffff';
+                    ctx.lineWidth = 1;
+                    ctx.strokeRect(colLeft + 0.5, topY + 0.5, colWidth - 1, h - 1);
+                    hoveredRowInfo = {
+                        x: colLeft + colWidth + 8,
+                        y: topY,
+                        price: r.price,
+                        buy: r.buy,
+                        sell: r.sell,
+                        delta: r.delta,
+                        total: r.total,
+                        isBuyDom,
+                        isSellDom
+                    };
                 }
             }
         }
+
+        // Draw Interactive Hover Tooltip if hovering a cell
+        if (hoveredRowInfo) {
+            const inf = hoveredRowInfo;
+            const tipW = 160;
+            const tipH = 88;
+            const tipX = Math.min(plotW - tipW - 12, inf.x);
+            const tipY = Math.max(bounds.top + 8, Math.min(bounds.top + chartAreaHeight - tipH - 8, inf.y - tipH / 2));
+
+            ctx.fillStyle = 'rgba(20, 21, 26, 0.94)';
+            ctx.strokeStyle = 'rgba(255, 255, 255, 0.16)';
+            ctx.lineWidth = 1;
+            ctx.fillRect(tipX, tipY, tipW, tipH);
+            ctx.strokeRect(tipX, tipY, tipW, tipH);
+
+            ctx.font = 'bold 11px ui-sans-serif, system-ui, sans-serif';
+            ctx.textAlign = 'left';
+            ctx.fillStyle = '#f0b90b';
+            ctx.fillText(`$${inf.price.toFixed(1)} - $${(inf.price + groupedStep).toFixed(1)}`, tipX + 8, tipY + 16);
+
+            ctx.font = '10px ui-monospace, monospace';
+            ctx.fillStyle = '#a0a0a0';
+            ctx.fillText('Vol:', tipX + 8, tipY + 32);
+            ctx.fillStyle = '#ffffff';
+            ctx.fillText(volText(inf.total), tipX + 44, tipY + 32);
+
+            ctx.fillStyle = '#a0a0a0';
+            ctx.fillText('Delta:', tipX + 8, tipY + 48);
+            ctx.fillStyle = inf.delta >= 0 ? '#2ebd85' : '#f6465d';
+            ctx.fillText(`${inf.delta >= 0 ? '+' : ''}${volText(inf.delta)}`, tipX + 44, tipY + 48);
+
+            ctx.fillStyle = '#f6465d';
+            ctx.fillText(`Sell: ${volText(inf.sell)}`, tipX + 8, tipY + 68);
+            ctx.fillStyle = '#2ebd85';
+            ctx.fillText(`Buy: ${volText(inf.buy)}`, tipX + 84, tipY + 68);
+        }
+
         ctx.restore();
 
         // ====================================================================
-        // 4. Docked Footprint Bar Stats Footer (Delta, Cum Delta, Volume)
+        // 5. Docked Footprint Bar Stats Footer (Delta, Cum Delta, Volume)
         // ====================================================================
         const tableTop = bounds.top + chartAreaHeight;
         ctx.fillStyle = '#14151a';

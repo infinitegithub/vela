@@ -99,13 +99,9 @@ uniform vec4 view;   // t0, t1, p0, p1 of the screen
 uniform vec4 tex;    // t0, t1, p0, p1 covered by the texture
 uniform vec4 range;  // min, max, opacity, mode (0 = size ramp, 1 = two hues)
 uniform vec3 bidC, bidS, askC, askS;
-uniform vec4 fill;   // boundary and sample time (ms from view origin), enabled, unused
-uniform vec3 fillRgb; // neutral backfilled grey
 
 void main() {
   float t = mix(view.x, view.y, uv.x);
-  bool back = fill.z > 0.5 && t < fill.x;
-  if (back) t = fill.y;
   float p = mix(view.z, view.w, uv.y);
   vec2 q = vec2((t - tex.x) / (tex.y - tex.x), (p - tex.z) / (tex.w - tex.z));
   if (q.x < 0.0 || q.x >= 1.0 || q.y < 0.0 || q.y >= 1.0) discard;
@@ -117,21 +113,13 @@ void main() {
     float lo = log(max(range.x, 1.0)), hi = log(max(range.y, range.x * 1.0001 + 1.0));
     float s = (log(total) - lo) / max(hi - lo, 1e-6);
     if (s <= 0.0) discard;
-    if (back) {
-      color = vec4(fillRgb, (0.16 + 0.74 * clamp(s, 0.0, 1.0)) * smoothstep(0.0, 0.06, s) * range.z);
-      return;
-    }
-    color = vec4(texture(lut, vec2(clamp(s, 0.0, 1.0), 0.5)).rgb, smoothstep(0.0, 0.06, s) * range.z);
+    color = vec4(texture(lut, vec2(clamp(s, 0.0, 1.0), 0.5)).rgb, smoothstep(0.0, 0.04, s) * range.z);
     return;
   }
   bool isAsk = v.g > v.r;
   float a = clamp((max(v.r, v.g) - range.x) / max(range.y - range.x, 1e-6), 0.0, 1.0);
   if (a <= 0.0) discard;
   vec3 c = mix(isAsk ? askS : bidS, isAsk ? askC : bidC, a);
-  if (back) {
-    color = vec4(fillRgb, (0.16 + 0.74 * a) * range.z);
-    return;
-  }
   color = vec4(c, pow(a, 0.75) * range.z);
 }`;
 
@@ -267,7 +255,7 @@ export class HeatGL {
         }
     }
 
-    draw(view: { t0: number; t1: number; p0: number; p1: number }, style: HeatStyle, fill?: { boundary: number; sample: number; rgb: [number, number, number] } | null): void {
+    draw(view: { t0: number; t1: number; p0: number; p1: number }, style: HeatStyle): void {
         const { gl } = this;
         if (!gl || !this.program || !this.bounds || this.size[0] === 0) return;
         gl.viewport(0, 0, this.canvas.width, this.canvas.height);
@@ -286,8 +274,6 @@ export class HeatGL {
         gl.uniform4f(l.view!, 0, view.t1 - view.t0, 0, view.p1 - view.p0);
         gl.uniform4f(l.tex!, b.t0 - view.t0, b.t1 - view.t0, b.p0 - view.p0, b.p1 - view.p0);
         gl.uniform4f(l.range!, style.min, style.max, style.opacity, style.mode === 'size' ? 0 : 1);
-        gl.uniform4f(l.fill!, fill ? fill.boundary - view.t0 : 0, fill ? fill.sample - view.t0 : 0, fill ? 1 : 0, 0);
-        gl.uniform3fv(l.fillRgb!, fill ? fill.rgb : [0.18, 0.22, 0.28]);
         gl.uniform3fv(l.bidC!, style.bid);
         gl.uniform3fv(l.bidS!, style.bidSoft);
         gl.uniform3fv(l.askC!, style.ask);
@@ -460,8 +446,11 @@ export class HeatmapDataEngine implements SeriesDataEngine {
         const tfMs = timeframeToMs(tf);
 
         try {
-            // 1. Fetch real historical resting columns (spot recorder is actively recording columns)
-            let colResp = await fetch('/api/v2/columns?inst=binancespot:' + cleanSymbol);
+            // 1. Fetch real historical resting columns (24h depth window)
+            const colNow = Date.now();
+            const colFrom = colNow - 24 * 3_600_000;
+            const colTo = colNow + 60_000;
+            let colResp = await fetch(`/api/v2/columns?inst=binancespot:${cleanSymbol}&from=${colFrom}&to=${colTo}&stepMs=60000`);
             let buf = colResp.ok ? await colResp.arrayBuffer() : null;
             let decoded = buf ? decodeColumnsBinary(buf) : null;
             if (!decoded || decoded.columns.size === 0) {
@@ -728,8 +717,8 @@ export class HeatmapRendererLayer implements RendererLayerInstance {
                         colBids[r] = grid[offset]!;
                         colAsks[r] = grid[offset + 1]!;
                     }
-                    blurVec(colBids, 3.5);
-                    blurVec(colAsks, 3.5);
+                    blurVec(colBids, 1.8);
+                    blurVec(colAsks, 1.8);
                     for (let r = 0; r < numRows; r++) {
                         const offset = (r * totalCols + x) * 2;
                         grid[offset] = colBids[r]!;
@@ -751,7 +740,7 @@ export class HeatmapRendererLayer implements RendererLayerInstance {
             const offW = Math.round(plotW * dpr);
             const offH = Math.round(plotH * dpr);
             this.heatGl.resize(offW, offH);
-            this.heatGl.draw(view, style, { boundary: firstT, sample: firstT, rgb: [0.18, 0.22, 0.28] });
+            this.heatGl.draw(view, style);
 
             ctx.save();
             ctx.beginPath();

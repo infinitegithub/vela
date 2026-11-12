@@ -540,6 +540,7 @@ export class LiquidityClient {
             binanceFuturesInst: `binance:${fallbackBinance}`,
             bybitInst: `bybit:${fallbackBinance}`,
             okxInst: `okx:${fallbackOkx}`,
+            spotBinanceInst: `binancespot:${fallbackBinance}`,
             unit: 1,
             price: 0,
             tier: 0
@@ -603,21 +604,32 @@ export class LiquidityClient {
         const tfParam = normalizeTimeframe(tf);
 
         try {
-            let url = `/api/v2/footprint?inst=${encodeURIComponent(resolved.spotMultiVenueInst || resolved.binanceInst)}&tf=${tfParam}`;
-            let res = await fetch(url);
-            if (!res.ok) {
-                url = `/api/v2/footprint?inst=${encodeURIComponent(resolved.binanceInst)}&tf=${tfParam}`;
-                res = await fetch(url);
+            const candidates = [
+                resolved.spotMultiVenueInst,
+                resolved.binanceInst,
+                `binancespot:${resolved.base}USDT`,
+                resolved.multiVenueInst,
+                resolved.binanceFuturesInst,
+            ].filter(Boolean);
+
+            let data: RawFootprintResponse | null = null;
+            for (const inst of candidates) {
+                const url = `/api/v2/footprint?inst=${encodeURIComponent(inst)}&tf=${tfParam}&budget=5000`;
+                try {
+                    const res = await fetch(url);
+                    if (res.ok) {
+                        const parsed = await res.json() as RawFootprintResponse;
+                        if (parsed && Array.isArray(parsed.bars) && parsed.bars.length > 0) {
+                            data = parsed;
+                            break;
+                        }
+                    }
+                } catch (_) {}
             }
-            if (!res.ok) {
-                url = `/api/v2/footprint?inst=${encodeURIComponent(resolved.binanceFuturesInst || resolved.multiVenueInst)}&tf=${tfParam}`;
-                res = await fetch(url);
-            }
-            if (!res.ok) {
-                console.warn('[LiquidityClient] Footprint responded with:', res.status, res.statusText);
+            if (!data) {
+                console.warn('[LiquidityClient] Footprint responded with no data');
                 return { bars: [], step: 1.0, stackedZones: [], nakedPocs: [] };
             }
-            const data = await res.json() as RawFootprintResponse;
             const step = data.step || (data.fine ? data.fine : 0.5);
 
             const parsedBars: ParsedFootprintBar[] = [];
