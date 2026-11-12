@@ -2307,11 +2307,18 @@ export class NativeRenderer implements IChartRenderer {
      * which owns the DATA side of styles that need one (a chart type's SeriesDataEngine).
      */
     private setPriceStyle(style: PriceStyle): void {
-        if (style === this.scene.priceStyle) return;
+        if (style === this.scene.priceStyle) {
+            this.scheduler?.invalidate(InvalidateLevel.Full);
+            return;
+        }
         this.scene.priceStyle = style;
         this.scene.basePainting = basePaintingOf(style);
         this.scene.candleOverride = candleOverrideFor(style, this.scene.style.chartTypes);
+        for (const l of this.extLayers) {
+            this.clearLayerCanvas(l.canvas);
+        }
         for (const cb of this.priceStyleCbs) cb(style);
+        this.scheduler?.invalidate(InvalidateLevel.Full);
     }
 
     onRemoveIndicator(cb: (id: string) => void): Unsubscribe {
@@ -3270,7 +3277,17 @@ export class NativeRenderer implements IChartRenderer {
     /** Blank one SDK layer canvas (a collapsed host pane suppresses the layer's painting). */
     private clearLayerCanvas(canvas: HTMLCanvasElement): void {
         if (canvas.width === 0 || canvas.height === 0) return;
-        canvas.getContext('2d')?.clearRect(0, 0, canvas.width, canvas.height);
+        const ctx2d = canvas.getContext('2d');
+        if (ctx2d) {
+            ctx2d.clearRect(0, 0, canvas.width, canvas.height);
+            return;
+        }
+        const gl = (canvas.getContext('webgl2') || canvas.getContext('webgl')) as (WebGLRenderingContext | WebGL2RenderingContext | null);
+        if (gl) {
+            gl.viewport(0, 0, canvas.width, canvas.height);
+            gl.clearColor(0, 0, 0, 0);
+            gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
+        }
     }
 
     /** One frame's args for an SDK renderer layer (shared by the data + cursor paint paths).

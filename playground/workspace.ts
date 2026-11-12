@@ -12,7 +12,37 @@ import { DemoEngine } from './demo-engine';
 import { playgroundStorage } from './persistence';
 import { addSampleMarks } from './marks';
 import { registerClassicIndicators } from '../src/core/native-indicators/classics';
-import { registerFootprintChartType } from './footprint-style';
+import { registerChartType } from '../src/chart-types/registry';
+
+export function registerLiquidityComponents(): void {
+    registerChartType({
+        id: 'lq-heatmap',
+        label: 'Liquidity Heatmap',
+        icon: '<svg width="18" height="18" viewBox="0 0 18 18" fill="none"><rect x="2" y="3" width="14" height="12" rx="2" stroke="currentColor" stroke-width="1.2"/><path d="M4 12h10M4 9h6M4 6h3" stroke="#f59e0b" stroke-width="1.2"/></svg>',
+        basePainting: 'none',
+    });
+
+    registerChartType({
+        id: 'lq-footprint',
+        label: 'Footprint Order Flow',
+        icon: '<svg width="18" height="18" viewBox="0 0 18 18" fill="none"><rect x="2" y="3" width="6" height="12" rx="1" fill="currentColor" fill-opacity="0.3"/><rect x="10" y="3" width="6" height="12" rx="1" fill="currentColor" fill-opacity="0.7"/><line x1="5" y1="1" x2="5" y2="3" stroke="currentColor" stroke-width="1.2"/><line x1="13" y1="1" x2="13" y2="3" stroke="currentColor" stroke-width="1.2"/></svg>',
+        basePainting: 'none',
+    });
+
+    registerChartType({
+        id: 'lq-ladder',
+        label: 'DOM Ladder (Depth)',
+        icon: '<svg width="18" height="18" viewBox="0 0 18 18" fill="none"><rect x="3" y="2" width="12" height="14" rx="2" stroke="currentColor" stroke-width="1.2"/><path d="M6 6h6M6 9h6M6 12h6" stroke="#10b981" stroke-width="1.2"/></svg>',
+        basePainting: 'none',
+    });
+
+    registerChartType({
+        id: 'lq-cvd',
+        label: 'CVD & Taker Flow',
+        icon: '<svg width="18" height="18" viewBox="0 0 18 18" fill="none"><path d="M2 14L6 10L10 13L16 5" stroke="#3b82f6" stroke-width="1.5" stroke-linecap="round"/><path d="M2 16h14" stroke="currentColor" stroke-width="1.2"/></svg>',
+        basePainting: 'none',
+    });
+}
 import { registerTradingLinesLayer } from './trading-lines';
 import {
     registerWatchlistSidePanel,
@@ -62,7 +92,7 @@ registerIndicatorsPersistence();
 registerWorkspaceLayoutPicker();
 registerIndicatorTemplatesPicker();
 registerClassicIndicators();
-registerFootprintChartType();
+registerLiquidityComponents();
 registerTradingLinesLayer();
 registerWatchlistSidePanel();
 registerAlertsSidePanel();
@@ -95,7 +125,7 @@ function getBootLayout(): string {
             }
         }
     } catch {}
-    return '1';
+    return '4';
 }
 
 // 2. Instantiate the multi-chart VelaWorkspace
@@ -104,10 +134,10 @@ const ws = new VelaWorkspace('#workspace', {
     symbol: 'BTCUSDT',
     timeframe: '60',
     cells: {
-        btc: { symbol: 'BTCUSDT', timeframe: '1' },
-        eth: { symbol: 'ETHUSDT', timeframe: '15' },
-        sol: { symbol: 'SOLUSDT', timeframe: '60' },
-        bnb: { symbol: 'BNBUSDT', timeframe: 'D' },
+        btc: { symbol: 'BTCUSDT', timeframe: '1', priceStyle: 'candles' },
+        eth: { symbol: 'ETHUSDT', timeframe: '15', priceStyle: 'lq-heatmap' },
+        sol: { symbol: 'SOLUSDT', timeframe: '60', priceStyle: 'lq-footprint' },
+        bnb: { symbol: 'BNBUSDT', timeframe: 'D', priceStyle: 'lq-ladder' },
     },
     providers: {
         binance: () => new BinanceProvider(),

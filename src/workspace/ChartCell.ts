@@ -211,6 +211,15 @@ function instanceDeltas(handle: IndicatorHandle | null): { inputs?: Record<strin
     return inputs || props ? { ...(inputs ? { inputs } : {}), ...(props ? { props } : {}) } : undefined;
 }
 
+function safePriceStyle(style?: string): string | undefined {
+    if (!style) return undefined;
+    if (style === 'heatmap') return 'lq-heatmap';
+    if (style === 'footprint') return 'lq-footprint';
+    if (style === 'ladder') return 'lq-ladder';
+    if (style === 'cvd') return 'lq-cvd';
+    return style;
+}
+
 export class ChartCell {
     /** The grid item this cell renders into (owned; removed on destroy). */
     readonly host: HTMLElement;
@@ -287,6 +296,54 @@ export class ChartCell {
     /** Plot values beside this cell's legend titles shown. */
     private indicatorValuesOn = true;
     private destroyed = false;
+    private mapperFrame: HTMLIFrameElement | null = null;
+    private currentEmbedKind: string | null = null;
+
+    private coinFromSymbol(sym: string): string {
+        let s = (sym || 'BTC').trim().toUpperCase();
+        if (s.includes(':')) s = s.split(':')[1] || s;
+        s = s.replace(/\.P$|-PERP$|_PERP$|-SWAP$|_SWAP$/i, '');
+        s = s.replace(/USDT$|USD$|USDC$|BUSD$/i, '');
+        return s || 'BTC';
+    }
+
+    private embedKindForStyle(style: string): 'heat' | 'footprint' | 'ladder' | 'cvd' | null {
+        if (style === 'lq-heatmap' || style === 'heatmap') return 'heat';
+        if (style === 'lq-footprint' || style === 'footprint') return 'footprint';
+        if (style === 'lq-ladder' || style === 'ladder') return 'ladder';
+        if (style === 'lq-cvd' || style === 'cvd') return 'cvd';
+        return null;
+    }
+
+    private syncMapperWrapper(): void {
+        const embedKind = this.embedKindForStyle(this.state.priceStyle || '');
+        const plotEl = this.host.querySelector('.vela-plot') as HTMLElement | null;
+        if (embedKind) {
+            const coin = this.coinFromSymbol(this.symbol);
+            const targetUrl = '/mapper/?embed=' + embedKind + '&coin=' + coin + '&tour=0';
+            if (!this.mapperFrame) {
+                this.mapperFrame = this.host.ownerDocument.createElement('iframe');
+                this.mapperFrame.className = 'vela-mapper-wrapper';
+                this.mapperFrame.setAttribute('allow', 'fullscreen; clipboard-read; clipboard-write');
+                this.mapperFrame.style.cssText = 'position:absolute;inset:0;width:100%;height:100%;border:none;z-index:4;background:#0b0e11;';
+                this.mapperFrame.src = targetUrl;
+                this.currentEmbedKind = embedKind;
+                this.host.appendChild(this.mapperFrame);
+            } else {
+                if (this.currentEmbedKind !== embedKind || !this.mapperFrame.src.includes('coin=' + coin)) {
+                    this.mapperFrame.src = targetUrl;
+                    this.currentEmbedKind = embedKind;
+                }
+                this.mapperFrame.style.display = 'block';
+            }
+            if (plotEl) plotEl.style.visibility = 'hidden';
+        } else {
+            if (this.mapperFrame) {
+                this.mapperFrame.style.display = 'none';
+            }
+            if (plotEl) plotEl.style.visibility = 'visible';
+        }
+    }
 
     constructor(
         readonly id: string,
@@ -474,6 +531,7 @@ export class ChartCell {
             }
             this.refreshSymbolMetadata();
             if (this.inner && this.state.symbol) this.marketStatus?.track(this.inner.data, this.state.symbol);
+            this.syncMapperWrapper();
         });
         this.syncStatuslineColors();
         this.cellControls = new CellControls(this.host, {
@@ -590,6 +648,7 @@ export class ChartCell {
         this.statusline?.setSymbol(symbol);
         this.statusline?.setMeta(timeframe, this.inner?.data.displayPrefix(symbol) ?? this.state.provider ?? '');
         if (this.inner) this.statusline?.onChart(this.inner); // drop the old market's resting OHLC
+        this.syncMapperWrapper();
     }
 
     /**
@@ -968,6 +1027,7 @@ export class ChartCell {
     }
 
     get priceStyle(): string {
+        if (this.embedKindForStyle(this.state.priceStyle || '')) return this.state.priceStyle!;
         const live = this.inner?.renderer.get('priceStyle');
         return typeof live === 'string' ? live : (this.state.priceStyle ?? 'candles');
     }
@@ -1000,15 +1060,14 @@ export class ChartCell {
 
     /** Applied live (renderer feature) — no reload. */
     setPriceStyle(style: string): void {
-        this.state.priceStyle = style;
-        this.inner?.renderer.set('priceStyle', style);
-        if (style === 'footprint') {
-            const native: any = (this.inner?.renderer as any)?.renderer;
-            if (native && typeof native.applyViewport === 'function') {
-                const curSpacing = native.coords?.bodySpacing?.() ?? native.targetBarSpacing ?? 6;
-                if (curSpacing < 60) {
-                    native.applyViewport({ barSpacing: 100, rightOffset: 5 });
-                }
+        const resolved = safePriceStyle(style) || style;
+        this.state.priceStyle = resolved;
+        this.syncMapperWrapper();
+        if (!this.embedKindForStyle(resolved)) {
+            this.inner?.renderer.set('priceStyle', resolved);
+            const native: any = (this.inner?.renderer as any)?.renderer ?? this.inner?.renderer;
+            if (native?.scheduler?.invalidate) {
+                native.scheduler.invalidate(2);
             }
         }
         this.syncStatuslineColors(); // the OHLC ink follows the newly active style's colors
@@ -1535,6 +1594,8 @@ export class ChartCell {
 
     destroy(): void {
         this.destroyed = true;
+        this.mapperFrame?.remove();
+        this.mapperFrame = null;
         this.offMarket();
         this.cellControls.destroy();
         this.contextMenu.destroy();
