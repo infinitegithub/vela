@@ -89,6 +89,12 @@ export default defineConfig(({ mode }) => {
                                 overlay: false,
             },
             proxy: {
+                '/mapper': {
+                    target: liquidityTarget,
+                    rewrite: (path: string) => path.replace(/^\/mapper/, '') || '/',
+                    changeOrigin: true,
+                    ws: true,
+                },
                 '/coins.json': {
                     target: liquidityTarget,
                     changeOrigin: true,

@@ -9,8 +9,7 @@ import { DemoEngine } from './demo-engine';
 import { playgroundStorage } from './persistence';
 import { registerClassicIndicators } from '../src/core/native-indicators/classics';
 import { registerTradingLinesLayer } from './trading-lines';
-import { registerFootprintPlugin } from './footprint-plugin';
-import { registerHeatmapPlugin } from './heatmap-plugin';
+import { registerChartType } from '../src/chart-types/registry';
 import { registerLiquidityIndicators } from './liquidity-indicators';
 import {
     registerLiquiditySidePanel,
@@ -64,8 +63,12 @@ registerWorkspaceLayoutPicker();
 registerIndicatorTemplatesPicker();
 registerClassicIndicators();
 registerTradingLinesLayer();
-registerFootprintPlugin();
-registerHeatmapPlugin();
+registerChartType({
+    id: 'liquidity',
+    label: 'Liquidity Mapper (Heatmap, Footprint, DOM)',
+    icon: '<svg width="18" height="18" viewBox="0 0 18 18" fill="none"><rect x="2" y="3" width="14" height="12" rx="2" stroke="currentColor" stroke-width="1.2"/><path d="M5 11L8 8L11 11L14 7" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/><circle cx="8" cy="8" r="1.5" fill="#f59e0b"/><circle cx="14" cy="7" r="1.5" fill="#10b981"/></svg>',
+    basePainting: 'none',
+});
 registerLiquidityIndicators();
 registerLiquiditySidePanel();
 registerWatchlistSidePanel();
@@ -92,7 +95,7 @@ export function bootVelaWorkstation() {
         priceStyle: 'candles',
         cells: {
             btc: { symbol: 'BTCUSDT', timeframe: '1h', priceStyle: 'candles' },
-            eth: { symbol: 'ETHUSDT', timeframe: '15m', priceStyle: 'heatmap' },
+            eth: { symbol: 'ETHUSDT', timeframe: '15m', priceStyle: 'liquidity' },
             sol: { symbol: 'SOLUSDT', timeframe: '1h', priceStyle: 'candles' },
             bnb: { symbol: 'BNBUSDT', timeframe: '1d', priceStyle: 'candles' },
         },
