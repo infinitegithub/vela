@@ -283,7 +283,7 @@ export class Statusline {
     private eyeTip!: Tooltip;
     private avatarEl: HTMLElement;
     private metaEl!: HTMLElement;
-    private readonly parts: Record<StatuslinePart, boolean> = { logo: true, name: true, market: true, ohlc: true, change: true };
+    private readonly parts: Record<StatuslinePart, boolean> = { logo: true, name: false, market: false, ohlc: false, change: false };
     private marketStatus: MarketStatus = 'open';
     /** The chart replays past bars — the badge shows the replay mode (see {@link setReplaying}). */
     private replaying = false;

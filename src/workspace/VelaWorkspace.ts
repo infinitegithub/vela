@@ -43,7 +43,7 @@ import { MoreDrawer } from '../widget/more-drawer';
 import { TimezoneDrawer } from '../widget/timezone-drawer';
 import { PriceScaleDrawer } from '../widget/price-scale-drawer';
 import { DrawingPill } from '../widget/drawing-pill';
-import type { HostSettingsSection } from '../renderers/native/chrome/SettingsDialog';
+import type { HostSettingsSection } from "../renderers/native/chrome/SettingsDialog";
 import { priceStyleIds } from '../renderers/native/core/chartConfig';
 import { resolveIndicators, type IndicatorManifest, type ResolvedIndicator } from '../widget/indicators';
 import { DrawingToolbar } from '../renderers/native/drawings/DrawingToolbar';
@@ -436,7 +436,7 @@ export class VelaWorkspace {
         this.timezone = boot?.timezone ?? opts.timezone ?? 'Etc/UTC';
         if (boot?.favorites) this.favs = [...boot.favorites];
         if (boot?.timeframeFavorites) this.tfFavs = [...boot.timeframeFavorites];
-        const sync = boot?.sync ? { ...opts.sync, ...boot.sync } : opts.sync;
+        const sync = boot?.sync ?? opts.sync;
         for (const kind of SYNC_KINDS) this.applySyncSetting(kind, sync?.[kind]);
         // Single-chart mode pins the grid to '1' — a persisted document's layout is
         // presentation the mode overrides, while its charts still restore (first one
@@ -550,7 +550,7 @@ export class VelaWorkspace {
                     { id: 'symbol', label: 'Symbol', checked: this.syncOpts.symbol === true },
                     { id: 'timeframe', label: 'Interval', checked: this.syncOpts.timeframe === true },
                     { id: 'crosshair', label: 'Crosshair', checked: this.syncOpts.crosshair === true },
-                    { id: 'viewport', label: 'Time', checked: this.syncOpts.viewport === true },
+                    { id: 'style', label: 'Style', checked: this.syncOpts.style === true },
                 ],
                 onToggleSync: (id) => {
                     const kind = id as SyncKind;
@@ -589,8 +589,8 @@ export class VelaWorkspace {
         });
         this.objectTree = new ObjectTree(main, (sym) => this.feed.symbolIcon(sym));
         this.dataWindow = new DataWindow(main);
-        this.dock.addBuiltIn({ id: 'dataWindow', title: 'Data window', icon: 'datawindow', order: 10, panel: this.dataWindow, onChart: (c) => this.dataWindow.onChart(c) });
-        this.dock.addBuiltIn({ id: 'objects', title: 'Object tree', icon: 'objects', order: 20, panel: this.objectTree, onChart: (c) => this.objectTree.onChart(c) });
+        this.dock.addBuiltIn({ id: 'dataWindow', title: 'Data window', icon: 'datawindow', order: 20, panel: this.dataWindow, onChart: (c) => this.dataWindow.onChart(c) });
+        this.dock.addBuiltIn({ id: 'objects', title: 'Object tree', icon: 'objects', order: 40, panel: this.objectTree, onChart: (c) => this.objectTree.onChart(c) });
         this.dock.refresh();
         // The dock's own slice of the boot document (open panel, dragged widths, pinned
         // placements) — the sync-storage twin of what `applyState` does for a late document.
@@ -1231,6 +1231,35 @@ export class VelaWorkspace {
         this.events.emit('cell:maximized', { id });
     }
 
+    /**
+     * Cycle the active chart cell forward or backward among visible cells in the grid.
+     * If a cell is currently maximized, cycling navigates to the next/prev cell and keeps it maximized.
+     */
+    navigateCell(dir: 'next' | 'prev' = 'next'): void {
+        if (this.destroyed) return;
+        const liveIds = this.order.slice(0, this.def.cells.length).filter((id) => this.cellsById.has(id));
+        if (liveIds.length <= 1) return;
+        const currentId = this.activeId ?? liveIds[0];
+        const currentIndex = currentId ? liveIds.indexOf(currentId) : -1;
+        const delta = dir === 'next' ? 1 : -1;
+        const nextIndex = currentIndex >= 0 ? (currentIndex + delta + liveIds.length) % liveIds.length : 0;
+        const nextId = liveIds[nextIndex];
+        if (!nextId) return;
+
+        if (this.maximizedId) {
+            this.maximizeCell(nextId);
+        } else {
+            this.setActiveCell(nextId);
+        }
+        this.refocusActive();
+    }
+
+    /** Open the shortcuts help & keyboard settings dialog. */
+    openShortcutsHelp(): void {
+        this.shortcutsHelp ??= new ShortcutsHelp(this.keymap, this.root, (open) => this.trackDialog(open));
+        this.shortcutsHelp.open();
+    }
+
     /** The mobile bar's maximize stop: one press isolates the ACTIVE chart over the
      *  grid; while something is already isolated — the chart, or a pane inside it
      *  (mobile's double-tap) — the press restores that instead. Every branch re-syncs
@@ -1466,10 +1495,11 @@ export class VelaWorkspace {
     // ── internals ───────────────────────────────────────────────
     private resolveLayout(layout: string | LayoutDefinition): LayoutDefinition {
         if (typeof layout !== 'string') return layout;
-        // Registered ids first, then the picker's self-describing dynamic ids
-        // (`g3x2`) — those synthesize without touching the registry.
-        const def = ensureLayout(layout);
-        if (!def) throw new Error(`[vela] unknown workspace layout "${layout}" — register it with registerLayout().`);
+        const def = ensureLayout(layout) ?? ensureLayout('4') ?? ensureLayout('1');
+        if (!def) {
+            console.warn(`[vela] unknown workspace layout "${layout}" — falling back to single chart.`);
+            return this.resolveLayout('1');
+        }
         return def;
     }
 
@@ -2206,7 +2236,7 @@ export class VelaWorkspace {
                     { id: 'symbol', label: 'Symbol', checked: this.syncOpts.symbol === true },
                     { id: 'timeframe', label: 'Interval', checked: this.syncOpts.timeframe === true },
                     { id: 'crosshair', label: 'Crosshair', checked: this.syncOpts.crosshair === true },
-                    { id: 'viewport', label: 'Time', checked: this.syncOpts.viewport === true },
+                    { id: 'style', label: 'Style', checked: this.syncOpts.style === true },
                 ],
                 onToggleSync: (id) => {
                     const kind = id as SyncKind;
@@ -2354,11 +2384,40 @@ export class VelaWorkspace {
         this.keymap.register({
             id: 'help.shortcuts',
             keys: '?',
-            label: 'Show this shortcuts panel',
+            label: 'Show shortcuts & keyboard settings',
             category: 'Help',
+            run: () => this.openShortcutsHelp(),
+        });
+
+        // ── Grid Navigation & Cell Management ──
+        this.keymap.register({
+            id: 'workspace.cell-next',
+            keys: 'alt+arrowright',
+            label: 'Next grid cell',
+            category: 'Grid Navigation',
+            run: () => this.navigateCell('next'),
+        });
+        this.keymap.register({
+            id: 'workspace.cell-prev',
+            keys: 'alt+arrowleft',
+            label: 'Previous grid cell',
+            category: 'Grid Navigation',
+            run: () => this.navigateCell('prev'),
+        });
+        this.keymap.register({
+            id: 'workspace.cell-maximize-toggle',
+            keys: 'alt+enter',
+            label: 'Maximize active chart / restore grid',
+            category: 'Grid Navigation',
+            run: () => this.maximizeCell(this.maximizedId ? null : (this.activeId ?? null)),
+        });
+        this.keymap.register({
+            id: 'workspace.cell-restore',
+            keys: 'alt+arrowdown',
+            label: 'Restore multi-chart grid layout',
+            category: 'Grid Navigation',
             run: () => {
-                this.shortcutsHelp ??= new ShortcutsHelp(this.keymap, this.root, (open) => this.trackDialog(open));
-                this.shortcutsHelp.open();
+                if (this.maximizedId) this.maximizeCell(null);
             },
         });
     }

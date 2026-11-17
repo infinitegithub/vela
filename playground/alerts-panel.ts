@@ -299,7 +299,7 @@ export function registerAlertsSidePanel() {
         id: 'alerts.panel',
         title: 'Alerts',
         icon: 'bell',
-        order: 6, // Placed right below Watchlist (order 5)
+        order: 30, // Placed right below Watchlist (order 5)
         width: 320,
         minWidth: 260,
         maxWidth: 500,
@@ -315,7 +315,7 @@ export function registerAlertsSidePanel() {
                 display: flex;
                 flex-direction: column;
                 height: 100%;
-                background: var(--vela-bg-panel, #121215);
+                background: var(--vela-bg-main, #202126);
                 color: var(--vela-text-primary, #eeeef1);
                 font-family: var(--vela-font, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif);
                 font-size: 13px;
@@ -330,7 +330,7 @@ export function registerAlertsSidePanel() {
                 justify-content: space-between;
                 padding: 10px 14px;
                 border-bottom: 1px solid var(--vela-border, #262629);
-                background: var(--vela-bg-bar, #191a1e);
+                background: var(--vela-bg-main, #202126);
             `;
 
             const tabRow = document.createElement('div');

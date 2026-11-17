@@ -40,6 +40,8 @@ export interface ResolvedBinding {
     readonly keys: readonly string[];
     /** Display form per platform, e.g. `'⌘⇧K'` (mac) / `'Ctrl+Shift+K'`. */
     readonly display: readonly string[];
+    /** True if user has customized this binding. */
+    readonly isCustom?: boolean;
 }
 
 interface Chord {
@@ -114,10 +116,20 @@ export function isEditableTarget(ev: KeyboardEvent): boolean {
     return (typeof t.getAttribute === 'function' ? t.getAttribute('role') : null) === 'textbox';
 }
 
-function displayChord(spec: string, mac: boolean): string {
+export function displayChord(spec: string, mac: boolean): string {
     const c = parseChord(spec, mac);
-    const keyLabel =
-        c.key === ' ' ? 'Space' : c.key.length === 1 ? c.key.toUpperCase() : c.key.charAt(0).toUpperCase() + c.key.slice(1);
+    let keyLabel = c.key;
+    if (keyLabel === ' ') keyLabel = 'Space';
+    else if (keyLabel === 'arrowleft') keyLabel = mac ? '←' : 'Left';
+    else if (keyLabel === 'arrowright') keyLabel = mac ? '→' : 'Right';
+    else if (keyLabel === 'arrowup') keyLabel = mac ? '↑' : 'Up';
+    else if (keyLabel === 'arrowdown') keyLabel = mac ? '↓' : 'Down';
+    else if (keyLabel === 'escape') keyLabel = 'Esc';
+    else if (keyLabel === 'enter') keyLabel = mac ? '↵' : 'Enter';
+    else if (keyLabel === 'delete') keyLabel = 'Del';
+    else if (keyLabel.length === 1) keyLabel = keyLabel.toUpperCase();
+    else keyLabel = keyLabel.charAt(0).toUpperCase() + keyLabel.slice(1);
+
     if (mac) {
         return (
             (c.ctrl ? MAC_GLYPHS.ctrl : '') +
@@ -129,6 +141,35 @@ function displayChord(spec: string, mac: boolean): string {
     }
     const mods = [c.ctrl && 'Ctrl', c.alt && 'Alt', c.shift && 'Shift', c.meta && 'Win'].filter(Boolean);
     return [...mods, keyLabel].join('+');
+}
+
+export function eventToChord(ev: KeyboardEvent, mac: boolean): string | null {
+    const rawKey = ev.key;
+    if (!rawKey) return null;
+    const lowerKey = rawKey.toLowerCase();
+    if (['control', 'shift', 'alt', 'meta'].includes(lowerKey)) return null;
+
+    const parts: string[] = [];
+    if (mac) {
+        if (ev.ctrlKey) parts.push('ctrl');
+        if (ev.altKey) parts.push('alt');
+        if (ev.shiftKey) parts.push('shift');
+        if (ev.metaKey) parts.push('mod');
+    } else {
+        if (ev.ctrlKey) parts.push('mod');
+        if (ev.altKey) parts.push('alt');
+        if (ev.shiftKey) parts.push('shift');
+        if (ev.metaKey) parts.push('meta');
+    }
+
+    let finalKey = lowerKey;
+    if (finalKey === ' ') finalKey = 'space';
+    else if (finalKey === 'escape') finalKey = 'esc';
+    else if (finalKey === 'delete') finalKey = 'del';
+    else if (finalKey === 'return') finalKey = 'enter';
+
+    parts.push(finalKey);
+    return parts.join('+');
 }
 
 export interface KeymapOptions {
@@ -155,6 +196,11 @@ export class KeymapManager {
                 ? opts.platform === 'mac'
                 : typeof navigator !== 'undefined' && /mac|iphone|ipad/i.test(navigator.platform ?? '');
         this.baseScope = opts.baseScope ?? 'chart';
+        this.loadSavedRebinds();
+    }
+
+    get isMac(): boolean {
+        return this.mac;
     }
 
     /** Register (or replace, by id) a binding. Returns a disposer. */
@@ -168,12 +214,64 @@ export class KeymapManager {
     unregister(id: string): void {
         this.descriptors.delete(id);
         this.rebinds.delete(id);
+        this.saveRebinds();
+    }
+
+    isRebound(id: string): boolean {
+        return this.rebinds.has(id);
+    }
+
+    resetAll(): void {
+        this.rebinds.clear();
+        this.saveRebinds();
+    }
+
+    private getStorage(): Storage | null {
+        try {
+            if (typeof window !== 'undefined' && window.localStorage) {
+                return window.localStorage;
+            }
+        } catch {}
+        return null;
+    }
+
+    private saveRebinds(): void {
+        const storage = this.getStorage();
+        if (storage) {
+            try {
+                const map: Record<string, string[]> = {};
+                for (const [id, keys] of this.rebinds) {
+                    map[id] = keys;
+                }
+                storage.setItem('vela-keymap-rebinds', JSON.stringify(map));
+            } catch {}
+        }
+    }
+
+    private loadSavedRebinds(): void {
+        const storage = this.getStorage();
+        if (storage) {
+            try {
+                const raw = storage.getItem('vela-keymap-rebinds');
+                if (raw) {
+                    const parsed = JSON.parse(raw);
+                    if (parsed && typeof parsed === 'object') {
+                        for (const [id, keys] of Object.entries(parsed)) {
+                            if (Array.isArray(keys)) {
+                                this.rebinds.set(id, keys as string[]);
+                            }
+                        }
+                    }
+                }
+            } catch {}
+        }
     }
 
     /** User-level rebinding: overrides the descriptor's default chords (null resets). */
     rebind(id: string, keys: string | string[] | null): void {
         if (keys === null) this.rebinds.delete(id);
         else this.rebinds.set(id, Array.isArray(keys) ? [...keys] : [keys]);
+        this.saveRebinds();
     }
 
     /** Snapshot for a shortcuts help panel / rebinding UI. */
@@ -187,6 +285,7 @@ export class KeymapManager {
                 scope: d.scope ?? this.baseScope,
                 keys,
                 display: keys.map((k) => displayChord(k, this.mac)),
+                isCustom: this.isRebound(d.id),
             };
         });
     }

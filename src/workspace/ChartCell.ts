@@ -308,7 +308,7 @@ export class ChartCell {
     /** Indicator titles (this cell's in-chart legend rows) shown. */
     private indicatorTitlesOn = true;
     /** Plot values beside this cell's legend titles shown. */
-    private indicatorValuesOn = true;
+    private indicatorValuesOn = false;
     private destroyed = false;
 
     constructor(
@@ -466,7 +466,7 @@ export class ChartCell {
 
         this.indicatorTitlesOn = seed.indicatorTitles ?? true;
         if (!this.indicatorTitlesOn) this.inner.renderer.set('indicatorTitles', false);
-        this.indicatorValuesOn = seed.indicatorValues ?? true;
+        this.indicatorValuesOn = seed.indicatorValues ?? false;
         if (!this.indicatorValuesOn) this.inner.renderer.set('indicatorValues', false);
         this.watermarkOn = seed.watermark ?? deps.watermark;
         this.replayWatermarkOn = seed.replayWatermark ?? true;

@@ -1,3 +1,4 @@
+import { openWatchlistAdvancedModal } from './watchlist-advanced';
 
 function getSymbolLogoUrl(symbol: string): string | null {
     const s = normalizeSymbol(symbol).toUpperCase();
@@ -1213,7 +1214,7 @@ export function registerWatchlistSidePanel() {
         id: 'watchlist.panel',
         title: 'Watchlist',
         icon: 'watchlist',
-        order: 5,
+        order: 10,
         width: 300,
         minWidth: 260,
         maxWidth: 600,
@@ -2189,205 +2190,29 @@ export function registerWatchlistSidePanel() {
             }
 
             // ── Advanced View Modal (⤢) ───────────────────────────────────────────────
-            let advancedModalEl: HTMLElement | null = null;
             const expandBtn = header.slot.querySelector('#wl-header-expand');
             if (expandBtn) {
-                expandBtn.addEventListener('click', () => {
-                    if (advancedModalEl) {
-                        advancedModalEl.remove();
-                        advancedModalEl = null;
-                        return;
-                    }
-
-                    advancedModalEl = document.createElement('div');
-                    advancedModalEl.className = 'vela-advanced-view-modal vela-ui';
-                    advancedModalEl.style.cssText = `
-                        position: fixed;
-                        inset: 0;
-                        z-index: 99999;
-                        background: var(--background);
-                        overflow-y: auto;
-                        display: flex;
-                        flex-direction: column;
-                        color: var(--foreground);
-                        font-family: inherit;
-                    `;
-
-                    // Dynamic Metrics
-                    const upCount = watchlistItems.filter(x => x.changePercent > 0).length;
-                    const downCount = watchlistItems.filter(x => x.changePercent < 0).length;
-                    const flatCount = watchlistItems.length - upCount - downCount;
-                    const breadthPct = watchlistItems.length ? Math.round((upCount / watchlistItems.length) * 100) : 0;
-                    const avgChange = watchlistItems.reduce((acc, x) => acc + x.changePercent, 0) / (watchlistItems.length || 1);
-                    const sortedByChange = [...watchlistItems].sort((a, b) => b.changePercent - a.changePercent);
-                    const best = sortedByChange[0];
-                    const worst = sortedByChange[sortedByChange.length - 1];
-
-                    advancedModalEl.innerHTML = `
-                        <header style="flex-shrink: 0; border-bottom: 1px solid var(--border); background: var(--card); padding: 14px 32px 0;">
-                            <div style="max-width: 1440px; margin: 0 auto; display: flex; flex-direction: column; gap: 10px;">
-                                <div style="display: flex; align-items: center; justify-content: space-between;">
-                                    <span style="font-size: 16px; font-weight: 600; color: var(--foreground);">Watchlist</span>
-                                    <div style="display: flex; align-items: center; gap: 4px;">
-                                        <button id="adv-head-add" type="button" aria-label="Add symbol" style="all: unset; cursor: pointer; width: 30px; height: 30px; border-radius: 6px; display: flex; align-items: center; justify-content: center; color: var(--muted-foreground);"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 12h14M12 5v14"/></svg></button>
-                                        <button id="adv-head-restore" type="button" aria-label="Restore view" style="all: unset; cursor: pointer; width: 30px; height: 30px; border-radius: 6px; display: flex; align-items: center; justify-content: center; color: var(--muted-foreground);"><svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2"><path d="M15 3h6v6M9 21H3v-6M21 3l-7 7M3 21l7-7"/></svg></button>
-                                        <button id="adv-close-btn" type="button" aria-label="Close" style="all: unset; cursor: pointer; width: 30px; height: 30px; border-radius: 6px; display: flex; align-items: center; justify-content: center; color: var(--muted-foreground);"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6 6 18M6 6l12 12"/></svg></button>
-                                    </div>
-                                </div>
-                                <div style="display: flex; gap: 20px; font-size: 13px; font-weight: 500;">
-                                    <span style="color: var(--foreground); border-bottom: 2px solid var(--foreground); padding-bottom: 8px; cursor: pointer;">Overview</span>
-                                    <span style="color: var(--muted-foreground); padding-bottom: 8px; cursor: pointer;">Relationships</span>
-                                    <span style="color: var(--muted-foreground); padding-bottom: 8px; cursor: pointer;">Symbols</span>
-                                    <span style="color: var(--muted-foreground); padding-bottom: 8px; cursor: pointer;">Research</span>
-                                    <span style="color: var(--muted-foreground); padding-bottom: 8px; cursor: pointer;">Exposure</span>
-                                </div>
-                            </div>
-                        </header>
-                        <div style="padding: 24px 32px; display: flex; flex-direction: column; gap: 24px; max-width: 1440px; margin: 0 auto; width: 100%; box-sizing: border-box;">
-                            <!-- 5 KPI Summary Cards -->
-                            <div style="display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 14px;">
-                                <div style="background: var(--card); border: 1px solid var(--border); border-radius: 10px; padding: 14px 16px; display: flex; flex-direction: column; gap: 6px;">
-                                    <span style="font-size: 10px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.08em; color: var(--muted-foreground);">Symbols</span>
-                                    <div style="display: flex; align-items: center; gap: 8px;">
-                                        <h3 style="margin: 0; font-size: 22px; font-weight: 600; color: var(--foreground);">${watchlistItems.length}</h3>
-                                        <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="var(--primary)" stroke-width="3"><circle cx="12" cy="12" r="9"/></svg>
-                                    </div>
-                                    <span style="font-size: 10px; color: var(--muted-foreground);">$11.79T equity mkt cap</span>
-                                </div>
-                                <div style="background: var(--card); border: 1px solid var(--border); border-radius: 10px; padding: 14px 16px; display: flex; flex-direction: column; gap: 6px;">
-                                    <span style="font-size: 10px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.08em; color: var(--muted-foreground);">Breadth (24h)</span>
-                                    <div style="display: flex; align-items: center; gap: 8px;">
-                                        <h3 style="margin: 0; font-size: 22px; font-weight: 600; color: var(--foreground);">${breadthPct}%</h3>
-                                        <div style="flex: 1; height: 6px; border-radius: 3px; background: var(--muted); overflow: hidden; display: flex;">
-                                            <div style="width: ${breadthPct}%; background: var(--constructive);"></div>
-                                            <div style="width: ${100 - breadthPct}%; background: var(--destructive);"></div>
-                                        </div>
-                                    </div>
-                                    <span style="font-size: 10px; color: var(--muted-foreground);">${upCount} up · ${downCount} down · ${flatCount} flat</span>
-                                </div>
-                                <div style="background: var(--card); border: 1px solid var(--border); border-radius: 10px; padding: 14px 16px; display: flex; flex-direction: column; gap: 6px;">
-                                    <span style="font-size: 10px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.08em; color: var(--muted-foreground);">Avg 24h % Change</span>
-                                    <div style="display: flex; align-items: center; gap: 6px; margin-top: 2px;">
-                                        <span style="font-size: 13px; font-weight: 600; padding: 3px 8px; border-radius: 4px; color: ${avgChange >= 0 ? 'var(--constructive)' : 'var(--destructive)'}; background: ${avgChange >= 0 ? 'color-mix(in srgb, var(--constructive) 16%, transparent)' : 'color-mix(in srgb, var(--destructive) 16%, transparent)'};">${avgChange >= 0 ? '+' : ''}${avgChange.toFixed(2)}%</span>
-                                    </div>
-                                </div>
-                                <div style="background: var(--card); border: 1px solid var(--border); border-radius: 10px; padding: 14px 16px; display: flex; flex-direction: column; gap: 6px;">
-                                    <span style="font-size: 10px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.08em; color: var(--muted-foreground);">Best 24h</span>
-                                    <div style="display: flex; align-items: center; gap: 8px; margin-top: 2px;">
-                                        <span style="font-size: 14px; font-weight: 600; color: var(--foreground);">${best ? best.symbol : '—'}</span>
-                                        <span style="font-size: 11px; font-weight: 600; padding: 2px 6px; border-radius: 4px; color: var(--constructive); background: color-mix(in srgb, var(--constructive) 16%, transparent);">${best ? `+${best.changePercent.toFixed(2)}%` : '—'}</span>
-                                    </div>
-                                    <span style="font-size: 10px; color: var(--muted-foreground);">${best ? best.name : ''}</span>
-                                </div>
-                                <div style="background: var(--card); border: 1px solid var(--border); border-radius: 10px; padding: 14px 16px; display: flex; flex-direction: column; gap: 6px;">
-                                    <span style="font-size: 10px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.08em; color: var(--muted-foreground);">Worst 24h</span>
-                                    <div style="display: flex; align-items: center; gap: 8px; margin-top: 2px;">
-                                        <span style="font-size: 14px; font-weight: 600; color: var(--foreground);">${worst ? worst.symbol : '—'}</span>
-                                        <span style="font-size: 11px; font-weight: 600; padding: 2px 6px; border-radius: 4px; color: var(--destructive); background: color-mix(in srgb, var(--destructive) 16%, transparent);">${worst ? `${worst.changePercent.toFixed(2)}%` : '—'}</span>
-                                    </div>
-                                    <span style="font-size: 10px; color: var(--muted-foreground);">${worst ? worst.name : ''}</span>
-                                </div>
-                            </div>
-
-                            <!-- Comparison & Market Pulse Columns -->
-                            <div class="watchlist-advanced-module__iafjpG__overview">
-                                <!-- Left Comparison Chart Pane -->
-                                <div class="watchlist-advanced-module__iafjpG__panel">
-                                    <div style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 16px;">
-                                        <div>
-                                            <span class="watchlist-advanced-module__iafjpG__eyebrow">Watchlist Comparison</span>
-                                            <h3>Performance over time</h3>
-                                            <p style="margin: 2px 0 0; font-size: 11px; color: var(--muted-foreground);">Every symbol, on the same percentage scale.</p>
-                                        </div>
-                                        <div style="display: flex; gap: 4px; background: var(--muted); padding: 2px; border-radius: 6px; border: 1px solid var(--border);">
-                                            <button style="all: unset; cursor: pointer; padding: 4px 8px; border-radius: 4px; font-size: 11px; color: var(--muted-foreground);">1M</button>
-                                            <button style="all: unset; cursor: pointer; padding: 4px 8px; border-radius: 4px; font-size: 11px; background: var(--card); color: var(--foreground); font-weight: 600;">3M</button>
-                                            <button style="all: unset; cursor: pointer; padding: 4px 8px; border-radius: 4px; font-size: 11px; color: var(--muted-foreground);">6M</button>
-                                            <button style="all: unset; cursor: pointer; padding: 4px 8px; border-radius: 4px; font-size: 11px; color: var(--muted-foreground);">YTD</button>
-                                            <button style="all: unset; cursor: pointer; padding: 4px 8px; border-radius: 4px; font-size: 11px; color: var(--muted-foreground);">1Y</button>
-                                        </div>
-                                    </div>
-                                    <div style="height: 280px; display: flex; align-items: center; justify-content: center; border: 1px dashed var(--border); border-radius: 8px; color: var(--muted-foreground); font-size: 12px;">
-                                        Loading daily price history...
-                                    </div>
-                                    <div style="display: flex; flex-wrap: wrap; gap: 6px; margin-top: 14px;">
-                                        ${watchlistItems.slice(0, 8).map(it => `
-                                            <div style="display: flex; align-items: center; gap: 6px; padding: 4px 8px; border-radius: 6px; background: var(--muted); border: 1px solid var(--border); font-size: 11px;">
-                                                <span style="width: 8px; height: 8px; border-radius: 2px; background: var(--primary);"></span>
-                                                <strong style="color: var(--foreground);">${it.symbol}</strong>
-                                            </div>
-                                        `).join('')}
-                                    </div>
-                                </div>
-
-                                <!-- Right Market Pulse Pane -->
-                                <div class="watchlist-advanced-module__iafjpG__panel">
-                                    <div style="display: flex; justify-content: space-between; align-items: flex-start;">
-                                        <div>
-                                            <span class="watchlist-advanced-module__iafjpG__eyebrow">Market Pulse</span>
-                                            <h3>Your markets, at a glance</h3>
-                                            <p style="margin: 2px 0 0; font-size: 11px; color: var(--muted-foreground);">Daily moves · equal-sized tiles</p>
-                                        </div>
-                                        <div style="font-size: 11px; color: var(--muted-foreground); border: 1px solid var(--border); padding: 4px 8px; border-radius: 6px; background: var(--card);">
-                                            All ▾
-                                        </div>
-                                    </div>
-                                    <div style="display: flex; gap: 12px; margin-top: 10px; font-size: 11px; font-weight: 500;">
-                                        <span style="color: var(--foreground); cursor: pointer; border-bottom: 2px solid var(--foreground); padding-bottom: 4px;">All</span>
-                                        <span style="color: var(--muted-foreground); cursor: pointer; padding-bottom: 4px;">Gainers</span>
-                                        <span style="color: var(--muted-foreground); cursor: pointer; padding-bottom: 4px;">Losers</span>
-                                    </div>
-                                    <div class="watchlist-advanced-module__iafjpG__marketTiles">
-                                        ${watchlistItems.slice(0, 9).map(it => {
-                                            const isUp = it.changePercent >= 0;
-                                            return `
-                                                <button class="adv-tile-btn" data-sym="${it.symbol}" style="all: unset; cursor: pointer; box-sizing: border-box; border: 1px solid var(--border); background: color-mix(in srgb, ${isUp ? 'var(--constructive)' : 'var(--destructive)'} 12%, var(--card)); border-radius: 8px; padding: 10px; display: flex; flex-direction: column; gap: 4px;">
-                                                    <div style="display: flex; align-items: center; gap: 6px;">
-                                                        <span style="font-size: 11px; font-weight: 600; color: var(--foreground);">${it.symbol}</span>
-                                                    </div>
-                                                    <b style="font-size: 16px; font-weight: 600; font-variant-numeric: tabular-nums; color: ${isUp ? 'var(--constructive)' : 'var(--destructive)'};">${isUp ? '+' : ''}${it.changePercent.toFixed(2)}%</b>
-                                                    <span style="font-size: 10px; color: var(--muted-foreground); overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">${it.name}</span>
-                                                </button>
-                                            `;
-                                        }).join('')}
-                                    </div>
-                                </div>
-                            </div>
-                        </div>
-                    `;
-
-                    advancedModalEl.querySelector('#adv-close-btn')?.addEventListener('click', () => {
-                        advancedModalEl?.remove();
-                        advancedModalEl = null;
-                    });
-                    advancedModalEl.querySelector('#adv-head-restore')?.addEventListener('click', () => {
-                        advancedModalEl?.remove();
-                        advancedModalEl = null;
-                    });
-                    advancedModalEl.querySelector('#adv-head-add')?.addEventListener('click', () => {
-                        openAddSymbolModal();
-                    });
-
-                    // Tile click switches symbol
-                    advancedModalEl.querySelectorAll('.adv-tile-btn').forEach(btn => {
-                        btn.addEventListener('click', () => {
-                            const sym = btn.getAttribute('data-sym');
-                            if (sym) {
-                                activeSymbol = sym;
-                                setActiveSymbol(sym);
-                                setWatchlistActiveSymbol(sym);
-                                renderTable();
-                                renderAssetHeader();
-                                if (activeSentimentMeterCleanup) {
-                                    activeSentimentMeterCleanup.setSymbol(getFuturesSymbolForSentiment(activeSymbol));
-                                }
-                                advancedModalEl?.remove();
-                                advancedModalEl = null;
+                expandBtn.title = 'Advanced Watchlist Studio (⤢)';
+                expandBtn.addEventListener('click', (e) => {
+                    e.stopPropagation();
+                    openWatchlistAdvancedModal({
+                        watchlistItems,
+                        activeSymbol,
+                        onSelectSymbol: (sym) => {
+                            activeSymbol = sym;
+                            setActiveSymbol(sym);
+                            setWatchlistActiveSymbol(sym);
+                            renderTable();
+                            renderAssetHeader();
+                            renderDetailsContent();
+                            if (activeSentimentMeterCleanup) {
+                                activeSentimentMeterCleanup.setSymbol(getFuturesSymbolForSentiment(activeSymbol));
                             }
-                        });
+                        },
+                        onAddSymbol: () => {
+                            openAddSymbolModal();
+                        },
                     });
-
-                    document.body.appendChild(advancedModalEl);
                 });
             }
 

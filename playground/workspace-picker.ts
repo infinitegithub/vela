@@ -324,7 +324,7 @@ export function registerWorkspaceLayoutPicker(): () => void {
             }
 
             const shareTopbarBtn = makeBtn('vela-bb-range quant-bb-share', { icon: $, aria: 'Share workspace', tip: 'Share workspace' });
-            shareTopbarBtn.hidden = true;
+            shareTopbarBtn.hidden = false;
             triggerBtn.after(shareTopbarBtn);
 
             // Topbar Cloud Save Button & Unsaved Changes Dot

@@ -123,6 +123,7 @@
     "https-proxy-agent": "^9.1.0",
     "lightweight-charts": "^5.2.1",
     "pinets": "^0.11.0",
+    "socks-proxy-agent": "^10.1.0",
     "ws": "^8.22.0"
   }
 }

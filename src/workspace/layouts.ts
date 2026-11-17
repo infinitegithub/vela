@@ -63,11 +63,11 @@ export function layouts(): LayoutDefinition[] {
 }
 
 /** Canonical slot ids `c1`…`cN`. */
-export function slots(n: number): Array<{ id: string }> {
+function slots(n: number): Array<{ id: string }> {
     return Array.from({ length: n }, (_, i) => ({ id: `c${i + 1}` }));
 }
 
-/** All TradingView & OpenMarket-grade layout presets matching the visual selector grid. */
+/** Register the built-in presets (idempotent — called by the workspace entry point). */
 export const TV_LAYOUT_PRESETS: LayoutDefinition[] = [
     // ── 1 chart ──
     {
@@ -314,10 +314,14 @@ export const TV_LAYOUT_PRESETS: LayoutDefinition[] = [
 ];
 
 /** Register the built-in presets (idempotent — called by the workspace entry point). */
+
 export function registerBuiltinLayouts(): void {
-    for (const preset of TV_LAYOUT_PRESETS) {
-        registerLayout(preset);
-    }
+    for (const preset of TV_LAYOUT_PRESETS) { registerLayout(preset); }
+    registerLayout({ id: '1', label: 'Single', cols: [1], rows: [1], cells: slots(1) });
+    registerLayout({ id: '2h', label: '2 side by side', cols: [1, 1], rows: [1], cells: slots(2) });
+    registerLayout({ id: '2v', label: '2 stacked', cols: [1], rows: [1, 1], cells: slots(2) });
+    registerLayout({ id: '4', label: '4 grid', cols: [1, 1], rows: [1, 1], cells: slots(4) });
+    registerLayout({ id: '8', label: '8 grid', cols: [1, 1, 1, 1], rows: [1, 1], cells: slots(8) });
 }
 
 // ── dynamic layouts (the topbar's grid picker) ──────────────────────────────
@@ -336,17 +340,8 @@ const GRID_BUILTIN_IDS: Record<string, string> = {
     '1x1': '1',
     '1x2': '2h',
     '2x1': '2v',
-    '1x3': '3v',
-    '3x1': '3h',
     '2x2': '4',
-    '2x3': '6-3x2',
-    '3x2': '6-2x3',
-    '4x2': '8',
-    '2x4': '8-4x2',
-    '3x3': '9',
-    '3x4': '12-4x3',
-    '4x3': '12-3x4',
-    '4x4': '16',
+    '2x4': '8',
 };
 
 const clampTrack = (n: number): number => Math.max(1, Math.min(GRID_PICKER_MAX, Math.round(n)));
@@ -382,6 +377,8 @@ const GRID_ID_RE = /^g([1-4])x([1-4])$/;
 export function ensureLayout(id: string): LayoutDefinition | undefined {
     const registered = registry.get(id);
     if (registered) return registered;
+    const tv = TV_LAYOUT_PRESETS.find((p) => p.id === id);
+    if (tv) { registerLayout(tv); return tv; }
     const g = GRID_ID_RE.exec(id);
     if (g) return layoutForGrid(Number(g[1]), Number(g[2]));
     return undefined;

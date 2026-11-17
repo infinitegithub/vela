@@ -60,9 +60,9 @@
     letter-spacing: 0;
 }
 .quant-wsp-row[data-active='1'] .quant-wsp-avatar {
-    background: var(--vela-selected-bg);
-    border-color: transparent;
-    color: var(--vela-selected-fg);
+    background: var(--vela-hover, #2b2d34) !important;
+    border-color: var(--vela-primary, #3b82f6) !important;
+    color: var(--vela-fg-bright, #eeeef1) !important;
 }
 .quant-wsp-main { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 1px; }
 .quant-wsp-name { font-weight: 600; color: var(--vela-fg-bright); font-size: 13px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -302,10 +302,20 @@
 .vela-bb-range.quant-bb-layouts {
     gap: 4px;
     padding: 0 6px 0 9px;
-    color: var(--vela-fg-bright);
+    color: var(--vela-fg-bright, #eeeef1);
+    background: transparent;
+    border: none;
+    outline: none;
 }
+.vela-bb-range.quant-bb-layouts:hover,
+.vela-bb-range.quant-bb-layouts:focus,
+.vela-bb-range.quant-bb-layouts:focus-visible,
+.vela-bb-range.quant-bb-layouts:active,
 .vela-bb-range.quant-bb-layouts[data-open='1'] {
-    background: var(--vela-hover);
+    background: var(--vela-hover, #2b2d34) !important;
+    color: var(--vela-fg-bright, #eeeef1) !important;
+    outline: none !important;
+    box-shadow: none !important;
 }
 
 .vela-bb-range.quant-bb-save {
@@ -355,11 +365,11 @@
     flex-direction: column;
     min-width: 240px;
     max-width: 300px;
-    background: var(--vela-surface-elev);
-    color: var(--vela-fg);
-    border: 1px solid var(--vela-border-strong);
+    background: var(--vela-bg-card, #232429) !important;
+    color: var(--vela-fg, #eeeef1) !important;
+    border: 1px solid var(--vela-border, #262629) !important;
     border-radius: 8px;
-    box-shadow: var(--vela-shadow);
+    box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5) !important;
     padding: 6px;
     font-size: 13px;
 }
@@ -468,11 +478,11 @@
     z-index: 2;
     min-width: 148px;
     padding: 4px;
-    background: var(--vela-surface-elev);
-    color: var(--vela-fg);
-    border: 1px solid var(--vela-border-strong);
+    background: var(--vela-bg-card, #232429) !important;
+    color: var(--vela-fg, #eeeef1) !important;
+    border: 1px solid var(--vela-border, #262629) !important;
     border-radius: 6px;
-    box-shadow: var(--vela-shadow);
+    box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5) !important;
 }
 .quant-wsp-dd-kebab-item {
     all: unset;

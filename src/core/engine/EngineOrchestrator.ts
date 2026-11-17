@@ -155,7 +155,6 @@ export class EngineOrchestrator implements IndicatorController, PaneController, 
     private visibleRange: VisibleBarRange | null = null;
     private viewportUnsub: Unsubscribe | null = null;
     private viewportTimer: ReturnType<typeof setTimeout> | null = null;
-    private scrollBackfillTimer: ReturnType<typeof setTimeout> | null = null;
     // ── live gap-heal state (missed bars while a tab was backgrounded/frozen) ──
     /** A backfill fetch is in flight; live ticks arriving meanwhile buffer + replay after it. */
     private healing = false;
@@ -448,14 +447,6 @@ export class EngineOrchestrator implements IndicatorController, PaneController, 
             this.setBarSeries([...head, ...this.rawBars], { preserveView: true });
             this.notifySessionsBars('backfill');
             this.events.emit('history:progress', { loaded: this.rawBars.length, target: this.rawBars.length });
-
-            // Coalesce rapid pan/scroll chunks and notify engines once scrolling settles
-            if (this.scrollBackfillTimer != null) clearTimeout(this.scrollBackfillTimer);
-            this.scrollBackfillTimer = setTimeout(() => {
-                this.scrollBackfillTimer = null;
-                if (this.generation !== gen || this.switchingMarket) return;
-                this.notifySessionsBars('complete');
-            }, VIEWPORT_DEBOUNCE_MS);
         } catch (e) {
             console.warn(`[vela] scroll backfill failed: ${e instanceof Error ? e.message : String(e)}`);
             this.lastScrollBackfillFailedAt = Date.now();
@@ -482,10 +473,6 @@ export class EngineOrchestrator implements IndicatorController, PaneController, 
         this.scrollBackfilling = false;
         this.scrollGenesis = false;
         this.lastScrollBackfillFailedAt = 0;
-        if (this.scrollBackfillTimer != null) {
-            clearTimeout(this.scrollBackfillTimer);
-            this.scrollBackfillTimer = null;
-        }
         this.progressiveAbort?.abort(); // the superseded load's source stops polling promptly
         this.progressiveAbort = null;
         for (const w of this.supersedeWaiters.splice(0)) w();
@@ -836,10 +823,6 @@ export class EngineOrchestrator implements IndicatorController, PaneController, 
             if (this.viewportTimer != null) {
                 clearTimeout(this.viewportTimer);
                 this.viewportTimer = null;
-            }
-            if (this.scrollBackfillTimer != null) {
-                clearTimeout(this.scrollBackfillTimer);
-                this.scrollBackfillTimer = null;
             }
             this.visibleRange = null; // the old market's window means nothing on the new one
             this.resetHistoryTracking();
@@ -2177,7 +2160,6 @@ export class EngineOrchestrator implements IndicatorController, PaneController, 
         this.replayLoading = null;
         this.stopLive();
         if (this.viewportTimer != null) clearTimeout(this.viewportTimer);
-        if (this.scrollBackfillTimer != null) clearTimeout(this.scrollBackfillTimer);
         this.viewportUnsub?.();
         this.paneActionUnsub?.();
         // native instances free their own caches/timers in stop()

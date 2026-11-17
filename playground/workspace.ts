@@ -3,6 +3,7 @@ import { resolveTheme, DARK_THEME } from "../src/core/theme";
 import './quant-watchlist.css';
 import type { Vela } from '../src';
 import { registerSW } from 'virtual:pwa-register';
+import { registerWidgetAction } from '../src/plugin';
 import { VelaWorkspace } from '../src/workspace';
 import { BinanceProvider } from '../src/data/providers/binance';
 import { CoinbaseProvider } from '../src/data/providers/coinbase';
@@ -175,12 +176,22 @@ const ws = new VelaWorkspace('#workspace', {
         // Left: Symbol, Timeframes, Style (Candles icon), Layout, Indicators, Replay, Undo/Redo
         left: ['symbol', 'timeframes', 'style', 'layout', 'indicators', 'quant:indicator-templates.open', 'replay.toggle', 'undo-redo'],
         // Right: Pine Editor, Screenshot, Theme Toggle, Panels, Trade button
-        right: ['pine.editor', 'screenshot', 'theme.toggle', 'panels', 'trade.toggle'],
+        right: ['trade.toggle', 'panels', 'pine.editor', 'shortcuts.open', 'screenshot', 'theme.toggle'],
     },
 });
 
 // 3. Bind workspace instances
 setWorkspaceInstance(ws);
+
+registerWidgetAction({
+    id: 'shortcuts.open',
+    target: 'topbar',
+    align: 'right',
+    order: 4,
+    label: 'Shortcuts',
+    icon: 'keyboard',
+    run: () => ws.openShortcutsHelp(),
+});
 (window as any).ws = ws;
 initSystemLogger(ws);
 

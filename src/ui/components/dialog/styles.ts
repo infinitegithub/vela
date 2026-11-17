@@ -71,11 +71,21 @@ export const DIALOG_CSS = `
 .vela-dialog-body { padding: var(--vela-space-4); overflow: auto; min-height: 0; flex: 1 1 auto; }
 .vela-dialog-body[data-flush] { padding: 0; overflow: hidden; display: flex; flex-direction: column; }
 .vela-dialog-footer { flex: 0 0 auto; }
+.vela-dialog--shortcuts {
+    width: min(840px, 94vw);
+    max-width: min(840px, 94vw);
+    max-height: 82vh;
+}
+.vela-dialog--shortcuts .vela-dialog-body {
+    overflow-x: hidden;
+    overflow-y: auto;
+    padding: var(--vela-space-4);
+}
 .vela-dialog--settings {
     width: fit-content;
     min-width: min(560px, 94vw);
-    max-width: min(840px, 94vw);
-    max-height: 80vh;
+    max-width: min(720px, 94vw);
+    max-height: 70vh;
     font-size: 13px;
     cursor: default;
 }
