@@ -462,7 +462,7 @@ export class BinanceProvider implements DataProvider {
 
     private async listFutures(): Promise<SymbolDescriptor[]> {
         const symbols = await this.getFuturesSymbols();
-        return symbols
+        const apiFutures: SymbolDescriptor[] = symbols
             .filter((s) => (s.contractType === 'PERPETUAL' || s.contractType === 'TRADIFI_PERPETUAL') && s.status === 'TRADING')
             .map((s) => {
                 let type = 'futures';
@@ -478,14 +478,47 @@ export class BinanceProvider implements DataProvider {
                     type,
                 };
             });
+
+        // Seed with known perp symbols so provider registry ALWAYS resolves them immediately,
+        // even if exchangeInfo was slow, timed out, or rate-limited.
+        const knownDescriptors: SymbolDescriptor[] = Object.entries(KNOWN_PERP_METADATA).flatMap(([sym, def]) => [
+            { ticker: `${sym}.P`, description: def.description, type: def.type },
+            { ticker: sym, description: def.description, type: def.type },
+        ]);
+
+        const seen = new Set<string>();
+        const combined: SymbolDescriptor[] = [];
+        for (const item of [...knownDescriptors, ...apiFutures]) {
+            if (!seen.has(item.ticker)) {
+                seen.add(item.ticker);
+                combined.push(item);
+            }
+        }
+        return combined;
     }
 
     /** Fetch klines, paginating past Binance's 1000-row cap. */
     private async fetchKlines(base: string, symbol: string, interval: string, range: BarRange): Promise<RawKline[]> {
-        if (range.from != null) return this.paginateForward(base, symbol, interval, range.from, range.to ?? Date.now(), range.limit);
-        const limit = range.limit ?? 500;
-        if (limit > 1000) return this.paginateBackward(base, symbol, interval, limit, range.to);
-        return this.klinesChunk(base, { symbol, interval, limit, endTime: range.to });
+        try {
+            if (range.from != null) return await this.paginateForward(base, symbol, interval, range.from, range.to ?? Date.now(), range.limit);
+            const limit = range.limit ?? 500;
+            if (limit > 1000) return await this.paginateBackward(base, symbol, interval, limit, range.to);
+            return await this.klinesChunk(base, { symbol, interval, limit, endTime: range.to });
+        } catch (err: any) {
+            // If futures endpoint is rate-limited/banned (e.g. 418), fallback to spot klines for standard crypto pairs
+            if (base.includes('fapi.binance.com') && !/^(XAU|XAG|WTI|SPY|QQQ|IWM|NVDA|TSLA|AAPL|AMZN|MSFT|META|GOOGL)/i.test(symbol)) {
+                try {
+                    const spotBase = await this.spotBase();
+                    if (range.from != null) return await this.paginateForward(spotBase, symbol, interval, range.from, range.to ?? Date.now(), range.limit);
+                    const limit = range.limit ?? 500;
+                    if (limit > 1000) return await this.paginateBackward(spotBase, symbol, interval, limit, range.to);
+                    return await this.klinesChunk(spotBase, { symbol, interval, limit, endTime: range.to });
+                } catch {
+                    throw err;
+                }
+            }
+            throw err;
+        }
     }
 
     /** Forward pagination from `from` to `to` (used by ranged/tail fetches). */
