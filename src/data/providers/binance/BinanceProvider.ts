@@ -20,8 +20,13 @@ function isTestnet(): boolean {
     return window.localStorage?.getItem('vela-testnet') === 'true';
 }
 
-const getFuturesBase = () => isTestnet() ? 'https://testnet.binancefuture.com/fapi/v1' : 'https://fapi.binance.com/fapi/v1';
-const getFuturesWs = () => isTestnet() ? 'wss://stream.binancefuture.com' : 'wss://fstream.binance.com';
+// Market data charts are locked to real Binance Production feeds so candles never load fake or empty testnet data.
+const getFuturesBase = () => (typeof window !== 'undefined' && window.location.search.includes('testnet=true'))
+    ? 'https://testnet.binancefuture.com/fapi/v1'
+    : 'https://fapi.binance.com/fapi/v1';
+const getFuturesWs = () => (typeof window !== 'undefined' && window.location.search.includes('testnet=true'))
+    ? 'wss://stream.binancefuture.com'
+    : 'wss://fstream.binance.com';
 /**
  * If a kline socket opens but delivers no candle within this window, treat it as
  * non-delivering and fall back to polling. Covers a socket that connects but stays
@@ -69,7 +74,10 @@ export function parseTicker(ticker: string): { apiSymbol: string; isFutures: boo
     const t = ticker.trim().toUpperCase();
     if (t.startsWith('SPOT:')) return { apiSymbol: t.slice(5).replace(/\.P$/i, ''), isFutures: false };
     if (t.endsWith('.P')) return { apiSymbol: t.slice(0, -2), isFutures: true };
-    if (/^(SPY|XAU|QQQ|IWM|NVDA|TSLA|AAPL|AMZN|MSFT|GOLD)/i.test(t)) {
+    if (/^(SPY|XAU|XAG|WTI|QQQ|IWM|NVDA|TSLA|AAPL|AMZN|MSFT|META|GOOGL|GOLD|SILVER|OIL)/i.test(t)) {
+        if (t === 'XAUUSD' || t === 'GOLD') return { apiSymbol: 'XAUUSDT', isFutures: true };
+        if (t === 'XAGUSD' || t === 'SILVER') return { apiSymbol: 'XAGUSDT', isFutures: true };
+        if (t === 'WTIUSD' || t === 'OIL') return { apiSymbol: 'WTIUSDT', isFutures: true };
         return { apiSymbol: t.endsWith('USDT') ? t : `${t}USDT`, isFutures: true };
     }
     return { apiSymbol: t, isFutures: false };
@@ -134,6 +142,77 @@ function selectSubTf(targetMin: number): number | null {
  *   import { BinanceProvider } from 'vela/providers/binance';
  *   chart.data.registerProvider('binance', new BinanceProvider());
  */
+
+interface KnownSymbolDef {
+    base: string;
+    quote: string;
+    type: "crypto" | "futures" | "commodity" | "etf" | "stock";
+    tickSize: number;
+    description: string;
+}
+
+const KNOWN_PERP_METADATA: Record<string, KnownSymbolDef> = {
+    BTCUSDT: { base: "BTC", quote: "USDT", type: "futures", tickSize: 0.1, description: "BTC / USDT Perpetual" },
+    ETHUSDT: { base: "ETH", quote: "USDT", type: "futures", tickSize: 0.01, description: "ETH / USDT Perpetual" },
+    SOLUSDT: { base: "SOL", quote: "USDT", type: "futures", tickSize: 0.01, description: "SOL / USDT Perpetual" },
+    BNBUSDT: { base: "BNB", quote: "USDT", type: "futures", tickSize: 0.01, description: "BNB / USDT Perpetual" },
+    XRPUSDT: { base: "XRP", quote: "USDT", type: "futures", tickSize: 0.0001, description: "XRP / USDT Perpetual" },
+    DOGEUSDT: { base: "DOGE", quote: "USDT", type: "futures", tickSize: 0.00001, description: "DOGE / USDT Perpetual" },
+    ADAUSDT: { base: "ADA", quote: "USDT", type: "futures", tickSize: 0.0001, description: "ADA / USDT Perpetual" },
+    AVAXUSDT: { base: "AVAX", quote: "USDT", type: "futures", tickSize: 0.01, description: "AVAX / USDT Perpetual" },
+    LINKUSDT: { base: "LINK", quote: "USDT", type: "futures", tickSize: 0.001, description: "LINK / USDT Perpetual" },
+    SUIUSDT: { base: "SUI", quote: "USDT", type: "futures", tickSize: 0.0001, description: "SUI / USDT Perpetual" },
+    "1000PEPEUSDT": { base: "1000PEPE", quote: "USDT", type: "futures", tickSize: 0.000001, description: "1000PEPE / USDT Perpetual" },
+    NEARUSDT: { base: "NEAR", quote: "USDT", type: "futures", tickSize: 0.001, description: "NEAR / USDT Perpetual" },
+    APTUSDT: { base: "APT", quote: "USDT", type: "futures", tickSize: 0.001, description: "APT / USDT Perpetual" },
+    XAUUSDT: { base: "XAU", quote: "USDT", type: "commodity", tickSize: 0.01, description: "Gold / USDT Perpetual" },
+    XAGUSDT: { base: "XAG", quote: "USDT", type: "commodity", tickSize: 0.001, description: "Silver / USDT Perpetual" },
+    WTIUSDT: { base: "WTI", quote: "USDT", type: "commodity", tickSize: 0.01, description: "Crude Oil / USDT Perpetual" },
+    SPYUSDT: { base: "SPY", quote: "USDT", type: "etf", tickSize: 0.01, description: "S&P 500 ETF / USDT Perpetual" },
+    QQQUSDT: { base: "QQQ", quote: "USDT", type: "etf", tickSize: 0.01, description: "Invesco QQQ / USDT Perpetual" },
+    IWMUSDT: { base: "IWM", quote: "USDT", type: "etf", tickSize: 0.01, description: "Russell 2000 ETF / USDT Perpetual" },
+    NVDAUSDT: { base: "NVDA", quote: "USDT", type: "stock", tickSize: 0.01, description: "NVIDIA / USDT Perpetual" },
+    TSLAUSDT: { base: "TSLA", quote: "USDT", type: "stock", tickSize: 0.01, description: "Tesla / USDT Perpetual" },
+    AAPLUSDT: { base: "AAPL", quote: "USDT", type: "stock", tickSize: 0.01, description: "Apple / USDT Perpetual" },
+    AMZNUSDT: { base: "AMZN", quote: "USDT", type: "stock", tickSize: 0.01, description: "Amazon / USDT Perpetual" },
+    MSFTUSDT: { base: "MSFT", quote: "USDT", type: "stock", tickSize: 0.01, description: "Microsoft / USDT Perpetual" },
+    METAUSDT: { base: "META", quote: "USDT", type: "stock", tickSize: 0.01, description: "Meta / USDT Perpetual" },
+    GOOGLUSDT: { base: "GOOGL", quote: "USDT", type: "stock", tickSize: 0.01, description: "Alphabet / USDT Perpetual" },
+};
+
+function buildDynamicSymbolInfo(ticker: string, apiSymbol: string, isFutures: boolean): SymbolInfo {
+    let clean = apiSymbol.toUpperCase();
+    let base = clean;
+    let quote = "USDT";
+    if (clean.endsWith("USDT")) { base = clean.replace(/USDT$/, ""); quote = "USDT"; }
+    else if (clean.endsWith("USDC")) { base = clean.replace(/USDC$/, ""); quote = "USDC"; }
+    else if (clean.endsWith("BUSD")) { base = clean.replace(/BUSD$/, ""); quote = "BUSD"; }
+    else if (clean.endsWith("USD")) { base = clean.replace(/USD$/, ""); quote = "USD"; }
+
+    let type: any = isFutures ? "futures" : "crypto";
+    if (/^(XAU|XAG|GOLD|SILVER|WTI|BRENT|OIL)/i.test(base)) type = "commodity";
+    else if (/^(SPY|QQQ|IWM|DIA)/i.test(base)) type = "etf";
+    else if (/^(NVDA|TSLA|AAPL|AMZN|MSFT|GOOGL|META|AMD|NFLX|COIN)/i.test(base)) type = "stock";
+
+    const isBtc = base === "BTC";
+    const tickSize = isBtc ? 0.1 : 0.01;
+    const priceScale = Math.round(1 / tickSize);
+
+    return {
+        ticker,
+        tickerid: `BINANCE:${ticker}`,
+        prefix: "BINANCE",
+        description: `${base} / ${quote}${isFutures ? " Perpetual" : ""}`,
+        type,
+        basecurrency: base,
+        currency: quote,
+        mintick: tickSize,
+        pricescale: priceScale,
+        timezone: "Etc/UTC",
+        session: "24x7",
+    };
+}
+
 export class BinanceProvider implements DataProvider {
     /** The spot endpoint confirmed reachable (cached after the first probe). */
     private spotBaseUrl: string | null = null;
@@ -209,6 +288,22 @@ export class BinanceProvider implements DataProvider {
 
     async getSymbolInfo(ticker: string): Promise<SymbolInfo | undefined> {
         const { apiSymbol, isFutures } = parseTicker(ticker);
+        const known = KNOWN_PERP_METADATA[apiSymbol];
+        if (isFutures && known) {
+            return {
+                ticker,
+                tickerid: `BINANCE:${ticker}`,
+                prefix: "BINANCE",
+                description: known.description,
+                type: known.type,
+                basecurrency: known.base,
+                currency: known.quote,
+                mintick: known.tickSize,
+                pricescale: Math.round(1 / known.tickSize),
+                timezone: "Etc/UTC",
+                session: "24x7",
+            };
+        }
         let s: BinanceSymbol | undefined;
         if (isFutures) {
             const symbols = await this.getFuturesSymbols();
@@ -218,7 +313,7 @@ export class BinanceProvider implements DataProvider {
             const data = (await this.json(`${base}/exchangeInfo?symbol=${apiSymbol}`).catch(() => null)) as { symbols?: BinanceSymbol[] } | null;
             s = data?.symbols?.[0];
         }
-        if (!s) return undefined;
+        if (!s) return buildDynamicSymbolInfo(ticker, apiSymbol, isFutures);
 
         const priceFilter = s.filters?.find((f) => f.filterType === 'PRICE_FILTER');
         const tickSize = priceFilter ? parseFloat(priceFilter.tickSize ?? '0.01') : 0.01;
@@ -311,7 +406,8 @@ export class BinanceProvider implements DataProvider {
             if (closed) return;
             const base = isFutures ? getFuturesWs() : await this.spotWsBase();
             if (closed) return; // unsubscribed during the host probe
-            ws = new WebSocket(`${base}/ws/${stream}`);
+            const wsUrl = isFutures ? `${base}/market/ws/${stream}` : `${base}/ws/${stream}`;
+            ws = new WebSocket(wsUrl);
             stall = setTimeout(fallToPolling, STREAM_STALL_MS); // watchdog: data must arrive
             ws.onmessage = (ev: MessageEvent) => {
                 if (closed || polling) return; // unsubscribed, or already fell back to polling
@@ -470,10 +566,19 @@ export class BinanceProvider implements DataProvider {
         return this.spotBaseProbe;
     }
 
-    private async json(url: string): Promise<unknown> {
-        const res = await fetch(url);
-        if (!res.ok) throw new Error(`Binance HTTP ${res.status} for ${url}`);
-        return res.json();
+    private async json(url: string, retries = 2): Promise<unknown> {
+        let lastErr: any;
+        for (let i = 0; i <= retries; i++) {
+            try {
+                const res = await fetch(url);
+                if (res.ok) return await res.json();
+                if (i === retries) throw new Error(`Binance HTTP ${res.status} for ${url}`);
+            } catch (e) {
+                lastErr = e;
+                if (i === retries) throw lastErr;
+            }
+            await new Promise((r) => setTimeout(r, 200 * (i + 1)));
+        }
     }
 }
 
