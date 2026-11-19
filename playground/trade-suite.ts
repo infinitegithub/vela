@@ -3197,7 +3197,7 @@ export function startAccountPolling() {
         } finally {
             isPolling = false;
             const hasActivity = (state.activePositions && state.activePositions.length > 0) || (state.openOrders && state.openOrders.length > 0);
-            const delay = lastPollError ? 15000 : (hasActivity ? 1200 : 2500);
+            const delay = lastPollError ? 60000 : (hasActivity ? 1200 : 2500);
             setTimeout(pollLoop, delay);
         }
     };

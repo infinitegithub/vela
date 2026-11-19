@@ -14,6 +14,12 @@ const PROD_SECRET_KEY = (typeof process !== 'undefined' && (process.env?.BINANCE
 const OCI_PROXY_URL = (typeof process !== 'undefined' && (process.env?.BINANCE_OCI_PROXY || process.env?.BINANCE_PROXY || process.env?.BINANCE_PROD_PROXY_URL)) || '';
 const ociAgent = OCI_PROXY_URL ? new HttpsProxyAgent(OCI_PROXY_URL) : undefined;
 
+let prodBanUntilTs = 0;
+
+export function getBinanceBanUntil(): number {
+    return prodBanUntilTs;
+}
+
 function getBaseUrl(isTestnet: boolean): string {
     return isTestnet ? TEST_URL : PROD_URL;
 }
@@ -37,6 +43,11 @@ async function request(baseUrl: string, endpoint: string, method: string = 'GET'
 
     if (!isTestnet && (!key || !sec)) {
         throw new Error('Binance production API credentials are not configured. Please set BINANCE_PRODUCTION_API_KEY and BINANCE_PRODUCTION_API_SECRET in your .env file.');
+    }
+
+    if (!isTestnet && Date.now() < prodBanUntilTs) {
+        const remainingSec = Math.ceil((prodBanUntilTs - Date.now()) / 1000);
+        throw new Error(`Binance REST rate-limit active. Halting requests for ${remainingSec}s to allow ban to lift cleanly.`);
     }
 
     const timestamp = Date.now();
@@ -75,6 +86,15 @@ async function request(baseUrl: string, endpoint: string, method: string = 'GET'
             res.on('end', () => {
                 try {
                     const json = JSON.parse(resBody);
+                    if (res.statusCode === 418 || (json && json.code === -1003)) {
+                        const msg = json?.msg || resBody;
+                        const match = msg.match(/banned until (\d+)/);
+                        if (match) {
+                            prodBanUntilTs = parseInt(match[1], 10);
+                            console.warn(`[BinanceService] Circuit breaker engaged until ${new Date(prodBanUntilTs).toISOString()}`);
+                        }
+                        return reject(new Error(msg || `Binance HTTP ${res.statusCode}: ${resBody}`));
+                    }
                     if (res.statusCode && res.statusCode >= 400 || (json.code && json.code < 0)) {
                         return reject(new Error(json.msg || `Binance HTTP ${res.statusCode}: ${resBody}`));
                     }
