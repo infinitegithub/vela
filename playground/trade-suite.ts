@@ -176,6 +176,7 @@ export function setEnvironment(isTestnet: boolean) {
     state.tradeHistory = [];
     state.takeProfit = "";
     state.stopLoss = "";
+    state.availableBalance = 0;
 
     const chkTp = document.querySelector("#chk-tp") as HTMLInputElement | null;
     const inputTp = document.querySelector("#input-tp") as HTMLInputElement | null;
@@ -358,6 +359,7 @@ export async function closePosition(symbol: string, side?: string, size?: number
     }, 1200);
 }
 
+let lastPollError = false;
 let previousActiveSymbols = new Set<string>();
 
 export async function fetchAccount() {
@@ -380,6 +382,7 @@ export async function fetchAccount() {
         if (res.ok) {
             const data = await res.json();
             state.availableBalance = data.availableBalance || 0;
+            lastPollError = false;
             const rawPositions = data.positions || [];
 
             // Filter out any positions currently in closed cooldown to avoid slow-replica ghosts
@@ -415,8 +418,19 @@ export async function fetchAccount() {
             if (typeof window !== 'undefined') {
                 window.dispatchEvent(new CustomEvent('vela:repaint-lines'));
             }
+        } else {
+            lastPollError = true;
+            state.availableBalance = 0;
+            state.activePositions = [];
+            updatePositionsUI();
+            updateAccountBalanceUI();
         }
     } catch (e) {
+        lastPollError = true;
+        state.availableBalance = 0;
+        state.activePositions = [];
+        updatePositionsUI();
+        updateAccountBalanceUI();
         console.error('Failed to fetch account', e);
     }
 }
@@ -3183,7 +3197,8 @@ export function startAccountPolling() {
         } finally {
             isPolling = false;
             const hasActivity = (state.activePositions && state.activePositions.length > 0) || (state.openOrders && state.openOrders.length > 0);
-            setTimeout(pollLoop, hasActivity ? 1200 : 2500);
+            const delay = lastPollError ? 15000 : (hasActivity ? 1200 : 2500);
+            setTimeout(pollLoop, delay);
         }
     };
     setTimeout(pollLoop, 1500);
